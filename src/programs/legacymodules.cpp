@@ -292,6 +292,8 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Compute Ramachandran plots");
     registerModule(manager, &gmx_rdf, "rdf",
                    "Calculate radial distribution functions");
+    registerModule(manager, &gmx_sfact, "sfact",
+                   "Calculate structure factor");
     registerModule(manager, &gmx_rms, "rms",
                    "Calculate RMSDs with a reference structure and RMSD matrices");
     registerModule(manager, &gmx_rmsdist, "rmsdist",
