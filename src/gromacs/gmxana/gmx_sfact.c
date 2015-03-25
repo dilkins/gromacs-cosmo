@@ -81,7 +81,6 @@ static void calc_comg(int is, int *coi, int *index, gmx_bool bMass, t_atom *atom
     int  c, i, d;
     rvec xc;
     real mtot, m;
-
     if (bMass && atom == NULL)
     {
         gmx_fatal(FARGS, "No masses available while mass weighting was requested");
@@ -178,8 +177,8 @@ static void split_group(int isize, int *index, char *grpname,
 
 static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                    const char *fnRDF, const char *fnCNRDF, const char *fnHQ,
-                   gmx_bool bCM, const char *close,
-                   const char **rdft, gmx_bool bXY, gmx_bool bPBC, gmx_bool bNormalize,
+                   /*gmx_bool bCM,*/ const char *method,
+                   /*const char **rdft, */ gmx_bool bXY, gmx_bool bPBC, gmx_bool bNormalize,
                    real cutoff, real binwidth, real fade, int ng,
                    const output_env_t oenv)
 {
@@ -212,13 +211,13 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
     excl = NULL;
 
-    bClose = (close[0] != 'n');
+    bClose = (method[0] != 'c');
 
     if (fnTPS)
     {
         snew(top, 1);
         bTop = read_tps_conf(fnTPS, title, top, &ePBC, &x, NULL, box, TRUE);
-        if (bTop && !(bCM || bClose))
+        if (bTop /* && !(bCM || bClose)*/)  /* bCM is false unless specified */
         {
             /* get exclusions from topology */
             excl = &(top->excls);
@@ -233,33 +232,38 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     {
         get_index(&(top->atoms), fnNDX, ng+1, isize, index, grpname);
         atom = top->atoms.atom;
+        fprintf(stderr, "test input topology \n");
     }
     else
     {
         rd_index(fnNDX, ng+1, isize, index, grpname);
+        fprintf(stderr, " test input index\n");
+
     }
 
-    if (bCM || bClose)
+    /*
+    if (bCM ||  bClose)
     {
         snew(is, 1);
         snew(coi, 1);
         if (bClose)
         {
-            split_group(isize[0], index[0], grpname[0], top, close[0], &is[0], &coi[0]);
+            split_group(isize[0], index[0], grpname[0], top, method[0], &is[0], &coi[0]);
         }
     }
-    if (rdft[0][0] != 'a')
+    */
+/*    if (rdft[0][0] != 'a')
     {
-        /* Split up all the groups in molecules or residues */
         srenew(is, ng+1);
         srenew(coi, ng+1);
         for (g = ((bCM || bClose) ? 1 : 0); g < ng+1; g++)
         {
-            split_group(isize[g], index[g], grpname[g], top, rdft[0][0], &is[g], &coi[g]);
+            split_group(isize[g], index[g], grpname[g], top, 'a', &is[g], &coi[g]);
         }
     }
+*/
 
-    if (bCM)
+    /*if (bCM)
     {
         is[0] = 1;
         snew(coi[0], is[0]+1);
@@ -268,17 +272,19 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         isize0    = is[0];
         snew(x0, isize0);
     }
-    else if (bClose || rdft[0][0] != 'a')
+    else */ if (bClose )
     {
         isize0 = is[0];
         snew(x0, isize0);
+        fprintf(stderr, " test1 \n");
     }
     else
     {
         isize0 = isize[0];
+        fprintf(stderr, " test2 \n");
     }
-
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
+    fprintf(stderr, "\n read_first_configuration \n");
     if (!natoms)
     {
         gmx_fatal(FARGS, "Could not read coordinates from statusfile\n");
@@ -294,7 +300,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     }
     /* check with index groups */
     for (i = 0; i < ng+1; i++)
-    {
+    {   
         for (j = 0; j < isize[i]; j++)
         {
             if (index[i][j] >= natoms)
@@ -358,6 +364,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
     snew(bExcl, natoms);
     max_i = 0;
+    fprintf(stderr, " check before second loop \n");
     for (g = 0; g < ng; g++)
     {
         if (isize[g+1] > max_i)
@@ -371,56 +378,55 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         /* make pairlist array for groups and exclusions */
         snew(pairs[g], isize[0]);
         snew(npairs[g], isize[0]);
+        fprintf(stderr, " check before inner loop \n");
         for (i = 0; i < isize[0]; i++)
-        {
+        {   
             /* We can only have exclusions with atomic rdfs */
-            if (!(bCM || bClose || rdft[0][0] != 'a'))
+            /*
+            if (!(FALSE || bClose || rdft[0][0] != 'a'))
+            { */
+            ix = index[0][i];
+            for (j = 0; j < natoms; j++)
             {
-                ix = index[0][i];
-                for (j = 0; j < natoms; j++)
+                bExcl[j] = FALSE;
+            }
+            if (excl)
+            {
+               for (j = excl->index[ix]; j < excl->index[ix+1]; j++)
+               {
+                   bExcl[excl->a[j]] = TRUE;
+               }
+            }
+            k = 0;
+            snew(pairs[g][i], isize[g+1]);
+            bNonSelfExcl = FALSE;
+            for (j = 0; j < isize[g+1]; j++)
+            {
+                jx = index[g+1][j];
+                if (!bExcl[jx])
                 {
-                    bExcl[j] = FALSE;
+                    pairs[g][i][k++] = jx;
                 }
-                /* exclusions? */
-                if (excl)
+                else if (ix != jx)
                 {
-                    for (j = excl->index[ix]; j < excl->index[ix+1]; j++)
-                    {
-                        bExcl[excl->a[j]] = TRUE;
-                    }
+                    bNonSelfExcl = TRUE;
                 }
-                k = 0;
-                snew(pairs[g][i], isize[g+1]);
-                bNonSelfExcl = FALSE;
-                for (j = 0; j < isize[g+1]; j++)
-                {
-                    jx = index[g+1][j];
-                    if (!bExcl[jx])
-                    {
-                        pairs[g][i][k++] = jx;
-                    }
-                    else if (ix != jx)
-                    {
-                        /* Check if we have exclusions other than self exclusions */
-                        bNonSelfExcl = TRUE;
-                    }
-                }
-                if (bNonSelfExcl)
-                {
-                    npairs[g][i] = k;
-                    srenew(pairs[g][i], npairs[g][i]);
-                }
-                else
-                {
-                    /* Save a LOT of memory and some cpu cycles */
-                    npairs[g][i] = -1;
-                    sfree(pairs[g][i]);
-                }
+            }
+            if (bNonSelfExcl)
+            {
+                npairs[g][i] = k;
+                srenew(pairs[g][i], npairs[g][i]);
             }
             else
             {
                 npairs[g][i] = -1;
+                sfree(pairs[g][i]);
             }
+        /*}
+            else
+            {
+                npairs[g][i] = -1;
+            } */
         }
     }
     sfree(bExcl);
@@ -458,48 +464,48 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         }
         invvol      = 1/det(box_pbc);
         invvol_sum += invvol;
-
-        if (bCM)
+        /*if (bCM)
         {
-            /* Calculate center of mass of the whole group */
+            Calculate center of mass of the whole group  
             calc_comg(is[0], coi[0], index[0], TRUE, atom, x, x0);
         }
-        else if (!bClose && rdft[0][0] != 'a')
-        {
-            calc_comg(is[0], coi[0], index[0], rdft[0][6] == 'm', atom, x, x0);
-        }
+        else   if (!bClose && rdft[0][0] != 'a') */
+        /*{ 
+        calc_comg(is[0], coi[0], index[0], FALSE, atom, x, x0);
+        fprintf(stderr, " check after calc_comg loop \n");
+        }*/
 
         for (g = 0; g < ng; g++)
         {
+/*
             if (rdft[0][0] == 'a')
+            {*/
+            for (i = 0; i < isize[g+1]; i++)
             {
-                /* Copy the indexed coordinates to a continuous array */
-                for (i = 0; i < isize[g+1]; i++)
-                {
-                    copy_rvec(x[index[g+1][i]], x_i1[i]);
-                }
+                copy_rvec(x[index[g+1][i]], x_i1[i]);
             }
+            /*
             else
             {
-                /* Calculate the COMs/COGs and store in x_i1 */
-                calc_comg(is[g+1], coi[g+1], index[g+1], rdft[0][6] == 'm', atom, x, x_i1);
-            }
-
+                 Calculate the COMs/COGs and store in x_i1 
+                calc_comg(is[g+1], coi[g+1], index[g+1], FALSE, atom, x, x_i1);
+            }*/
             for (i = 0; i < isize0; i++)
             {
                 if (bClose)
                 {
                     /* Special loop, since we need to determine the minimum distance
                      * over all selected atoms in the reference molecule/residue.
-                     */
+                    
                     if (rdft[0][0] == 'a')
-                    {
-                        isize_g = isize[g+1];
-                    }
+                    { */
+                    isize_g = isize[g+1];
+                    fprintf(stderr, " check after bclose \n");
+                    /*}
                     else
                     {
-                        isize_g = is[g+1];
-                    }
+                    isize_g = is[g+1];
+                    }*/
                     for (j = 0; j < isize_g; j++)
                     {
                         r2 = 1e30;
@@ -536,15 +542,18 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                 else
                 {
                     /* Real rdf between points in space */
-                    if (bCM || rdft[0][0] != 'a')
+                    
+                /*    if (FALSE  ||  rdft[0][0] != 'a')
                     {
                         copy_rvec(x0[i], xi);
                     }
-                    else
-                    {
-                        copy_rvec(x[index[0][i]], xi);
-                    }
-                    if (rdft[0][0] == 'a' && npairs[g][i] >= 0)
+                
+                    else 
+                    {*/
+
+                    copy_rvec(x[index[0][i]], xi);
+                    /*}*/
+                    if (TRUE && npairs[g][i] >= 0)
                     {
                         /* Expensive loop, because of indexing */
                         for (j = 0; j < npairs[g][i]; j++)
@@ -576,14 +585,14 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                     else
                     {
                         /* Cheaper loop, no exclusions */
-                        if (rdft[0][0] == 'a')
-                        {
-                            isize_g = isize[g+1];
-                        }
+                        /*if (rdft[0][0] == 'a')
+                        {*/
+                        isize_g = isize[g+1];
+                        /*}
                         else
                         {
                             isize_g = is[g+1];
-                        }
+                        }*/
                         for (j = 0; j < isize_g; j++)
                         {
                             if (bPBC)
@@ -651,14 +660,14 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     for (g = 0; g < ng; g++)
     {
         /* We have to normalize by dividing by the number of frames */
-        if (rdft[0][0] == 'a')
-        {
-            normfac = 1.0/(nframes*invvol*isize0*isize[g+1]);
-        }
+        /*if (rdft[0][0] == 'a')
+        {*/
+        normfac = 1.0/(nframes*invvol*isize0*isize[g+1]);
+        /*}
         else
         {
             normfac = 1.0/(nframes*invvol*isize0*is[g+1]);
-        }
+        }*/
 
         /* Do the normalization */
         nrdf = max((nbin+1)/2, 1+2*fade/binwidth);
@@ -696,24 +705,24 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         }
     }
 
-    if (rdft[0][0] == 'a')
-    {
-        sprintf(gtitle, "Radial distribution");
-    }
+    /*if (rdft[0][0] == 'a')
+    {*/
+    sprintf(gtitle, "Radial distribution");
+    /*}
     else
     {
         sprintf(gtitle, "Radial distribution of %s %s",
                 rdft[0][0] == 'm' ? "molecule" : "residue",
                 rdft[0][6] == 'm' ? "COM" : "COG");
-    }
+    }*/
     fp = xvgropen(fnRDF, gtitle, "r", "", oenv);
-    if (bCM)
+    /*if (bCM)
     {
         sprintf(refgt, " %s", "COM");
     }
-    else if (bClose)
+    else */ if  (bClose)
     {
-        sprintf(refgt, " closest atom in %s.", close);
+        sprintf(refgt, " closest atom in %s.", method);
     }
     else
     {
@@ -836,25 +845,26 @@ int gmx_sfact(int argc, char *argv[])
         "This however converges slowly with the box size for small values of q.[PAR]",
         "The option rdf is based on the definition of S(q) for an isotropic system c.f",
         "M.P. Allen and D.J. Tildesley pp. 58.[PAR]",
-        "The method cosmo is based on our own way to compute it",
+        "The method cosmon (default) is based on our own way to compute it",
         "which is S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.[PAR]",
     };
-    static gmx_bool    bCM     = FALSE, bXY = FALSE, bPBC = TRUE, bNormalize = TRUE;
+    static gmx_bool    /*bCM     = FALSE,*/ bXY = FALSE, bPBC = TRUE, bNormalize = TRUE;
     static real        cutoff  = 0, binwidth = 0.002, fade = 0.0;
     static int         ngroups = 1;
 
-    static const char *closet[] = { NULL, "no", "mol", "res", NULL };
-    static const char *rdft[]   = { NULL, "atom", "mol_com", "mol_cog", "res_com", "res_cog", NULL };
+    static const char *methodt[] = { NULL, "cosmo", "rdf", "sumexp", NULL }; 
+   /* static const char *rdft[]   = { NULL, "atom", "mol_com", "mol_cog", "res_com", "res_cog", NULL };*/
 
     t_pargs            pa[] = {
         { "-bin",      FALSE, etREAL, {&binwidth},
           "Binwidth (nm)" },
-        { "-com",      FALSE, etBOOL, {&bCM},
-          "RDF with respect to the center of mass of first group" },
-        { "-surf",     FALSE, etENUM, {closet},
-          "RDF with respect to the surface of the first group" },
-        { "-rdf",   FALSE, etENUM, {rdft},
+/*        { "-com",      FALSE, etBOOL, {&bCM},
+          "RDF with respect to the center of mass of first group" }, */
+        { "-method",     FALSE, etENUM, {methodt},
+          "S(q) using the different methods" },
+/*        { "-rdf",   FALSE, etENUM, {rdft},
           "RDF type" },
+*/
         { "-pbc",      FALSE, etBOOL, {&bPBC},
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-norm",     FALSE, etBOOL, {&bNormalize},
@@ -887,7 +897,7 @@ int gmx_sfact(int argc, char *argv[])
         return 0;
     }
 
-    if (bCM || closet[0][0] != 'n' || rdft[0][0] == 'm' || rdft[0][6] == 'm')
+    if ( methodt[0][0] != 'c' )
     {
         fnTPS = ftp2fn(efTPS, NFILE, fnm);
     }
@@ -902,24 +912,21 @@ int gmx_sfact(int argc, char *argv[])
         gmx_fatal(FARGS, "Neither index file nor topology file specified\n"
                   "Nothing to do!");
     }
+   
 
-    if (closet[0][0] != 'n')
+    if (methodt[0][0] != 'c')
     {
-        if (bCM)
-        {
-            gmx_fatal(FARGS, "Can not have both -com and -surf");
-        }
         if (bNormalize)
         {
             fprintf(stderr, "Turning of normalization because of option -surf\n");
             bNormalize = FALSE;
         }
     }
-
+    
     do_rdf(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-cn", NFILE, fnm),
            opt2fn_null("-hq", NFILE, fnm),
-           bCM, closet[0], rdft, bXY, bPBC, bNormalize, cutoff, binwidth, fade, ngroups,
+           /*bCM,*/ methodt[0], bXY, bPBC, bNormalize, cutoff, binwidth, fade, ngroups,
            oenv);
 
     return 0;
