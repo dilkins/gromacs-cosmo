@@ -132,7 +132,7 @@ static void split_group(int isize, int *index, char *grpname,
         default:
             gmx_fatal(FARGS, "Unknown rdf option '%s'", type);
     }
-    snew(coi, isize+1);
+    snew(coi, isize+1); /* snew is used to allocate a pointer with nelem snew(ptr, nelem) */
     is  = 0;
     cur = -1;
     mol = 0;
@@ -175,24 +175,25 @@ static void split_group(int isize, int *index, char *grpname,
     *coi_out = coi;
 }
 
-static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
+static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                    const char *fnRDF, const char *fnCNRDF, const char *fnHQ,
                    /*gmx_bool bCM,*/ const char *method,
                    /*const char **rdft, */ gmx_bool bXY, gmx_bool bPBC, gmx_bool bNormalize,
-                   real cutoff, real binwidth, real fade, int ng,
+                   real cutoff, real maxq, real minq, int nbinq, real binwidth, real fade, int ng,
                    const output_env_t oenv)
 {
     FILE          *fp;
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
-    int            g, natoms, i, ii, j, k, nbin, j0, j1, n, nframes;
+    int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, nframes;
     int          **count;
+    real         **s_method, analytical_integral, *arr_q;
     char         **grpname;
     int           *isize, isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
     atom_id      **index, *index_cm = NULL;
     gmx_int64_t   *sum;
-    real           t, rmax2, cut2, r, r2, r2ii, invhbinw, normfac;
+    real           t, rmax2, rmax, cut2, r, r_dist, r2, r2ii, invhbinw, normfac;
     real           segvol, spherevol, prev_spherevol, **rdf;
     rvec          *x, dx, *x0 = NULL, *x_i1, xi;
     real          *inv_segvol, invvol, invvol_sum, rho;
@@ -212,12 +213,11 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     excl = NULL;
 
     bClose = (method[0] != 'c');
-
     if (fnTPS)
     {
         snew(top, 1);
         bTop = read_tps_conf(fnTPS, title, top, &ePBC, &x, NULL, box, TRUE);
-        if (bTop /* && !(bCM || bClose)*/)  /* bCM is false unless specified */
+        if (bTop )
         {
             /* get exclusions from topology */
             excl = &(top->excls);
@@ -232,59 +232,23 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     {
         get_index(&(top->atoms), fnNDX, ng+1, isize, index, grpname);
         atom = top->atoms.atom;
-        fprintf(stderr, "test input topology \n");
     }
     else
     {
         rd_index(fnNDX, ng+1, isize, index, grpname);
-        fprintf(stderr, " test input index\n");
 
     }
 
-    /*
-    if (bCM ||  bClose)
-    {
-        snew(is, 1);
-        snew(coi, 1);
-        if (bClose)
-        {
-            split_group(isize[0], index[0], grpname[0], top, method[0], &is[0], &coi[0]);
-        }
-    }
-    */
-/*    if (rdft[0][0] != 'a')
-    {
-        srenew(is, ng+1);
-        srenew(coi, ng+1);
-        for (g = ((bCM || bClose) ? 1 : 0); g < ng+1; g++)
-        {
-            split_group(isize[g], index[g], grpname[g], top, 'a', &is[g], &coi[g]);
-        }
-    }
-*/
-
-    /*if (bCM)
-    {
-        is[0] = 1;
-        snew(coi[0], is[0]+1);
-        coi[0][0] = 0;
-        coi[0][1] = isize[0];
-        isize0    = is[0];
-        snew(x0, isize0);
-    }
-    else */ if (bClose )
+    if (bClose )
     {
         isize0 = is[0];
         snew(x0, isize0);
-        fprintf(stderr, " test1 \n");
     }
     else
     {
         isize0 = isize[0];
-        fprintf(stderr, " test2 \n");
     }
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
-    fprintf(stderr, "\n read_first_configuration \n");
     if (!natoms)
     {
         gmx_fatal(FARGS, "Could not read coordinates from statusfile\n");
@@ -341,6 +305,8 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     if (bPBC)
     {
         rmax2   = 0.99*0.99*max_cutoff2(bXY ? epbcXY : epbcXYZ, box_pbc);
+        fprintf(stderr,"rmax2 %f\n",rmax2);
+        fprintf(stderr,"box_pbc %f\n",box_pbc[XX][XX]);
     }
     else
     {
@@ -357,14 +323,16 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     nbin     = (int)(sqrt(rmax2) * 2 / binwidth);
     invhbinw = 2.0 / binwidth;
     cut2     = sqr(cutoff);
+    rmax     = sqrt(rmax2);
 
+    fprintf(stderr,"nbinq %d\n", nbinq);
     snew(count, ng);
     snew(pairs, ng);
     snew(npairs, ng);
+    snew(s_method, ng);
 
     snew(bExcl, natoms);
     max_i = 0;
-    fprintf(stderr, " check before second loop \n");
     for (g = 0; g < ng; g++)
     {
         if (isize[g+1] > max_i)
@@ -374,17 +342,21 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
         /* this is THE array */
         snew(count[g], nbin+1);
-
+        fprintf(stderr,"nbin %d and size of count is %d and count[0] is %d, rmax is%f\n", nbin, (int)(sizeof(count[g])),count[g][0], rmax);
         /* make pairlist array for groups and exclusions */
         snew(pairs[g], isize[0]);
         snew(npairs[g], isize[0]);
-        fprintf(stderr, " check before inner loop \n");
+        /*allocate memory for s_method array */
+        snew(s_method[g], nbinq);
+        fprintf(stderr,"nbinq %d and size of s_method is %d and s_method[0] is %f and size of sample and isize[g+1] are %d %d\n", nbinq, (int)(sizeof(s_method[g]) /sizeof(int)),s_method[g][0],isize0,isize[g+1] );
+        snew(arr_q,nbinq);
+        for (qq = 0; qq< nbinq; qq++)
+        {
+            arr_q[qq]=minq+(maxq-minq)*qq/(nbinq);
+        }
         for (i = 0; i < isize[0]; i++)
         {   
             /* We can only have exclusions with atomic rdfs */
-            /*
-            if (!(FALSE || bClose || rdft[0][0] != 'a'))
-            { */
             ix = index[0][i];
             for (j = 0; j < natoms; j++)
             {
@@ -422,11 +394,6 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                 npairs[g][i] = -1;
                 sfree(pairs[g][i]);
             }
-        /*}
-            else
-            {
-                npairs[g][i] = -1;
-            } */
         }
     }
     sfree(bExcl);
@@ -464,48 +431,20 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         }
         invvol      = 1/det(box_pbc);
         invvol_sum += invvol;
-        /*if (bCM)
-        {
-            Calculate center of mass of the whole group  
-            calc_comg(is[0], coi[0], index[0], TRUE, atom, x, x0);
-        }
-        else   if (!bClose && rdft[0][0] != 'a') */
-        /*{ 
-        calc_comg(is[0], coi[0], index[0], FALSE, atom, x, x0);
-        fprintf(stderr, " check after calc_comg loop \n");
-        }*/
 
         for (g = 0; g < ng; g++)
         {
-/*
-            if (rdft[0][0] == 'a')
-            {*/
             for (i = 0; i < isize[g+1]; i++)
             {
                 copy_rvec(x[index[g+1][i]], x_i1[i]);
             }
-            /*
-            else
-            {
-                 Calculate the COMs/COGs and store in x_i1 
-                calc_comg(is[g+1], coi[g+1], index[g+1], FALSE, atom, x, x_i1);
-            }*/
             for (i = 0; i < isize0; i++)
             {
                 if (bClose)
                 {
                     /* Special loop, since we need to determine the minimum distance
-                     * over all selected atoms in the reference molecule/residue.
-                    
-                    if (rdft[0][0] == 'a')
-                    { */
+                     * over all selected atoms in the reference molecule/residue. */
                     isize_g = isize[g+1];
-                    fprintf(stderr, " check after bclose \n");
-                    /*}
-                    else
-                    {
-                    isize_g = is[g+1];
-                    }*/
                     for (j = 0; j < isize_g; j++)
                     {
                         r2 = 1e30;
@@ -543,16 +482,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                 {
                     /* Real rdf between points in space */
                     
-                /*    if (FALSE  ||  rdft[0][0] != 'a')
-                    {
-                        copy_rvec(x0[i], xi);
-                    }
-                
-                    else 
-                    {*/
-
                     copy_rvec(x[index[0][i]], xi);
-                    /*}*/
                     if (TRUE && npairs[g][i] >= 0)
                     {
                         /* Expensive loop, because of indexing */
@@ -578,21 +508,20 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                             }
                             if (r2 > cut2 && r2 <= rmax2)
                             {
-                                count[g][(int)(sqrt(r2)*invhbinw)]++;
+                                r_dist = sqrt(r2);
+                                count[g][(int)(r_dist*invhbinw)]++;
+                                for (qq = 0; qq < nbinq; qq++)
+                                {
+                                    s_method[g][qq]+=sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist);
+                                }
+
                             }
                         }
                     }
                     else
                     {
                         /* Cheaper loop, no exclusions */
-                        /*if (rdft[0][0] == 'a')
-                        {*/
                         isize_g = isize[g+1];
-                        /*}
-                        else
-                        {
-                            isize_g = is[g+1];
-                        }*/
                         for (j = 0; j < isize_g; j++)
                         {
                             if (bPBC)
@@ -612,8 +541,15 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                                 r2 = iprod(dx, dx);
                             }
                             if (r2 > cut2 && r2 <= rmax2)
-                            {
-                                count[g][(int)(sqrt(r2)*invhbinw)]++;
+                            {   
+                                r_dist = sqrt(r2);
+                                count[g][(int)(r_dist*invhbinw)]++;
+                                for (qq = 0; qq < nbinq; qq++)
+                                {
+                                    s_method[g][qq]+=sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist);
+                                    /*fprintf(stderr,"other loop isize0 %d, isize_g %d, i %d, j %d\n",isize0,isize_g,i,j);*/
+                                }
+
                             }
                         }
                     }
@@ -624,18 +560,26 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     }
     while (read_next_x(oenv, status, &t, x, box));
     fprintf(stderr, "\n");
-
     if (bPBC && (NULL != top))
     {
         gmx_rmpbc_done(gpbc);
     }
-
+    
     close_trj(status);
 
     sfree(x);
 
     /* Average volume */
     invvol = invvol_sum/nframes;
+    /* compute analytical integral*/
+    for (g = 0; g < ng; g++)
+    {  
+        for (qq = 0; qq < nbinq ; qq++)
+        {   
+            analytical_integral=(sin(arr_q[qq]*rmax) - arr_q[qq]*rmax*cos(arr_q[qq]*rmax))/pow(arr_q[qq],3.0);
+            s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) - 4.0*M_PI*isize0*invvol*analytical_integral ;
+        }
+    }
 
     /* Calculate volume of sphere segments or length of circle segments */
     snew(inv_segvol, (nbin+1)/2);
@@ -660,15 +604,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     for (g = 0; g < ng; g++)
     {
         /* We have to normalize by dividing by the number of frames */
-        /*if (rdft[0][0] == 'a')
-        {*/
         normfac = 1.0/(nframes*invvol*isize0*isize[g+1]);
-        /*}
-        else
-        {
-            normfac = 1.0/(nframes*invvol*isize0*is[g+1]);
-        }*/
-
         /* Do the normalization */
         nrdf = max((nbin+1)/2, 1+2*fade/binwidth);
         snew(rdf[g], nrdf);
@@ -705,22 +641,10 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         }
     }
 
-    /*if (rdft[0][0] == 'a')
-    {*/
-    sprintf(gtitle, "Radial distribution");
-    /*}
-    else
-    {
-        sprintf(gtitle, "Radial distribution of %s %s",
-                rdft[0][0] == 'm' ? "molecule" : "residue",
-                rdft[0][6] == 'm' ? "COM" : "COG");
-    }*/
-    fp = xvgropen(fnRDF, gtitle, "r", "", oenv);
-    /*if (bCM)
-    {
-        sprintf(refgt, " %s", "COM");
-    }
-    else */ if  (bClose)
+
+    sprintf(gtitle, "Structure factor");
+    fp = xvgropen(fnRDF, gtitle, "q", "", oenv);
+    if  (bClose)
     {
         sprintf(refgt, " closest atom in %s.", method);
     }
@@ -743,12 +667,12 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         }
         xvgr_legend(fp, ng, (const char**)(grpname+1), oenv);
     }
-    for (i = 0; (i < nrdf); i++)
+    for (qq = 1; qq < nbinq +1 ; qq++)
     {
-        fprintf(fp, "%10g", i*binwidth);
+        fprintf(fp, "%10g", arr_q[qq-1]);
         for (g = 0; g < ng; g++)
         {
-            fprintf(fp, " %10g", rdf[g][i]);
+            fprintf(fp, " %10g", s_method[g][qq-1]);
         }
         fprintf(fp, "\n");
     }
@@ -845,17 +769,23 @@ int gmx_sfact(int argc, char *argv[])
         "This however converges slowly with the box size for small values of q.[PAR]",
         "The option rdf is based on the definition of S(q) for an isotropic system c.f",
         "M.P. Allen and D.J. Tildesley pp. 58.[PAR]",
-        "The method cosmon (default) is based on our own way to compute it",
-        "which is S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.[PAR]",
+        "The method cosmo (default) uses the following expression to compute S(q):",
+        "S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.[PAR]",
     };
     static gmx_bool    /*bCM     = FALSE,*/ bXY = FALSE, bPBC = TRUE, bNormalize = TRUE;
-    static real        cutoff  = 0, binwidth = 0.002, fade = 0.0;
-    static int         ngroups = 1;
+    static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0;
+    static int         ngroups = 1, nbinq = 200;
 
     static const char *methodt[] = { NULL, "cosmo", "rdf", "sumexp", NULL }; 
    /* static const char *rdft[]   = { NULL, "atom", "mol_com", "mol_cog", "res_com", "res_cog", NULL };*/
 
     t_pargs            pa[] = {
+        { "-maxq",      FALSE, etREAL, {&maxq},
+        "max wave-vector (1/nm)" },
+        { "-minq",      FALSE, etREAL, {&minq},
+        "min wave-vector (1/nm)" },
+        { "-nbinq",      FALSE, etINT, {&nbinq},
+        "number of bins over wave-vector" },
         { "-bin",      FALSE, etREAL, {&binwidth},
           "Binwidth (nm)" },
 /*        { "-com",      FALSE, etBOOL, {&bCM},
@@ -897,14 +827,7 @@ int gmx_sfact(int argc, char *argv[])
         return 0;
     }
 
-    if ( methodt[0][0] != 'c' )
-    {
-        fnTPS = ftp2fn(efTPS, NFILE, fnm);
-    }
-    else
-    {
-        fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
-    }
+    fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
 
     if (!fnTPS && !fnNDX)
@@ -913,20 +836,10 @@ int gmx_sfact(int argc, char *argv[])
                   "Nothing to do!");
     }
    
-
-    if (methodt[0][0] != 'c')
-    {
-        if (bNormalize)
-        {
-            fprintf(stderr, "Turning of normalization because of option -surf\n");
-            bNormalize = FALSE;
-        }
-    }
-    
-    do_rdf(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
+    do_sfact(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-cn", NFILE, fnm),
            opt2fn_null("-hq", NFILE, fnm),
-           /*bCM,*/ methodt[0], bXY, bPBC, bNormalize, cutoff, binwidth, fade, ngroups,
+           /*bCM,*/ methodt[0], bXY, bPBC, bNormalize, cutoff, maxq, minq, nbinq, binwidth, fade, ngroups,
            oenv);
 
     return 0;
