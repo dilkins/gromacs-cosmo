@@ -576,7 +576,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     {  
         for (qq = 0; qq < nbinq ; qq++)
         {   
-            analytical_integral=(sin(arr_q[qq]*rmax) - arr_q[qq]*rmax*cos(arr_q[qq]*rmax))/pow(arr_q[qq],3.0);
+            analytical_integral=(sin(arr_q[qq]*rmax) - arr_q[qq]*rmax*cos(arr_q[qq]*rmax))/(arr_q[qq]*arr_q[qq]*arr_q[qq]);
             s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) - 4.0*M_PI*isize0*invvol*analytical_integral ;
         }
     }
@@ -816,8 +816,8 @@ int gmx_sfact(int argc, char *argv[])
         { efTRX, "-f",  NULL,     ffREAD },
         { efTPS, NULL,  NULL,     ffOPTRD },
         { efNDX, NULL,  NULL,     ffOPTRD },
-        { efXVG, "-o",  "rdf",    ffWRITE },
-        { efXVG, "-cn", "rdf_cn", ffOPTWR },
+        { efXVG, "-o",  "sfact",    ffWRITE },
+        { efXVG, "-cn", "sfact_cn", ffOPTWR },
         { efXVG, "-hq", "hq",     ffOPTWR },
     };
 #define NFILE asize(fnm)
