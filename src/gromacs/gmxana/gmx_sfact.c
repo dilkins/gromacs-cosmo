@@ -60,142 +60,33 @@
 #include "gstat.h"
 #include "gromacs/fileio/matio.h"
 #include "gmx_ana.h"
+/*#include "sfactor_func.h"*/
 #include "names.h"
 
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
-static void check_box_c(matrix box)
-{
-    if (fabs(box[ZZ][XX]) > GMX_REAL_EPS*box[ZZ][ZZ] ||
-        fabs(box[ZZ][YY]) > GMX_REAL_EPS*box[ZZ][ZZ])
-    {
-        gmx_fatal(FARGS,
-                  "The last box vector is not parallel to the z-axis: %f %f %f",
-                  box[ZZ][XX], box[ZZ][YY], box[ZZ][ZZ]);
-    }
-}
-
-static void calc_comg(int is, int *coi, int *index, gmx_bool bMass, t_atom *atom,
-                      rvec *x, rvec *x_comg)
-{
-    int  c, i, d;
-    rvec xc;
-    real mtot, m;
-    if (bMass && atom == NULL)
-    {
-        gmx_fatal(FARGS, "No masses available while mass weighting was requested");
-    }
-
-    for (c = 0; c < is; c++)
-    {
-        clear_rvec(xc);
-        mtot = 0;
-        for (i = coi[c]; i < coi[c+1]; i++)
-        {
-            if (bMass)
-            {
-                m = atom[index[i]].m;
-                for (d = 0; d < DIM; d++)
-                {
-                    xc[d] += m*x[index[i]][d];
-                }
-                mtot += m;
-            }
-            else
-            {
-                rvec_inc(xc, x[index[i]]);
-                mtot += 1.0;
-            }
-        }
-        svmul(1/mtot, xc, x_comg[c]);
-    }
-}
-
-static void split_group(int isize, int *index, char *grpname,
-                        t_topology *top, char type,
-                        int *is_out, int **coi_out)
-{
-    t_block *mols = NULL;
-    t_atom  *atom = NULL;
-    int      is, *coi;
-    int      cur, mol, res, i, a, i1;
-
-    /* Split up the group in molecules or residues */
-    switch (type)
-    {
-        case 'm':
-            mols = &top->mols;
-            break;
-        case 'r':
-            atom = top->atoms.atom;
-            break;
-        default:
-            gmx_fatal(FARGS, "Unknown rdf option '%s'", type);
-    }
-    snew(coi, isize+1); /* snew is used to allocate a pointer with nelem snew(ptr, nelem) */
-    is  = 0;
-    cur = -1;
-    mol = 0;
-    for (i = 0; i < isize; i++)
-    {
-        a = index[i];
-        if (type == 'm')
-        {
-            /* Check if the molecule number has changed */
-            i1 = mols->index[mol+1];
-            while (a >= i1)
-            {
-                mol++;
-                i1 = mols->index[mol+1];
-            }
-            if (mol != cur)
-            {
-                coi[is++] = i;
-                cur       = mol;
-            }
-        }
-        else if (type == 'r')
-        {
-            /* Check if the residue index has changed */
-            res = atom[a].resind;
-            if (res != cur)
-            {
-                coi[is++] = i;
-                cur       = res;
-            }
-        }
-    }
-    coi[is] = i;
-    srenew(coi, is+1);
-    printf("Group '%s' of %d atoms consists of %d %s\n",
-           grpname, isize, is,
-           (type == 'm' ? "molecules" : "residues"));
-
-    *is_out  = is;
-    *coi_out = coi;
-}
-
 static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
-                   const char *fnRDF, const char *fnCNRDF, const char *fnHQ,
-                   /*gmx_bool bCM,*/ const char *method,
-                   /*const char **rdft, */ gmx_bool bXY, gmx_bool bPBC, gmx_bool bNormalize,
-                   real cutoff, real maxq, real minq, int nbinq, real binwidth, real fade, int ng,
+                   const char *fnSFACT, const char *fnOSRDF, const char *fnORDF,const char *fnHQ,
+                   const char *method,
+                   gmx_bool bPBC, gmx_bool bNormalize,
+                   real cutoff, real maxq, real minq, int nbinq, int kx, int ky, int kz, real binwidth, real fade, int ng,
                    const output_env_t oenv)
 {
     FILE          *fp;
+    FILE          *fpn;
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, nframes;
     int          **count;
-    real         **s_method, analytical_integral, *arr_q;
+    real         **s_method, **s_method_g_r, analytical_integral, *arr_q, *cos_q, *sin_q;
     char         **grpname;
     int           *isize, isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
     atom_id      **index, *index_cm = NULL;
     gmx_int64_t   *sum;
-    real           t, rmax2, rmax, cut2, r, r_dist, r2, r2ii, invhbinw, normfac;
+    real           t, rmax2, rmax, cut2, r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac;
     real           segvol, spherevol, prev_spherevol, **rdf;
-    rvec          *x, dx, *x0 = NULL, *x_i1, xi;
+    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec, arr_qvec2;
     real          *inv_segvol, invvol, invvol_sum, rho;
     gmx_bool       bClose, *bExcl, bTop, bNonSelfExcl;
     matrix         box, box_pbc;
@@ -212,7 +103,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
     excl = NULL;
 
-    bClose = (method[0] != 'c');
+    bClose = FALSE ; /*(method[0] != 'c'); */
     if (fnTPS)
     {
         snew(top, 1);
@@ -282,29 +173,10 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         ePBC = guess_ePBC(box);
     }
     copy_mat(box, box_pbc);
-    if (bXY)
-    {
-        check_box_c(box);
-        switch (ePBC)
-        {
-            case epbcXYZ:
-            case epbcXY:   ePBCrdf = epbcXY;   break;
-            case epbcNONE: ePBCrdf = epbcNONE; break;
-            default:
-                gmx_fatal(FARGS, "xy-rdf's are not supported for pbc type'%s'",
-                          EPBC(ePBC));
-                break;
-        }
-        /* Make sure the z-height does not influence the cut-off */
-        box_pbc[ZZ][ZZ] = 2*max(box[XX][XX], box[YY][YY]);
-    }
-    else
-    {
-        ePBCrdf = ePBC;
-    }
+    ePBCrdf = ePBC;
     if (bPBC)
     {
-        rmax2   = 0.99*0.99*max_cutoff2(bXY ? epbcXY : epbcXYZ, box_pbc);
+        rmax2   = 0.99*0.99*max_cutoff2(FALSE ? epbcXY : epbcXYZ, box_pbc);
         fprintf(stderr,"rmax2 %f\n",rmax2);
         fprintf(stderr,"box_pbc %f\n",box_pbc[XX][XX]);
     }
@@ -330,6 +202,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     snew(pairs, ng);
     snew(npairs, ng);
     snew(s_method, ng);
+    snew(s_method_g_r, ng);
 
     snew(bExcl, natoms);
     max_i = 0;
@@ -342,17 +215,23 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
         /* this is THE array */
         snew(count[g], nbin+1);
-        fprintf(stderr,"nbin %d and size of count is %d and count[0] is %d, rmax is%f\n", nbin, (int)(sizeof(count[g])),count[g][0], rmax);
         /* make pairlist array for groups and exclusions */
         snew(pairs[g], isize[0]);
         snew(npairs[g], isize[0]);
         /*allocate memory for s_method array */
         snew(s_method[g], nbinq);
-        fprintf(stderr,"nbinq %d and size of s_method is %d and s_method[0] is %f and size of sample and isize[g+1] are %d %d\n", nbinq, (int)(sizeof(s_method[g]) /sizeof(int)),s_method[g][0],isize0,isize[g+1] );
+        snew(s_method_g_r[g], nbinq);
         snew(arr_q,nbinq);
+        snew(cos_q,nbinq);
+        snew(sin_q,nbinq);
+        normfac = 1./sqr(kx*kx + ky*ky + kz*kz) ;
+        arr_qvec[XX] = normfac*kx;
+        arr_qvec[YY] = normfac*ky;
+        arr_qvec[ZZ] = normfac*kz;
+        dq=(maxq-minq)/nbinq ;       
         for (qq = 0; qq< nbinq; qq++)
         {
-            arr_q[qq]=minq+(maxq-minq)*qq/(nbinq);
+            arr_q[qq]=minq+dq*qq;
         }
         for (i = 0; i < isize[0]; i++)
         {   
@@ -405,160 +284,178 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     {
         gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
     }
-
-    do
+    if (method[0] == 'c')
     {
-        /* Must init pbc every step because of pressure coupling */
-        copy_mat(box, box_pbc);
-        if (bPBC)
+        do
         {
-            if (top != NULL)
+            /* Must init pbc every step because of pressure coupling */
+            copy_mat(box, box_pbc);
+            if (bPBC)
             {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            if (bXY)
-            {
-                check_box_c(box);
-                clear_rvec(box_pbc[ZZ]);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
-
-            if (bXY)
-            {
-                /* Set z-size to 1 so we get the surface iso the volume */
-                box_pbc[ZZ][ZZ] = 1;
-            }
-        }
-        invvol      = 1/det(box_pbc);
-        invvol_sum += invvol;
-
-        for (g = 0; g < ng; g++)
-        {
-            for (i = 0; i < isize[g+1]; i++)
-            {
-                copy_rvec(x[index[g+1][i]], x_i1[i]);
-            }
-            for (i = 0; i < isize0; i++)
-            {
-                if (bClose)
+                if (top != NULL)
                 {
-                    /* Special loop, since we need to determine the minimum distance
-                     * over all selected atoms in the reference molecule/residue. */
-                    isize_g = isize[g+1];
-                    for (j = 0; j < isize_g; j++)
-                    {
-                        r2 = 1e30;
-                        /* Loop over the selected atoms in the reference molecule */
-                        for (ii = coi[0][i]; ii < coi[0][i+1]; ii++)
-                        {
-                            if (bPBC)
-                            {
-                                pbc_dx(&pbc, x[index[0][ii]], x_i1[j], dx);
-                            }
-                            else
-                            {
-                                rvec_sub(x[index[0][ii]], x_i1[j], dx);
-                            }
-                            if (bXY)
-                            {
-                                r2ii = dx[XX]*dx[XX] + dx[YY]*dx[YY];
-                            }
-                            else
-                            {
-                                r2ii = iprod(dx, dx);
-                            }
-                            if (r2ii < r2)
-                            {
-                                r2 = r2ii;
-                            }
-                        }
-                        if (r2 > cut2 && r2 <= rmax2)
-                        {
-                            count[g][(int)(sqrt(r2)*invhbinw)]++;
-                        }
-                    }
+                    gmx_rmpbc(gpbc, natoms, box, x);
                 }
-                else
+                set_pbc(&pbc, ePBCrdf, box_pbc);
+    
+            }
+            invvol      = 1/det(box_pbc);
+            invvol_sum += invvol;
+    
+            for (g = 0; g < ng; g++)
+            {
+                for (i = 0; i < isize[g+1]; i++)
                 {
-                    /* Real rdf between points in space */
-                    
-                    copy_rvec(x[index[0][i]], xi);
-                    if (TRUE && npairs[g][i] >= 0)
+                    copy_rvec(x[index[g+1][i]], x_i1[i]);
+                }
+                for (i = 0; i < isize0; i++)
+                {
+                    if (bClose)
                     {
-                        /* Expensive loop, because of indexing */
-                        for (j = 0; j < npairs[g][i]; j++)
+                        /* Special loop, since we need to determine the minimum distance
+                         * over all selected atoms in the reference molecule/residue. */
+                        isize_g = isize[g+1];
+                        for (j = 0; j < isize_g; j++)
                         {
-                            jx = pairs[g][i][j];
-                            if (bPBC)
+                            r2 = 1e30;
+                            /* Loop over the selected atoms in the reference molecule */
+                            for (ii = coi[0][i]; ii < coi[0][i+1]; ii++)
                             {
-                                pbc_dx(&pbc, xi, x[jx], dx);
-                            }
-                            else
-                            {
-                                rvec_sub(xi, x[jx], dx);
-                            }
-
-                            if (bXY)
-                            {
-                                r2 = dx[XX]*dx[XX] + dx[YY]*dx[YY];
-                            }
-                            else
-                            {
-                                r2 = iprod(dx, dx);
+                                if (bPBC)
+                                {
+                                    pbc_dx(&pbc, x[index[0][ii]], x_i1[j], dx);
+                                }
+                                else
+                                {
+                                    rvec_sub(x[index[0][ii]], x_i1[j], dx);
+                                }
+                                r2ii = iprod(dx, dx);
+                                if (r2ii < r2)
+                                {
+                                    r2 = r2ii;
+                                }
                             }
                             if (r2 > cut2 && r2 <= rmax2)
                             {
-                                r_dist = sqrt(r2);
-                                count[g][(int)(r_dist*invhbinw)]++;
-                                for (qq = 0; qq < nbinq; qq++)
-                                {
-                                    s_method[g][qq]+=sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist);
-                                }
-
+                                count[g][(int)(sqrt(r2)*invhbinw)]++;
                             }
                         }
                     }
                     else
                     {
-                        /* Cheaper loop, no exclusions */
-                        isize_g = isize[g+1];
-                        for (j = 0; j < isize_g; j++)
+                        /* Real rdf between points in space */
+                        copy_rvec(x[index[0][i]], xi);
+                        if ( npairs[g][i] >= 0)
                         {
-                            if (bPBC)
+                            /* Expensive loop, because of indexing */
+                            for (j = 0; j < npairs[g][i]; j++)
                             {
-                                pbc_dx(&pbc, xi, x_i1[j], dx);
-                            }
-                            else
-                            {
-                                rvec_sub(xi, x_i1[j], dx);
-                            }
-                            if (bXY)
-                            {
-                                r2 = dx[XX]*dx[XX] + dx[YY]*dx[YY];
-                            }
-                            else
-                            {
-                                r2 = iprod(dx, dx);
-                            }
-                            if (r2 > cut2 && r2 <= rmax2)
-                            {   
-                                r_dist = sqrt(r2);
-                                count[g][(int)(r_dist*invhbinw)]++;
-                                for (qq = 0; qq < nbinq; qq++)
+                                jx = pairs[g][i][j];
+                                if (bPBC)
                                 {
-                                    s_method[g][qq]+=sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist);
-                                    /*fprintf(stderr,"other loop isize0 %d, isize_g %d, i %d, j %d\n",isize0,isize_g,i,j);*/
+                                    pbc_dx(&pbc, xi, x[jx], dx);
                                 }
-
+                                else
+                                {
+                                    rvec_sub(xi, x[jx], dx);
+                                }
+    
+                                r2 = iprod(dx, dx);
+                                if (r2 > cut2 && r2 <= rmax2)
+                                {
+                                    r_dist = sqrt(r2);
+                                    count[g][(int)(r_dist*invhbinw)]++;
+                                    for (qq = 0; qq < nbinq; qq++)
+                                    {
+                                        s_method[g][qq]+=sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist);
+                                    }
+    
+                                }
+                            }
+                        }
+                        else
+                        {
+                            /* Cheaper loop, no exclusions */
+                            isize_g = isize[g+1];
+                            for (j = 0; j < isize_g; j++)
+                            {
+                                if (bPBC)
+                                {
+                                    pbc_dx(&pbc, xi, x_i1[j], dx);
+                                }
+                                else
+                                {
+                                    rvec_sub(xi, x_i1[j], dx);
+                                }
+                                r2 = iprod(dx, dx);
+                                if (r2 > cut2 && r2 <= rmax2)
+                                {   
+                                    r_dist = sqrt(r2);
+                                    count[g][(int)(r_dist*invhbinw)]++;
+                                    for (qq = 0; qq < nbinq; qq++)
+                                    {
+                                        s_method[g][qq]+=sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist);
+                                    }
+    
+                                }
                             }
                         }
                     }
                 }
             }
+            nframes++;
         }
-        nframes++;
+        while (read_next_x(oenv, status, &t, x, box));
     }
-    while (read_next_x(oenv, status, &t, x, box));
+    else if (method[0] == 's')
+    {   
+        fprintf(stderr,"loop with sumexp method \n");
+        do
+        {
+            /* Must init pbc every step because of pressure coupling */
+            copy_mat(box, box_pbc);
+            if (bPBC)
+            {
+                if (top != NULL)
+                {
+                    gmx_rmpbc(gpbc, natoms, box, x);
+                }
+                set_pbc(&pbc, ePBCrdf, box_pbc);
+    
+            }
+            invvol      = 1/det(box_pbc);
+            invvol_sum += invvol;
+            for (g = 0; g < ng; g++)
+            {
+                for (i = 0; i < isize[g+1]; i++)
+                {
+                    copy_rvec(x[index[g+1][i]], x_i1[i]);
+                }
+                snew(cos_q,nbinq);
+                snew(sin_q,nbinq);
+                for (i = 0; i < isize0; i++)
+                {
+                    copy_rvec(x[index[0][i]], xi);
+                    isize_g = isize[g+1];
+                    for (qq = 0; qq < nbinq; qq++)
+                    {
+                        svmul((minq+dq*qq), arr_qvec, arr_qvec2) ;
+                        q_xi=iprod(arr_qvec2,xi);
+                        cos_q[qq] += cos(q_xi);
+                        sin_q[qq] += sin(q_xi);
+                    }
+                }
+                for (qq = 0; qq < nbinq; qq++)
+                {
+                    s_method[g][qq]+= cos_q[qq]*cos_q[qq] + sin_q[qq]*sin_q[qq];
+                }
+                sfree(cos_q);
+                sfree(sin_q);
+            }
+            nframes++;
+        }
+        while (read_next_x(oenv, status, &t, x, box));
+    }
     fprintf(stderr, "\n");
     if (bPBC && (NULL != top))
     {
@@ -571,87 +468,90 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
     /* Average volume */
     invvol = invvol_sum/nframes;
-    /* compute analytical integral*/
-    for (g = 0; g < ng; g++)
-    {  
-        for (qq = 0; qq < nbinq ; qq++)
-        {   
-            analytical_integral=(sin(arr_q[qq]*rmax) - arr_q[qq]*rmax*cos(arr_q[qq]*rmax))/(arr_q[qq]*arr_q[qq]*arr_q[qq]);
-            s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) - 4.0*M_PI*isize0*invvol*analytical_integral ;
-        }
-    }
-
-    /* Calculate volume of sphere segments or length of circle segments */
-    snew(inv_segvol, (nbin+1)/2);
-    prev_spherevol = 0;
-    for (i = 0; (i < (nbin+1)/2); i++)
+    if (method[0]=='c')
     {
-        r = (i + 0.5)*binwidth;
-        if (bXY)
-        {
-            spherevol = M_PI*r*r;
-        }
-        else
-        {
-            spherevol = (4.0/3.0)*M_PI*r*r*r;
-        }
-        segvol         = spherevol-prev_spherevol;
-        inv_segvol[i]  = 1.0/segvol;
-        prev_spherevol = spherevol;
+       /* Calculate volume of sphere segments or length of circle segments */
+       snew(inv_segvol, (nbin+1)/2);
+       prev_spherevol = 0;
+       for (i = 0; (i < (nbin+1)/2); i++)
+       {
+           r = (i + 0.5)*binwidth;
+           spherevol = (4.0/3.0)*M_PI*r*r*r;
+           segvol         = spherevol-prev_spherevol;
+           inv_segvol[i]  = 1.0/segvol;
+           prev_spherevol = spherevol;
+       }
+   
+       snew(rdf, ng);
+       for (g = 0; g < ng; g++)
+       {
+           /* We have to normalize by dividing by the number of frames */
+           normfac = 1.0/(nframes*invvol*isize0*isize[g+1]);
+           /* Do the normalization */
+           nrdf = max((nbin+1)/2, 1+2*fade/binwidth);
+           snew(rdf[g], nrdf);
+           for (i = 0; i < (nbin+1)/2; i++)
+           {
+               r = i*binwidth;
+               if (i == 0)
+               {
+                   j = count[g][0];
+               }
+               else
+               {
+                   j = count[g][i*2-1] + count[g][i*2];
+               }
+               if ((fade > 0) && (r >= fade))
+               {
+                   rdf[g][i] = 1 + (j*inv_segvol[i]*normfac-1)*exp(-16*sqr(r/fade-1));
+               }
+               else
+               {
+                   if (bNormalize)
+                   {
+                       rdf[g][i] = j*inv_segvol[i]*normfac;
+                   }
+                   else
+                   {
+                       rdf[g][i] = j/(binwidth*isize0*nframes);
+                   }
+               }
+           }
+           for (; (i < nrdf); i++)
+           {
+               rdf[g][i] = 1.0;
+           }
+       }
+       for (g = 0; g < ng; g++)
+       {
+           /* compute analytical integral for the cosmo method and the S(q), and also the S(q) for the conventional g(r) method*/
+           for (qq = 0; qq < nbinq ; qq++)
+           {
+               analytical_integral=(sin(arr_q[qq]*rmax) - arr_q[qq]*rmax*cos(arr_q[qq]*rmax))/(arr_q[qq]*arr_q[qq]*arr_q[qq]);
+               s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) - 4.0*M_PI*isize0*invvol*analytical_integral;
+               for (i = 0; i< (nbin+1)/2 ; i++)
+               {
+                   r = i*binwidth;
+                   s_method_g_r[g][qq] += binwidth*r*sin(arr_q[qq]*r)*(rdf[g][i]-1.0)/arr_q[qq] ;
+               }               
+               s_method_g_r[g][qq] = s_method_g_r[g][qq]*4.0*M_PI*isize0*invvol + 1.0;
+           }
+       }
     }
-
-    snew(rdf, ng);
-    for (g = 0; g < ng; g++)
+    else if (method[0]=='s')
     {
-        /* We have to normalize by dividing by the number of frames */
-        normfac = 1.0/(nframes*invvol*isize0*isize[g+1]);
-        /* Do the normalization */
-        nrdf = max((nbin+1)/2, 1+2*fade/binwidth);
-        snew(rdf[g], nrdf);
-        for (i = 0; i < (nbin+1)/2; i++)
-        {
-            r = i*binwidth;
-            if (i == 0)
-            {
-                j = count[g][0];
-            }
-            else
-            {
-                j = count[g][i*2-1] + count[g][i*2];
-            }
-            if ((fade > 0) && (r >= fade))
-            {
-                rdf[g][i] = 1 + (j*inv_segvol[i]*normfac-1)*exp(-16*sqr(r/fade-1));
-            }
-            else
-            {
-                if (bNormalize)
-                {
-                    rdf[g][i] = j*inv_segvol[i]*normfac;
-                }
-                else
-                {
-                    rdf[g][i] = j/(binwidth*isize0*nframes);
-                }
-            }
-        }
-        for (; (i < nrdf); i++)
-        {
-            rdf[g][i] = 1.0;
-        }
+       for (g = 0; g < ng; g++)
+       {
+           for (qq = 0; qq < nbinq ; qq++)
+           {
+               s_method[g][qq] = s_method[g][qq]/(nframes*isize0)  ;
+           }
+       }
     }
-
 
     sprintf(gtitle, "Structure factor");
-    fp = xvgropen(fnRDF, gtitle, "q", "", oenv);
-    if  (bClose)
-    {
-        sprintf(refgt, " closest atom in %s.", method);
-    }
-    else
-    {
-        sprintf(refgt, "%s", "");
-    }
+    fp = xvgropen(fnSFACT, gtitle, "q", "S(q)", oenv);
+    sprintf(refgt, "%s", "");
     if (ng == 1)
     {
         if (output_env_get_print_xvgr_codes(oenv))
@@ -667,20 +567,66 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         }
         xvgr_legend(fp, ng, (const char**)(grpname+1), oenv);
     }
-    for (qq = 1; qq < nbinq +1 ; qq++)
+    for (qq = 0; qq < nbinq  ; qq++)
     {
-        fprintf(fp, "%10g", arr_q[qq-1]);
+        fprintf(fp, "%10g", arr_q[qq]);
         for (g = 0; g < ng; g++)
         {
-            fprintf(fp, " %10g", s_method[g][qq-1]);
+            fprintf(fp, " %10g", s_method[g][qq]);
         }
         fprintf(fp, "\n");
     }
     gmx_ffclose(fp);
 
-    do_view(oenv, fnRDF, NULL);
+    do_view(oenv, fnSFACT, NULL);
 
-    /* h(Q) function: fourier transform of rdf */
+    if (fnOSRDF && method[0]!='s')
+    {
+        fp = xvgropen(fnOSRDF, "S(q) evaluated from g(r)", "q", "S(q)", oenv);
+        fpn = xvgropen(fnORDF, "Radial distribution function", "r", "g(r)", oenv);
+        if (ng == 1)
+        {
+            if (output_env_get_print_xvgr_codes(oenv))
+            {
+                fprintf(fp, "@ subtitle \"%s-%s\"\n", grpname[0], grpname[1]);
+                fprintf(fpn, "@ subtitle \"%s-%s\"\n", grpname[0], grpname[1]);
+            }
+        }
+        else
+        {
+            if (output_env_get_print_xvgr_codes(oenv))
+            {
+                fprintf(fp, "@ subtitle \"reference %s\"\n", grpname[0]);
+                fprintf(fpn, "@ subtitle \"reference %s\"\n", grpname[0]);
+            }
+            xvgr_legend(fp, ng, (const char**)(grpname+1), oenv);
+            xvgr_legend(fpn, ng, (const char**)(grpname+1), oenv);
+        }
+        for (qq = 0; qq < nbinq  ; qq++)
+        {
+            fprintf(fp, "%10g", arr_q[qq]);
+            for (g = 0; g < ng; g++)
+            {
+                fprintf(fp, " %10g", s_method_g_r[g][qq]);
+            }
+            fprintf(fp, "\n");
+        }
+        gmx_ffclose(fp);
+        do_view(oenv, fnOSRDF, NULL);
+
+        for (i = 0; (i < nrdf)  ; i++)
+        {
+            fprintf(fpn, "%10g", i*binwidth);
+            for (g = 0; g < ng; g++)
+            {
+                fprintf(fpn, " %10g", rdf[g][i]);
+            }
+            fprintf(fpn, "\n");
+        }
+        gmx_ffclose(fpn);
+        do_view(oenv, fnORDF, NULL);
+    }
+
     if (fnHQ)
     {
         int   nhq = 401;
@@ -712,51 +658,27 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         sfree(hq);
         sfree(integrand);
     }
-
-    if (fnCNRDF)
+    
+    if (method[0] == 'c')
     {
-        normfac = 1.0/(isize0*nframes);
-        fp      = xvgropen(fnCNRDF, "Cumulative Number RDF", "r", "number", oenv);
-        if (ng == 1)
-        {
-            if (output_env_get_print_xvgr_codes(oenv))
-            {
-                fprintf(fp, "@ subtitle \"%s-%s\"\n", grpname[0], grpname[1]);
-            }
-        }
-        else
-        {
-            if (output_env_get_print_xvgr_codes(oenv))
-            {
-                fprintf(fp, "@ subtitle \"reference %s\"\n", grpname[0]);
-            }
-            xvgr_legend(fp, ng, (const char**)(grpname+1), oenv);
-        }
-        snew(sum, ng);
-        for (i = 0; (i <= nbin/2); i++)
-        {
-            fprintf(fp, "%10g", i*binwidth);
-            for (g = 0; g < ng; g++)
-            {
-                fprintf(fp, " %10g", (real)((double)sum[g]*normfac));
-                if (i*2+1 < nbin)
-                {
-                    sum[g] += count[g][i*2] + count[g][i*2+1];
-                }
-            }
-            fprintf(fp, "\n");
-        }
-        gmx_ffclose(fp);
-        sfree(sum);
-
-        do_view(oenv, fnCNRDF, NULL);
+       for (g = 0; g < ng; g++)
+       {
+          sfree(rdf[g]);
+          sfree(s_method[g]);
+          sfree(s_method_g_r[g]);
+       }
+       sfree(rdf);
+       sfree(s_method);
+       sfree(s_method_g_r);
     }
-
-    for (g = 0; g < ng; g++)
+    else if (method[0] == 's')  
     {
-        sfree(rdf[g]);
+       for (g = 0; g < ng; g++)
+       {
+          sfree(s_method[g]);
+       }
+       sfree(s_method);
     }
-    sfree(rdf);
 }
 
 
@@ -770,13 +692,15 @@ int gmx_sfact(int argc, char *argv[])
         "The option rdf is based on the definition of S(q) for an isotropic system c.f",
         "M.P. Allen and D.J. Tildesley pp. 58.[PAR]",
         "The method cosmo (default) uses the following expression to compute S(q):",
-        "S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.[PAR]",
+        "S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.",
+        "Using the option all all the methods will be used.[PAR]",
     };
-    static gmx_bool    /*bCM     = FALSE,*/ bXY = FALSE, bPBC = TRUE, bNormalize = TRUE;
+    static gmx_bool    /*bCM     = FALSE,*/ bPBC = TRUE, bNormalize = TRUE;
     static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0;
+    static int        kx = 1, ky = 0, kz = 0;
     static int         ngroups = 1, nbinq = 200;
 
-    static const char *methodt[] = { NULL, "cosmo", "rdf", "sumexp", NULL }; 
+    static const char *methodt[] = { NULL, "cosmo",  "sumexp", "all", NULL }; 
    /* static const char *rdft[]   = { NULL, "atom", "mol_com", "mol_cog", "res_com", "res_cog", NULL };*/
 
     t_pargs            pa[] = {
@@ -786,8 +710,11 @@ int gmx_sfact(int argc, char *argv[])
         "min wave-vector (1/nm)" },
         { "-nbinq",      FALSE, etINT, {&nbinq},
         "number of bins over wave-vector" },
+        { "-kx",         FALSE, etINT, {&kx}, "direction of k-vector in x (1 or 0)" },
+        { "-ky",         FALSE, etINT, {&ky}, "direction of k-vector in y (1 or 0)"},
+        { "-kz",         FALSE, etINT, {&kz}, "direction of k-vector in z (1 or 0)" },
         { "-bin",      FALSE, etREAL, {&binwidth},
-          "Binwidth (nm)" },
+          "Binwidth for g(r) (nm)" },
 /*        { "-com",      FALSE, etBOOL, {&bCM},
           "RDF with respect to the center of mass of first group" }, */
         { "-method",     FALSE, etENUM, {methodt},
@@ -799,8 +726,6 @@ int gmx_sfact(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-norm",     FALSE, etBOOL, {&bNormalize},
           "Normalize for volume and density" },
-        { "-xy",       FALSE, etBOOL, {&bXY},
-          "Use only the x and y components of the distance" },
         { "-cut",      FALSE, etREAL, {&cutoff},
           "Shortest distance (nm) to be considered"},
         { "-ng",       FALSE, etINT, {&ngroups},
@@ -817,7 +742,8 @@ int gmx_sfact(int argc, char *argv[])
         { efTPS, NULL,  NULL,     ffOPTRD },
         { efNDX, NULL,  NULL,     ffOPTRD },
         { efXVG, "-o",  "sfact",    ffWRITE },
-        { efXVG, "-cn", "sfact_cn", ffOPTWR },
+        { efXVG, "-osrdf", "sfact_rdf", ffOPTWR },
+        { efXVG, "-ordf", "rdf", ffOPTWR },
         { efXVG, "-hq", "hq",     ffOPTWR },
     };
 #define NFILE asize(fnm)
@@ -837,9 +763,10 @@ int gmx_sfact(int argc, char *argv[])
     }
    
     do_sfact(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
-           opt2fn("-o", NFILE, fnm), opt2fn_null("-cn", NFILE, fnm),
+           opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),
+           opt2fn_null("-ordf", NFILE, fnm),
            opt2fn_null("-hq", NFILE, fnm),
-           /*bCM,*/ methodt[0], bXY, bPBC, bNormalize, cutoff, maxq, minq, nbinq, binwidth, fade, ngroups,
+           /*bCM,*/ methodt[0],  bPBC, bNormalize, cutoff, maxq, minq, nbinq, kx, ky, kz, binwidth, fade, ngroups,
            oenv);
 
     return 0;
