@@ -66,10 +66,10 @@
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
 static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
-                   const char *fnSFACT, const char *fnOSRDF, const char *fnORDF,const char *fnHQ,
+                   const char *fnSFACT, const char *fnOSRDF, const char *fnORDF, /*const char *fnHQ, */
                    const char *method,
                    gmx_bool bPBC, gmx_bool bNormalize,
-                   real cutoff, real maxq, real minq, int nbinq, int kx, int ky, int kz, real binwidth, real fade, int ng,
+                   real cutoff, real maxq, real minq, int nbinq, real kx, real ky, real kz, real binwidth, real fade, int ng,
                    const output_env_t oenv)
 {
     FILE          *fp;
@@ -86,7 +86,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     gmx_int64_t   *sum;
     real           t, rmax2, rmax, cut2, r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac;
     real           segvol, spherevol, prev_spherevol, **rdf;
-    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec, arr_qvec2;
+    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec ;
     real          *inv_segvol, invvol, invvol_sum, rho;
     gmx_bool       bClose, *bExcl, bTop, bNonSelfExcl;
     matrix         box, box_pbc;
@@ -197,7 +197,6 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     cut2     = sqr(cutoff);
     rmax     = sqrt(rmax2);
 
-    fprintf(stderr,"nbinq %d\n", nbinq);
     snew(count, ng);
     snew(pairs, ng);
     snew(npairs, ng);
@@ -224,10 +223,10 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         snew(arr_q,nbinq);
         snew(cos_q,nbinq);
         snew(sin_q,nbinq);
-        normfac = 1./sqr(kx*kx + ky*ky + kz*kz) ;
-        arr_qvec[XX] = normfac*kx;
-        arr_qvec[YY] = normfac*ky;
-        arr_qvec[ZZ] = normfac*kz;
+        normfac = 1.0/sqrt(kx*kx + ky*ky + kz*kz) ;
+        arr_qvec[XX] = kx*normfac;
+        arr_qvec[YY] = ky*normfac;
+        arr_qvec[ZZ] = kz*normfac;
         dq=(maxq-minq)/nbinq ;       
         for (qq = 0; qq< nbinq; qq++)
         {
@@ -439,8 +438,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                     isize_g = isize[g+1];
                     for (qq = 0; qq < nbinq; qq++)
                     {
-                        svmul((minq+dq*qq), arr_qvec, arr_qvec2) ;
-                        q_xi=iprod(arr_qvec2,xi);
+                        q_xi=(minq+dq*qq)*iprod(arr_qvec,xi);
                         cos_q[qq] += cos(q_xi);
                         sin_q[qq] += sin(q_xi);
                     }
@@ -626,13 +624,12 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         gmx_ffclose(fpn);
         do_view(oenv, fnORDF, NULL);
     }
-
+    /*
     if (fnHQ)
     {
         int   nhq = 401;
         real *hq, *integrand, Q;
 
-        /* Get a better number density later! */
         rho = isize[1]*invvol;
         snew(hq, nhq);
         snew(integrand, nrdf);
@@ -658,7 +655,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
         sfree(hq);
         sfree(integrand);
     }
-    
+    */
     if (method[0] == 'c')
     {
        for (g = 0; g < ng; g++)
@@ -697,11 +694,10 @@ int gmx_sfact(int argc, char *argv[])
     };
     static gmx_bool    /*bCM     = FALSE,*/ bPBC = TRUE, bNormalize = TRUE;
     static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0;
-    static int        kx = 1, ky = 0, kz = 0;
-    static int         ngroups = 1, nbinq = 200;
+    static real        kx = 1, ky = 0, kz = 0;
+    static int         ngroups = 1, nbinq = 100;
 
-    static const char *methodt[] = { NULL, "cosmo",  "sumexp", "all", NULL }; 
-   /* static const char *rdft[]   = { NULL, "atom", "mol_com", "mol_cog", "res_com", "res_cog", NULL };*/
+    static const char *methodt[] = { NULL, "cosmo",  "sumexp",  NULL }; 
 
     t_pargs            pa[] = {
         { "-maxq",      FALSE, etREAL, {&maxq},
@@ -710,9 +706,9 @@ int gmx_sfact(int argc, char *argv[])
         "min wave-vector (1/nm)" },
         { "-nbinq",      FALSE, etINT, {&nbinq},
         "number of bins over wave-vector" },
-        { "-kx",         FALSE, etINT, {&kx}, "direction of k-vector in x (1 or 0)" },
-        { "-ky",         FALSE, etINT, {&ky}, "direction of k-vector in y (1 or 0)"},
-        { "-kz",         FALSE, etINT, {&kz}, "direction of k-vector in z (1 or 0)" },
+        { "-kx",         FALSE, etREAL, {&kx}, "direction of k-vector in x (1 or 0)" },
+        { "-ky",         FALSE, etREAL, {&ky}, "direction of k-vector in y (1 or 0)"},
+        { "-kz",         FALSE, etREAL, {&kz}, "direction of k-vector in z (1 or 0)" },
         { "-bin",      FALSE, etREAL, {&binwidth},
           "Binwidth for g(r) (nm)" },
 /*        { "-com",      FALSE, etBOOL, {&bCM},
@@ -744,7 +740,7 @@ int gmx_sfact(int argc, char *argv[])
         { efXVG, "-o",  "sfact",    ffWRITE },
         { efXVG, "-osrdf", "sfact_rdf", ffOPTWR },
         { efXVG, "-ordf", "rdf", ffOPTWR },
-        { efXVG, "-hq", "hq",     ffOPTWR },
+       /* { efXVG, "-hq", "hq",     ffOPTWR },*/
     };
 #define NFILE asize(fnm)
     if (!parse_common_args(&argc, argv, PCA_CAN_VIEW | PCA_CAN_TIME | PCA_BE_NICE,
@@ -765,7 +761,7 @@ int gmx_sfact(int argc, char *argv[])
     do_sfact(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),
            opt2fn_null("-ordf", NFILE, fnm),
-           opt2fn_null("-hq", NFILE, fnm),
+           /*opt2fn_null("-hq", NFILE, fnm),*/
            /*bCM,*/ methodt[0],  bPBC, bNormalize, cutoff, maxq, minq, nbinq, kx, ky, kz, binwidth, fade, ngroups,
            oenv);
 
