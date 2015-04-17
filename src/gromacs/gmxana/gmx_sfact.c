@@ -667,6 +667,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
        sfree(rdf);
        sfree(s_method);
        sfree(s_method_g_r);
+       sfree(arr_q);
     }
     else if (method[0] == 's')  
     {
@@ -675,6 +676,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
           sfree(s_method[g]);
        }
        sfree(s_method);
+       sfree(arr_q);
     }
 }
 
@@ -689,8 +691,7 @@ int gmx_sfact(int argc, char *argv[])
         "The option rdf is based on the definition of S(q) for an isotropic system c.f",
         "M.P. Allen and D.J. Tildesley pp. 58.[PAR]",
         "The method cosmo (default) uses the following expression to compute S(q):",
-        "S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.",
-        "Using the option all all the methods will be used.[PAR]",
+        "S(q)=1+ 1/N<sum_{ij} sin(qr_{ij})/(qr_{ij})> -4pi rho int r sin qr dr.[PAR]",
     };
     static gmx_bool    /*bCM     = FALSE,*/ bPBC = TRUE, bNormalize = TRUE;
     static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0;

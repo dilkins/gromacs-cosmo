@@ -180,7 +180,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                    const char *fnRDF, const char *fnCNRDF, const char *fnHQ,
                    gmx_bool bCM, const char *close,
                    const char **rdft, gmx_bool bXY, gmx_bool bPBC, gmx_bool bNormalize,
-                   real cutoff, real binwidth, real fade, int ng,
+                   real cutoff, real maxq, real minq, int nbinq, real binwidth, real fade, int ng,
                    const output_env_t oenv)
 {
     FILE          *fp;
@@ -750,34 +750,37 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     /* h(Q) function: fourier transform of rdf */
     if (fnHQ)
     {
-        int   nhq = 401;
-        real *hq, *integrand, Q;
-
+        real *hq, *integrand, *arr_q;
+        snew(arr_q, nbinq);
+        for (i = 0; i< nbinq; i++)
+        {
+            arr_q[i]=minq+(maxq-minq)/nbinq*i;
+        }
         /* Get a better number density later! */
         rho = isize[1]*invvol;
-        snew(hq, nhq);
+        snew(hq, nbinq);
         snew(integrand, nrdf);
-        for (i = 0; (i < nhq); i++)
+        for (i = 0; (i < nbinq); i++)
         {
-            Q            = i*0.5;
             integrand[0] = 0;
             for (j = 1; (j < nrdf); j++)
             {
                 r             = j*binwidth;
-                integrand[j]  = (Q == 0) ? 1.0 : sin(Q*r)/(Q*r);
-                integrand[j] *= 4.0*M_PI*rho*r*r*(rdf[0][j]-1.0);
+                integrand[j]  = sin(arr_q[i]*r)/(arr_q[i]);
+                integrand[j] *= 4.0*M_PI*rho*r*(rdf[0][j]-1.0);
             }
             hq[i] = print_and_integrate(debug, nrdf, binwidth, integrand, NULL, 0);
         }
         fp = xvgropen(fnHQ, "h(Q)", "Q(/nm)", "h(Q)", oenv);
-        for (i = 0; (i < nhq); i++)
+        for (i = 0; (i < nbinq); i++)
         {
-            fprintf(fp, "%10g %10g\n", i*0.5, hq[i]);
+            fprintf(fp, "%10g %10g\n", arr_q[i], hq[i]+1.0);
         }
         gmx_ffclose(fp);
         do_view(oenv, fnHQ, NULL);
         sfree(hq);
         sfree(integrand);
+        sfree(arr_q);
     }
 
     if (fnCNRDF)
@@ -865,13 +868,19 @@ int gmx_rdf(int argc, char *argv[])
         "i.e. the average number of particles within a distance r.[PAR]"
     };
     static gmx_bool    bCM     = FALSE, bXY = FALSE, bPBC = TRUE, bNormalize = TRUE;
-    static real        cutoff  = 0, binwidth = 0.002, fade = 0.0;
-    static int         ngroups = 1;
+    static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0;
+    static int         ngroups = 1, nbinq = 100;
 
     static const char *closet[] = { NULL, "no", "mol", "res", NULL };
     static const char *rdft[]   = { NULL, "atom", "mol_com", "mol_cog", "res_com", "res_cog", NULL };
 
     t_pargs            pa[] = {
+        { "-maxq",      FALSE, etREAL, {&maxq},
+        "max wave-vector (1/nm)" },
+        { "-minq",      FALSE, etREAL, {&minq},
+        "min wave-vector (1/nm)" },
+        { "-nbinq",      FALSE, etINT, {&nbinq},
+        "number of bins over wave-vector" },
         { "-bin",      FALSE, etREAL, {&binwidth},
           "Binwidth (nm)" },
         { "-com",      FALSE, etBOOL, {&bCM},
@@ -944,7 +953,7 @@ int gmx_rdf(int argc, char *argv[])
     do_rdf(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-cn", NFILE, fnm),
            opt2fn_null("-hq", NFILE, fnm),
-           bCM, closet[0], rdft, bXY, bPBC, bNormalize, cutoff, binwidth, fade, ngroups,
+           bCM, closet[0], rdft, bXY, bPBC, bNormalize, cutoff, maxq, minq, nbinq, binwidth, fade, ngroups,
            oenv);
 
     return 0;
