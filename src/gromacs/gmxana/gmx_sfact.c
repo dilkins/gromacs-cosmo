@@ -241,11 +241,14 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
             else
             {
                qel = arr_q[qq] ;
-               analytical_integral[qq] = (qel*(-2*fade + rmax)*cos(2*fade*qel - qel*rmax) + sin(2*fade*qel - qel*rmax))/pow(qel,3)*4.0*M_PI*isize0;
-               analytical_integral[qq] += 4.0*M_PI*isize0*(sqr(M_PI)*(-(qel*(M_PI + qel*(fade - rmax))* \
-               (M_PI + qel*(-fade + rmax))*(rmax*cos(qel*rmax) + (-2*fade + rmax)*cos(2*fade*qel - qel*rmax))) - \
-               2*(sqr(M_PI) - 3*sqr(qel)*sqr(fade - rmax))*cos(fade*qel)*sin(qel*(fade - rmax)))) / \
-               (2.*pow(qel,3)*pow(M_PI + qel*(fade - rmax),2)*pow(M_PI + qel*(-fade + rmax),2)) ;
+               analytical_integral[qq] = 4.0*M_PI*isize0*(-fade*qel*cos(fade*qel) + sin(fade*qel))/pow(qel,3.0); 
+               analytical_integral[qq] +=  4.0*M_PI*isize0*((fade*qel*(M_PI + qel*(fade - rmax))*(pow(M_PI,2) - 2*pow(qel,2)*pow(fade - rmax,2))*\
+               (M_PI + qel*(-fade + rmax))*cos(fade*qel) -\
+               pow(M_PI,2)*qel*(M_PI + qel*(fade - rmax))*rmax*(M_PI + qel*(-fade + rmax))*cos(qel*rmax) + \
+               (-pow(M_PI,4) + pow(M_PI,2)*pow(qel,2)*pow(fade - rmax,2) - 2*pow(qel,4)*pow(fade - rmax,4))*sin(fade*qel) + \
+               pow(M_PI,2)*(pow(M_PI,2) - 3*pow(qel,2)*pow(fade - rmax,2))*sin(qel*rmax))/\
+               (2.*pow(qel,3)*pow(M_PI + qel*(fade - rmax),2)*pow(M_PI + qel*(-fade + rmax),2)));
+
             }                                                                 
         }
         for (i = 0; i < isize[0]; i++)
@@ -383,7 +386,8 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                                     r_dist = sqrt(r2);
                                     count[g][(int)(r_dist*invhbinw)]++;
                                     n_j ++ ;
-                                    mod_f = ((fade == 0.0) || (r_dist <= 2*fade - rmax)) ? 1.0 : sqr(cos((r_dist-fade)*inv_width)) ;
+                                    mod_f = ((fade == 0.0) || (r_dist <= fade)) ? 1.0 : sqr(cos((r_dist-fade)*inv_width)) ; 
+                                    /*mod_f = ((fade == 0.0) || (r_dist <= fade )) ? 1.0 : 1.0 - pow((r_dist-fade),3.0)*inv_width ; */
                                     for (qq = 0; qq < nbinq; qq++)
                                     {
                                         temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist)  ;
@@ -419,7 +423,8 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                                     r_dist = sqrt(r2);
                                     count[g][(int)(r_dist*invhbinw)]++;
                                     n_j ++ ;
-                                    mod_f = ((fade == 0.0) || (r_dist <= 2*fade - rmax)) ? 1.0 : sqr(cos((r_dist-fade)*inv_width)) ;
+                                    mod_f = ((fade == 0.0) || (r_dist <= fade )) ? 1.0 : sqr(cos((r_dist-fade)*inv_width)) ; 
+                                    /*mod_f = ((fade == 0.0) || (r_dist <= fade )) ? 1.0 : 1.0 - pow((r_dist-fade),3)*inv_width ;*/
                                     for (qq = 0; qq < nbinq; qq++)
                                     {
                                         temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist)  ;
@@ -562,7 +567,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                for (i = 0; i< (nbin+1)/2 ; i++)
                {
                    r = i*binwidth;
-                   if ((fade == 0) || (r <= 2*fade - rmax ))
+                   if ((fade == 0) || (r <= fade ))
                    {
                        s_method_g_r[g][qq] += binwidth*r*sin(arr_q[qq]*r)*(rdf[g][i]-1.0)/arr_q[qq] ;
                    }
@@ -679,6 +684,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
        }
        sfree(rdf);
        sfree(s_method);
+       sfree(analytical_integral);
        sfree(s_method_g_r);
        sfree(arr_q);
     }
@@ -689,6 +695,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
           sfree(s_method[g]);
        }
        sfree(s_method);
+       sfree(analytical_integral);
        sfree(arr_q);
     }
 }
