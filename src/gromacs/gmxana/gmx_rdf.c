@@ -180,7 +180,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                    const char *fnRDF, const char *fnCNRDF, const char *fnHQ,
                    gmx_bool bCM, const char *close,
                    const char **rdft, gmx_bool bXY, gmx_bool bPBC, gmx_bool bNormalize,
-                   real cutoff, real maxq, real minq, int nbinq, real binwidth, real fade, int ng,
+                   real cutoff, real maxq, real minq, int nbinq, real binwidth, real fade, real fade2, int ng,
                    const output_env_t oenv)
 {
     FILE          *fp;
@@ -193,7 +193,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     int           *isize, isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
     atom_id      **index, *index_cm = NULL;
     gmx_int64_t   *sum;
-    real           t, rmax2, cut2, r, r2, r2ii, invhbinw, normfac;
+    real           t, rmax2, cut2, r, r2, r2ii, invhbinw, normfac, inv_width;
     real           segvol, spherevol, prev_spherevol, **rdf;
     rvec          *x, dx, *x0 = NULL, *x_i1, xi;
     real          *inv_segvol, invvol, invvol_sum, rho;
@@ -334,7 +334,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     }
     if (bPBC)
     {
-        rmax2   = 0.99*0.99*max_cutoff2(bXY ? epbcXY : epbcXYZ, box_pbc);
+        rmax2   = max_cutoff2(bXY ? epbcXY : epbcXYZ, box_pbc);
     }
     else
     {
@@ -350,6 +350,7 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
      */
     nbin     = (int)(sqrt(rmax2) * 2 / binwidth);
     invhbinw = 2.0 / binwidth;
+    inv_width = (fade2 == 0.0 ) ? 1.0 : M_PI*0.5/(sqrt(rmax2)-fade2) ;
     cut2     = sqr(cutoff);
 
     snew(count, ng);
@@ -767,7 +768,14 @@ static void do_rdf(const char *fnNDX, const char *fnTPS, const char *fnTRX,
             {
                 r             = j*binwidth;
                 integrand[j]  = sin(arr_q[i]*r)/(arr_q[i]);
-                integrand[j] *= 4.0*M_PI*rho*r*(rdf[0][j]-1.0);
+                if ((fade2 == 0) || (r<= fade2))
+                {
+                   integrand[j] *= 4.0*M_PI*rho*r*(rdf[0][j]-1.0);
+                }
+                else
+                {
+                   integrand[j] *= sqr(cos((r - fade2)*inv_width))*4.0*M_PI*rho*r*(rdf[0][j]-1.0);
+                }
             }
             hq[i] = print_and_integrate(debug, nrdf, binwidth, integrand, NULL, 0);
         }
@@ -868,7 +876,7 @@ int gmx_rdf(int argc, char *argv[])
         "i.e. the average number of particles within a distance r.[PAR]"
     };
     static gmx_bool    bCM     = FALSE, bXY = FALSE, bPBC = TRUE, bNormalize = TRUE;
-    static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0;
+    static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, fade2 = 0.0;
     static int         ngroups = 1, nbinq = 100;
 
     static const char *closet[] = { NULL, "no", "mol", "res", NULL };
@@ -900,7 +908,9 @@ int gmx_rdf(int argc, char *argv[])
         { "-ng",       FALSE, etINT, {&ngroups},
           "Number of secondary groups to compute RDFs around a central group" },
         { "-fade",     FALSE, etREAL, {&fade},
-          "From this distance onwards the RDF is tranformed by g'(r) = 1 + [g(r)-1] exp(-(r/fade-1)^2 to make it go to 1 smoothly. If fade is 0.0 nothing is done." }
+         " From this distance onwards the RDF is tranformed by g'(r) = 1 + [g(r)-1] exp(-(r/fade-1)^2 to make it go to 1 smoothly. If fade is 0.0 nothing is done." },
+{ "-fade_hq",     FALSE, etREAL, {&fade2},
+          "From this distance onwards (nm) the FT to compute S(q) is smoothed using the modification function cos^2((r-fade)*pi/(2*(L/2-fade)))." }
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX;
@@ -953,7 +963,7 @@ int gmx_rdf(int argc, char *argv[])
     do_rdf(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-cn", NFILE, fnm),
            opt2fn_null("-hq", NFILE, fnm),
-           bCM, closet[0], rdft, bXY, bPBC, bNormalize, cutoff, maxq, minq, nbinq, binwidth, fade, ngroups,
+           bCM, closet[0], rdft, bXY, bPBC, bNormalize, cutoff, maxq, minq, nbinq, binwidth, fade, fade2, ngroups,
            oenv);
 
     return 0;

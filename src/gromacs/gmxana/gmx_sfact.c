@@ -69,7 +69,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                    const char *fnSFACT, const char *fnOSRDF, const char *fnORDF, /*const char *fnHQ, */
                    const char *method,
                    gmx_bool bPBC, gmx_bool bNormalize,
-                   real cutoff, real maxq, real minq, int nbinq, real kx, real ky, real kz, real binwidth, real fade,
+                   real maxq, real minq, int nbinq, real kx, real ky, real kz, real binwidth, real fade,
                    real faderdf, int ng, const output_env_t oenv)
 {
     FILE          *fp;
@@ -84,7 +84,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     int           *isize, isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
     atom_id      **index, *index_cm = NULL;
     gmx_int64_t   *sum;
-    real           t, rmax2, rmax, cut2, r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
+    real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
     real           segvol, spherevol, prev_spherevol, **rdf;
     rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec ;
     real          *inv_segvol, invvol, invvol_sum, rho;
@@ -194,7 +194,6 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
      */
     nbin     = (int)(sqrt(rmax2) * 2 / binwidth);
     invhbinw = 2.0 / binwidth;
-    cut2     = sqr(cutoff);
     rmax     = sqrt(rmax2);
 
     snew(count, ng);
@@ -353,7 +352,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                                     r2 = r2ii;
                                 }
                             }
-                            if (r2 > cut2 && r2 <= rmax2)
+                            if (r2 > 0.0 && r2 <= rmax2)
                             {
                                 count[g][(int)(sqrt(r2)*invhbinw)]++;
                             }
@@ -381,23 +380,32 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                                 }
     
                                 r2 = iprod(dx, dx);
-                                if (r2 > cut2 && r2 <= rmax2)
+                                if (r2 > 0.0 &&  r2 <= rmax2)
                                 {
                                     r_dist = sqrt(r2);
                                     count[g][(int)(r_dist*invhbinw)]++;
                                     n_j ++ ;
-                                    mod_f = ((fade == 0.0) || (r_dist <= fade)) ? 1.0 : sqr(cos((r_dist-fade)*inv_width)) ; 
-                                    /*mod_f = ((fade == 0.0) || (r_dist <= fade )) ? 1.0 : 1.0 - pow((r_dist-fade),3.0)*inv_width ; */
-                                    for (qq = 0; qq < nbinq; qq++)
+                                    if ((fade == 0.0) || (r_dist <= fade))
                                     {
-                                        temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist)  ;
+                                        mod_f = 1.0 /r_dist ;
+                                        for (qq = 0; qq < nbinq; qq++)
+                                        {
+                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
+                                        }
                                     }
-    
+                                    else
+                                    {
+                                        mod_f = sqr(cos((r_dist-fade)*inv_width))/r_dist ;
+                                        for (qq = 0; qq < nbinq; qq++)
+                                        {
+                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
+                                        }                                    
+                                    }
                                 }
                             }
                             for (qq = 0; qq < nbinq; qq++)
                             {
-                                 s_method[g][qq] += temp_method[qq] - analytical_integral[qq]*invvol ;
+                                 s_method[g][qq] += temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol ;
                             }
                             sfree(temp_method);
                         }
@@ -418,22 +426,32 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                                     rvec_sub(xi, x_i1[j], dx);
                                 }
                                 r2 = iprod(dx, dx);
-                                if (r2 > cut2 && r2 <= rmax2)
+                                if (r2 > 0.0 && r2 <= rmax2)
                                 {   
                                     r_dist = sqrt(r2);
                                     count[g][(int)(r_dist*invhbinw)]++;
                                     n_j ++ ;
-                                    mod_f = ((fade == 0.0) || (r_dist <= fade )) ? 1.0 : sqr(cos((r_dist-fade)*inv_width)) ; 
-                                    /*mod_f = ((fade == 0.0) || (r_dist <= fade )) ? 1.0 : 1.0 - pow((r_dist-fade),3)*inv_width ;*/
-                                    for (qq = 0; qq < nbinq; qq++)
+                                    if ((fade == 0.0) || (r_dist <= fade))
                                     {
-                                        temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)/(arr_q[qq]*r_dist)  ;
+                                        mod_f = 1.0 /r_dist ;
+                                        for (qq = 0; qq < nbinq; qq++)
+                                        {
+                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        mod_f = sqr(cos((r_dist-fade)*inv_width))/r_dist ;
+                                        for (qq = 0; qq < nbinq; qq++)
+                                        {
+                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
+                                        }
                                     }
                                 }
                             }
                             for (qq = 0; qq < nbinq; qq++)
                             {
-                                 s_method[g][qq] += temp_method[qq] - analytical_integral[qq]*invvol ;
+                                 s_method[g][qq] += temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol ;
                             }
                             sfree(temp_method) ;
                         }
@@ -464,16 +482,12 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
             invvol_sum += invvol;
             for (g = 0; g < ng; g++)
             {
-                for (i = 0; i < isize[g+1]; i++)
-                {
-                    copy_rvec(x[index[g+1][i]], x_i1[i]);
-                }
                 snew(cos_q,nbinq);
                 snew(sin_q,nbinq);
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[index[0][i]], xi);
-                    isize_g = isize[g+1];
+                    /*isize_g = isize[g+1];*/
                     for (qq = 0; qq < nbinq; qq++)
                     {
                         q_xi=(minq+dq*qq)*iprod(arr_qvec,xi);
@@ -483,7 +497,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                 }
                 for (qq = 0; qq < nbinq; qq++)
                 {
-                    s_method[g][qq] += cos_q[qq]*cos_q[qq] + sin_q[qq]*sin_q[qq];
+                    s_method[g][qq] += sqr(cos_q[qq]) + sqr(sin_q[qq]);
                 }
                 sfree(cos_q);
                 sfree(sin_q);
@@ -687,6 +701,8 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
        sfree(analytical_integral);
        sfree(s_method_g_r);
        sfree(arr_q);
+       sfree(cos_q);
+       sfree(sin_q);
     }
     else if (method[0] == 's')  
     {
@@ -713,8 +729,8 @@ int gmx_sfact(int argc, char *argv[])
         "Using this option (cosmo) and the option osrdf S(q) is also printed using the relation for an isotropic system c.f",
         "M.P. Allen and D.J. Tildesley pp. 58.[PAR]",
     };
-    static gmx_bool    /*bCM     = FALSE,*/ bPBC = TRUE, bNormalize = TRUE;
-    static real        cutoff  = 0, binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, faderdf = 0.0;
+    static gmx_bool    bPBC = TRUE, bNormalize = TRUE;
+    static real        binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, faderdf = 0.0;
     static real        kx = 1, ky = 0, kz = 0;
     static int         ngroups = 1, nbinq = 100;
 
@@ -738,8 +754,6 @@ int gmx_sfact(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-norm",     FALSE, etBOOL, {&bNormalize},
           "Normalize for volume and density" },
-        { "-cut",      FALSE, etREAL, {&cutoff},
-          "Shortest distance (nm) to be considered"},
         { "-ng",       FALSE, etINT, {&ngroups},
           "Number of secondary groups to compute RDFs around a central group" },
         { "-fade",     FALSE, etREAL, {&fade},
@@ -782,7 +796,7 @@ int gmx_sfact(int argc, char *argv[])
            opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),
            opt2fn_null("-ordf", NFILE, fnm),
            /*opt2fn_null("-hq", NFILE, fnm),*/
-           /*bCM,*/ methodt[0],  bPBC, bNormalize, cutoff, maxq, minq, nbinq, kx, ky, kz, binwidth, fade, faderdf, ngroups,
+           /*bCM,*/ methodt[0],  bPBC, bNormalize,  maxq, minq, nbinq, kx, ky, kz, binwidth, fade, faderdf, ngroups,
            oenv);
 
     return 0;
