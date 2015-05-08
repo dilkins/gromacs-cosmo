@@ -1256,6 +1256,25 @@ case "$p" in
 -surf) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -W $'no\nmol\nres' -- $c));;
 -rdf) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -W $'atom\nmol_com\nmol_cog\nres_com\nres_cog' -- $c));;
 esac }
+_gmx_nonlinearopticalscattering_compl() {
+local IFS=$'\n'
+local c=${COMP_WORDS[COMP_CWORD]}
+local n
+for ((n=1;n<COMP_CWORD;++n)) ; do [[ "${COMP_WORDS[COMP_CWORD-n]}" == -* ]] && break ; done
+local p=${COMP_WORDS[COMP_CWORD-n]}
+COMPREPLY=()
+if (( $COMP_CWORD <= 1 )) || [[ $c == -* ]]; then COMPREPLY=( $(compgen -S ' '  -W $'-f\n-s\n-n\n-o\n-cn\n-hq\n-nice\n-b\n-e\n-dt\n-w\n-xvg\n-bin\n-com\n-surf\n-rdf\n-nopbc\n-nonorm\n-xy\n-cut\n-ng\n-fade' -- $c)); return 0; fi
+case "$p" in
+-f) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -X '!*@(.xtc|.trr|.cpt|.trj|.gro|.g96|.pdb|.tng)?(.gz|.Z)' -f -- $c ; compgen -S '/' -d $c));;
+-s) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -X '!*@(.tpr|.tpb|.tpa|.gro|.g96|.pdb|.brk|.ent)?(.gz|.Z)' -f -- $c ; compgen -S '/' -d $c));;
+-n) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -X '!*.ndx?(.gz|.Z)' -f -- $c ; compgen -S '/' -d $c));;
+-o) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -X '!*.xvg?(.gz|.Z)' -f -- $c ; compgen -S '/' -d $c));;
+-cn) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -X '!*.xvg?(.gz|.Z)' -f -- $c ; compgen -S '/' -d $c));;
+-hq) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -X '!*.xvg?(.gz|.Z)' -f -- $c ; compgen -S '/' -d $c));;
+-xvg) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -W $'xmgrace\nxmgr\nnone' -- $c));;
+-surf) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -W $'no\nmol\nres' -- $c));;
+-rdf) (( $n <= 1 )) && COMPREPLY=( $(compgen -S ' ' -W $'atom\nmol_com\nmol_cog\nres_com\nres_cog' -- $c));;
+esac }
 _gmx_rms_compl() {
 local IFS=$'\n'
 local c=${COMP_WORDS[COMP_CWORD]}

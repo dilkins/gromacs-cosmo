@@ -196,6 +196,9 @@ int
 gmx_sfact(int argc, char *argv[]);
 
 int
+gmx_nonlinearopticalscattering(int argc, char *argv[]);
+
+int
 gmx_rotmat(int argc, char *argv[]);
 
 int

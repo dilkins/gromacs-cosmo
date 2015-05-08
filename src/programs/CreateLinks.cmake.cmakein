@@ -107,6 +107,7 @@ set(SYMLINK_NAMES
     g_rama
     g_rdf
     g_sfact
+    g_nonlinearopticalscattering
     g_rms
     g_rmsdist
     g_rmsf

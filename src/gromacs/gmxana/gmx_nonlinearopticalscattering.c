@@ -1,4 +1,4 @@
-/*
+ /*
  * This file is part of the GROMACS molecular simulation package.
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
@@ -60,17 +60,18 @@
 #include "gstat.h"
 #include "gromacs/fileio/matio.h"
 #include "gmx_ana.h"
-/*#include "sfactor_func.h"*/
+#include "hyperpol.h"
 #include "names.h"
 
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
-static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
+static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, const char *fnTPS,*/ const char *fnTRX,
                    const char *fnSFACT, const char *fnOSRDF, const char *fnORDF, /*const char *fnHQ, */
                    const char *method,
                    gmx_bool bPBC, gmx_bool bNormalize,
-                   real maxq, real minq, int nbinq, real kx, real ky, real kz, real binwidth, real fade,
-                   real faderdf, int ng, const output_env_t oenv)
+                   real maxq, real minq, int nbinq, real kx, real ky, real kz, real binwidth,
+                   real fade, real faderdf, int *isize, int  *molindex[], char **grpname, int ng,
+                   const output_env_t oenv)
 {
     FILE          *fp;
     FILE          *fpn;
@@ -79,20 +80,20 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, n_j ,nframes;
     int          **count;
-    real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel, *temp_method, *cos_q, *sin_q;
-    char         **grpname;
-    int           *isize, isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
-    atom_id      **index, *index_cm = NULL;
+    real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel, *temp_method, *cos_q, *sin_q, beta_lab;
+    /*char         **grpname;*/
+    int            isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
+    atom_id      /* **index, */ *index_cm = NULL;
     gmx_int64_t   *sum;
     real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
     real           segvol, spherevol, prev_spherevol, **rdf;
-    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec ;
+    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec, uv1, uv2, uv3;
     real          *inv_segvol, invvol, invvol_sum, rho;
     gmx_bool       bClose, *bExcl, bTop, bNonSelfExcl;
     matrix         box, box_pbc;
     int          **npairs;
     atom_id        ix, jx, ***pairs;
-    t_topology    *top  = NULL;
+    /*t_topology    *top  = NULL;*/
     int            ePBC = -1, ePBCrdf = -1;
     t_block       *mols = NULL;
     t_blocka      *excl;
@@ -103,70 +104,16 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
 
     excl = NULL;
 
-    bClose = FALSE ; /*(method[0] != 'c'); */
-    if (fnTPS)
-    {
-        snew(top, 1);
-        bTop = read_tps_conf(fnTPS, title, top, &ePBC, &x, NULL, box, TRUE);
-        if (bTop )
-        {
-            /* get exclusions from topology */
-            excl = &(top->excls);
-        }
-    }
-    snew(grpname, ng+1);
-    snew(isize, ng+1);
-    snew(index, ng+1);
-    fprintf(stderr, "\nSelect a reference group and %d group%s\n",
-            ng, ng == 1 ? "" : "s");
-    fprintf(stderr, "ng is %d\n", ng);
-    if (fnTPS)
-    {
-        get_index(&(top->atoms), fnNDX, ng+1, isize, index, grpname);
-        atom = top->atoms.atom;
-    }
-    else
-    {
-        rd_index(fnNDX, ng+1, isize, index, grpname);
+    bClose = FALSE ; 
 
-    }
-
-    if (bClose )
-    {
-        isize0 = is[0];
-        snew(x0, isize0);
-    }
-    else
-    {
-        isize0 = isize[0];
-    }
+    atom = top->atoms.atom;
+    mols = &(top->mols);
+    isize0 = isize[0];
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
-    if (!natoms)
-    {
-        gmx_fatal(FARGS, "Could not read coordinates from statusfile\n");
-    }
-    if (fnTPS)
-    {
-        /* check with topology */
-        if (natoms > top->atoms.nr)
-        {
-            gmx_fatal(FARGS, "Trajectory (%d atoms) does not match topology (%d atoms)",
-                      natoms, top->atoms.nr);
-        }
-    }
-    /* check with index groups */
-    for (i = 0; i < ng+1; i++)
-    {   
-        for (j = 0; j < isize[i]; j++)
-        {
-            if (index[i][j] >= natoms)
-            {
-                gmx_fatal(FARGS, "Atom index (%d) in index group %s (%d atoms) larger "
-                          "than number of atoms in trajectory (%d atoms)",
-                          index[i][j], grpname[i], isize[i], natoms);
-            }
-        }
-    }
+    fprintf(stderr,"natoms %d\n",natoms);
+    fprintf(stderr,"molindex %d\n",molindex[0][0]);
+    fprintf(stderr,"isize[0] %d\n",isize[0]);
+    fprintf(stderr,"ng %d\n",ng);
 
     /* initialize some handy things */
     if (ePBC == -1)
@@ -202,7 +149,6 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     snew(npairs, ng);
     snew(s_method, ng);
     snew(s_method_g_r, ng);
-
     snew(bExcl, natoms);
     max_i = 0;
     for (g = 0; g < ng; g++)
@@ -248,30 +194,24 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                (-pow(M_PI,4) + pow(M_PI,2)*pow(qel,2)*pow(fade - rmax,2) - 2*pow(qel,4)*pow(fade - rmax,4))*sin(fade*qel) + \
                pow(M_PI,2)*(pow(M_PI,2) - 3*pow(qel,2)*pow(fade - rmax,2))*sin(qel*rmax))/\
                (2.*pow(qel,3)*pow(M_PI + qel*(fade - rmax),2)*pow(M_PI + qel*(-fade + rmax),2)));
-
             }                                                                 
         }
         for (i = 0; i < isize[0]; i++)
         {   
             /* We can only have exclusions with atomic rdfs */
-            ix = index[0][i];
+            ix = molindex[0][i];
+            /*fprintf(stderr,"ix isize[g+1] isize[0] g %d %d %d %d\n",ix, isize[g+1], isize[0], g);*/
             for (j = 0; j < natoms; j++)
             {
                 bExcl[j] = FALSE;
-            }
-            if (excl)
-            {
-               for (j = excl->index[ix]; j < excl->index[ix+1]; j++)
-               {
-                   bExcl[excl->a[j]] = TRUE;
-               }
             }
             k = 0;
             snew(pairs[g][i], isize[g+1]);
             bNonSelfExcl = FALSE;
             for (j = 0; j < isize[g+1]; j++)
             {
-                jx = index[g+1][j];
+                jx = molindex[g+1][j];
+                /*fprintf(stderr,"ix jx %d %d\n",ix,jx);*/
                 if (!bExcl[jx])
                 {
                     pairs[g][i][k++] = jx;
@@ -324,7 +264,12 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
             {
                 for (i = 0; i < isize[g+1]; i++)
                 {
-                    copy_rvec(x[index[g+1][i]], x_i1[i]);
+                    int ind0 ;
+                    copy_rvec(x[molindex[g+1][i]], x_i1[i]);
+                    ind0  = mols->index[molindex[g+1][i]];
+                    mol_unitvectors(x[ind0], x[ind0+1], x[ind0+2], uv1, uv2, uv3);
+                    rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec ,/*const real beta_m[DIM][DIM][DIM],*/  beta_lab);
+                    gmx_fatal(FARGS,"beta_lab %f\n",beta_lab); 
                 }
                 for (i = 0; i < isize0; i++)
                 {
@@ -341,11 +286,11 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                             {
                                 if (bPBC)
                                 {
-                                    pbc_dx(&pbc, x[index[0][ii]], x_i1[j], dx);
+                                    pbc_dx(&pbc, x[molindex[0][ii]], x_i1[j], dx);
                                 }
                                 else
                                 {
-                                    rvec_sub(x[index[0][ii]], x_i1[j], dx);
+                                    rvec_sub(x[molindex[0][ii]], x_i1[j], dx);
                                 }
                                 r2ii = iprod(dx, dx);
                                 if (r2ii < r2)
@@ -362,7 +307,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                     else
                     {
                         /* Real rdf between points in space */
-                        copy_rvec(x[index[0][i]], xi);
+                        copy_rvec(x[molindex[0][i]], xi);
                         if ( npairs[g][i] >= 0)
                         {
                             /* Expensive loop, because of indexing */
@@ -487,7 +432,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                 snew(sin_q,nbinq);
                 for (i = 0; i < isize0; i++)
                 {
-                    copy_rvec(x[index[0][i]], xi);
+                    copy_rvec(x[molindex[0][i]], xi);
                     /*isize_g = isize[g+1];*/
                     for (qq = 0; qq < nbinq; qq++)
                     {
@@ -717,18 +662,114 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     }
 }
 
+void mol_unitvectors(const rvec xv1, const rvec xv2, const rvec xv3, rvec u1, rvec u2, rvec u3)
+{
+    rvec_sub( xv2, xv3, u2);
+    unitv(u2, u2);
+    svmul(2.0, xv1, u1);
+    rvec_sub( u1, xv2, u1);
+    rvec_sub( u1, xv2, u1);
+    unitv(u1, u1);
+    cprod(u1 , u2, u3);
+    
+}
 
-int gmx_sfact(int argc, char *argv[])
+void rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, /*const real beta_m[DIM][DIM][DIM],*/ real beta_l)
+{
+    int i, k, q;
+    matrix um;
+    real c1;
+    rvec c2;
+    clear_rvec(c2);
+    rvec_sub( xv2, xv3, um[1]);
+    unitv(um[1], um[1]);
+    svmul(2.0, xv1, um[0]);
+    rvec_sub( um[0], xv2, um[0]);
+    rvec_sub( um[0], xv2, um[0]);
+    unitv(um[0], um[0]);
+    cprod(um[0] , um[1], um[2]);
+    
+   for ( i = 0; i < DIM; i++)
+   {
+       c1 = iprod(um[i], qv);
+       for ( k = 0; k < DIM; k++)
+       {
+           c2[k] = iprod(um[k], qv);
+           for ( q = 0; q < DIM; q++)
+           {
+               fprintf(stderr,"%f %f %f\n", um[i][XX], um[k][XX], um[q][XX]);
+               fprintf(stderr,"%f %f %f\n", c1, c2[k], iprod(um[q],qv));
+               beta_l += c1*c2[k]*iprod(um[q],qv)*2.0;
+           }
+       }
+   }
+
+}
+
+/*void rotate_beta(const rvec uv[], const rvec qv, beta_m, beta_l)
+{
+   int  i, k, q;
+   real c1;
+   rvec c2;
+   clear_rvec(beta_m);
+   for ( i = 0; i < DIM; i++)
+   {
+       c1 = iprod(uv[i], qv);
+       for ( j = 0; j < DIM; j++)
+       {
+           c2[j] = iprod(xv2, qv);
+           for ( k = 0; k < DIM; k++)
+           {
+               beta_l += c1*c2[j]*iprod(xv3,qv)
+           }
+       }
+   }
+
+    iprod 
+}*/
+
+void dipole_atom2molindex(int *n, int *index, t_block *mols)
+{
+    int nmol, i, j, m;
+
+    nmol = 0;
+    i    = 0;
+    while (i < *n)
+    {
+        m = 0;
+        while (m < mols->nr && index[i] != mols->index[m])
+        {
+            m++;
+        }
+        if (m == mols->nr)
+        {
+            gmx_fatal(FARGS, "index[%d]=%d does not correspond to the first atom of a molecule", i+1, index[i]+1);
+        }
+        for (j = mols->index[m]; j < mols->index[m+1]; j++)
+        {
+            if (i >= *n || index[i] != j)
+            {
+                gmx_fatal(FARGS, "The index group is not a set of whole molecules");
+            }
+            i++;
+        }
+        /* Modify the index in place */
+        index[nmol++] = m;
+        /*fprintf(stderr, "index nmol m %d %d %d\n", index[nmol], nmol, m);*/
+    }
+    printf("There are %d molecules in the selection\n", nmol);
+    *n = nmol;
+}
+
+int gmx_nonlinearopticalscattering(int argc, char *argv[])
 {
     const char        *desc[] = {
         "The structure of liquids can be studied by either neutron or X-ray scattering",
-        "[THISMODULE] calculates the structure factor S(q) in different ways.",
-        "The simplest method (sumexp) is to use 1/N|sum_j exp(iqrj)|^2.",
+        "[THISMODULE] calculates the non-linear optical scattering intensity per molecule in different ways.",
+        "The simplest method (sumexp) is to use 1/N|sum_i beta_IJK(i) exp[iqr_i]|^2.",
         "This however converges slowly with the box size for small values of q.[PAR]",
-        "The method cosmo (default) uses the following expression to compute S(q):",
-        "S(q)=1+ 1/N<sum_{ij} sin(q r_{ij})/(q r_{ij})> -4pi rho int r sin q r dr.",
-        "Using this option (cosmo) and the option osrdf S(q) is also printed using the relation for an isotropic system c.f",
-        "M.P. Allen and D.J. Tildesley pp. 58.[PAR]",
+        "The method cosmo (default) uses the following expression to compute I(q):",
+        "I(q)=1+ 1/N<sum_{ij} sin(q r_{ij})/(q r_{ij})> -4pi rho int r sin q r dr (to edit).",
     };
     static gmx_bool    bPBC = TRUE, bNormalize = TRUE;
     static real        binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, faderdf = 0.0;
@@ -750,7 +791,7 @@ int gmx_sfact(int argc, char *argv[])
         { "-bin",      FALSE, etREAL, {&binwidth},
           "Binwidth for g(r) (nm)" },
         { "-method",     FALSE, etENUM, {methodt},
-          "S(q) using the different methods" },
+          "I(q) using the different methods" },
         { "-pbc",      FALSE, etBOOL, {&bPBC},
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-norm",     FALSE, etBOOL, {&bNormalize},
@@ -768,16 +809,29 @@ int gmx_sfact(int argc, char *argv[])
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX;
     output_env_t       oenv;
+    int           *gnx;
+    int            nFF[2];
+    atom_id      **grpindex;
+    char         **grpname = NULL;
+    /*gmx_bool       bGkr, bMU, bSlab;*/
 
     t_filenm           fnm[] = {
         { efTRX, "-f",  NULL,     ffREAD },
-        { efTPS, NULL,  NULL,     ffOPTRD },
+        { efTPS, NULL,  NULL,     ffREAD },
         { efNDX, NULL,  NULL,     ffOPTRD },
         { efXVG, "-o",  "sfact",    ffWRITE },
         { efXVG, "-osrdf", "sfact_rdf", ffOPTWR },
         { efXVG, "-ordf", "rdf", ffOPTWR },
     };
 #define NFILE asize(fnm)
+    int            npargs;
+    t_pargs       *ppa;
+    t_topology    *top;
+    int            ePBC;
+    int            k, natoms;
+    matrix         box;
+    
+    npargs = asize(pa);
     if (!parse_common_args(&argc, argv, PCA_CAN_VIEW | PCA_CAN_TIME | PCA_BE_NICE,
                            NFILE, fnm, NPA, pa, asize(desc), desc, 0, NULL, &oenv))
     {
@@ -792,13 +846,24 @@ int gmx_sfact(int argc, char *argv[])
         gmx_fatal(FARGS, "Neither index file nor topology file specified\n"
                   "Nothing to do!");
     }
+
+    snew(top, ngroups+1);
+    ePBC = read_tpx_top(ftp2fn(efTPS, NFILE, fnm), NULL, box,
+                        &natoms, NULL, NULL, NULL, top);
+
+    snew(gnx, ngroups+1);
+    snew(grpname, ngroups+1);
+    snew(grpindex, ngroups+1);
+    get_index(&top->atoms, ftp2fn_null(efNDX, NFILE, fnm),
+             ngroups +1 , gnx, grpindex, grpname);
+
+    dipole_atom2molindex(&gnx[0], grpindex[0], &(top->mols));
    
-    do_sfact(fnNDX, fnTPS, ftp2fn(efTRX, NFILE, fnm),
+    do_nonlinearopticalscattering(top, /*fnNDX,*/ /*fnTPS,*/ ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),
            opt2fn_null("-ordf", NFILE, fnm),
-           /*opt2fn_null("-hq", NFILE, fnm),*/
-           /*bCM,*/ methodt[0],  bPBC, bNormalize,  maxq, minq, nbinq, kx, ky, kz, binwidth, fade, faderdf, ngroups,
-           oenv);
+           methodt[0],  bPBC, bNormalize,  maxq, minq, nbinq, kx, ky, kz, binwidth,
+           fade, faderdf, gnx, grpindex, grpname, ngroups, oenv);
 
     return 0;
 }

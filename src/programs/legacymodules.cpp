@@ -294,6 +294,8 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Calculate radial distribution functions");
     registerModule(manager, &gmx_sfact, "sfact",
                    "Calculate structure factor");
+    registerModule(manager, &gmx_nonlinearopticalscattering, "nonlinearopticalscattering",
+                   "Calculate non linear optical scattering intensity");
     registerModule(manager, &gmx_rms, "rms",
                    "Calculate RMSDs with a reference structure and RMSD matrices");
     registerModule(manager, &gmx_rmsdist, "rmsdist",
