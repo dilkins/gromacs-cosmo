@@ -268,7 +268,9 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                     copy_rvec(x[molindex[g+1][i]], x_i1[i]);
                     ind0  = mols->index[molindex[g+1][i]];
                     mol_unitvectors(x[ind0], x[ind0+1], x[ind0+2], uv1, uv2, uv3);
+                    fprintf(stderr,"uv3 %f\n", uv3[XX]);
                     rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec ,/*const real beta_m[DIM][DIM][DIM],*/  beta_lab);
+                    fprintf(stderr,"beta_lab %f\n", beta_lab);
                     gmx_fatal(FARGS,"beta_lab %f\n",beta_lab); 
                 }
                 for (i = 0; i < isize0; i++)
@@ -697,9 +699,10 @@ void rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, 
            c2[k] = iprod(um[k], qv);
            for ( q = 0; q < DIM; q++)
            {
-               fprintf(stderr,"%f %f %f\n", um[i][XX], um[k][XX], um[q][XX]);
+               /*fprintf(stderr,"%f %f %f\n", um[i][XX], um[k][XX], um[q][XX]);*/
                fprintf(stderr,"%f %f %f\n", c1, c2[k], iprod(um[q],qv));
                beta_l += c1*c2[k]*iprod(um[q],qv)*2.0;
+               fprintf(stderr,"beta_lab %f\n", beta_l);
            }
        }
    }
