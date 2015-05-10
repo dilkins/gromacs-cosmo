@@ -49,9 +49,9 @@ extern "C" {
 
 extern void mol_unitvectors(const rvec xv1, const rvec xv2, const rvec xv3, rvec u1, rvec u2, rvec u3);
 
-extern void rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv,  /*const real beta_m[DIM][DIM][DIM],*/ real beta_l);
-
-
+real rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, real ***beta_m);
+/*extern void initialize_beta(real beta_m);
+*/
 #ifdef __cplusplus
 }
 #endif

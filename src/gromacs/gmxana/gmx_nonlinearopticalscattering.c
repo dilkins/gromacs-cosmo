@@ -80,7 +80,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, n_j ,nframes;
     int          **count;
-    real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel, *temp_method, *cos_q, *sin_q, beta_lab;
+    real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel;
+    real          *temp_method, *cos_q, *sin_q, ***beta_mol, *beta_lab;
     /*char         **grpname;*/
     int            isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
     atom_id      /* **index, */ *index_cm = NULL;
@@ -151,13 +152,31 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     snew(s_method_g_r, ng);
     snew(bExcl, natoms);
     max_i = 0;
+
+    /*allocate memory for beta in lab frame and initialize beta in mol frame*/
+    snew(beta_lab, isize[0]);
+    snew(beta_mol, DIM);
+    for (i = 0; i < DIM; i++)
+    {
+        snew(beta_mol[i], DIM);
+    }
+    for (i = 0; i < DIM; i++)
+    {    
+        for (j = 0; j < DIM; j++)
+        {
+            snew(beta_mol[i][j], DIM);
+        }
+    }
+    beta_mol[2][0][0] = 0.25;
+    beta_mol[2][2][2] = 9.8;
+    beta_mol[2][1][1] = 5.2;
+    
     for (g = 0; g < ng; g++)
     {
         if (isize[g+1] > max_i)
         {
             max_i = isize[g+1];
         }
-
         /* this is THE array */
         snew(count[g], nbin+1);
         /* make pairlist array for groups and exclusions */
@@ -196,11 +215,12 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                (2.*pow(qel,3)*pow(M_PI + qel*(fade - rmax),2)*pow(M_PI + qel*(-fade + rmax),2)));
             }                                                                 
         }
+
+
         for (i = 0; i < isize[0]; i++)
         {   
             /* We can only have exclusions with atomic rdfs */
             ix = molindex[0][i];
-            /*fprintf(stderr,"ix isize[g+1] isize[0] g %d %d %d %d\n",ix, isize[g+1], isize[0], g);*/
             for (j = 0; j < natoms; j++)
             {
                 bExcl[j] = FALSE;
@@ -211,7 +231,6 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
             for (j = 0; j < isize[g+1]; j++)
             {
                 jx = molindex[g+1][j];
-                /*fprintf(stderr,"ix jx %d %d\n",ix,jx);*/
                 if (!bExcl[jx])
                 {
                     pairs[g][i][k++] = jx;
@@ -268,10 +287,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                     copy_rvec(x[molindex[g+1][i]], x_i1[i]);
                     ind0  = mols->index[molindex[g+1][i]];
                     mol_unitvectors(x[ind0], x[ind0+1], x[ind0+2], uv1, uv2, uv3);
-                    fprintf(stderr,"uv3 %f\n", uv3[XX]);
-                    rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec ,/*const real beta_m[DIM][DIM][DIM],*/  beta_lab);
-                    fprintf(stderr,"beta_lab %f\n", beta_lab);
-                    gmx_fatal(FARGS,"beta_lab %f\n",beta_lab); 
+                    beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec , beta_mol );
+                    /*fprintf(stderr,"beta_lab %f\n",beta_lab[i]);*/
                 }
                 for (i = 0; i < isize0; i++)
                 {
@@ -308,101 +325,49 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                     }
                     else
                     {
-                        /* Real rdf between points in space */
-                        copy_rvec(x[molindex[0][i]], xi);
-                        if ( npairs[g][i] >= 0)
+                        /* Cheaper loop, no exclusions */
+                        isize_g = isize[g+1];
+                        n_j = 0.0;
+                        snew(temp_method,nbinq);
+                        for (j = 0; j < isize_g; j++)
                         {
-                            /* Expensive loop, because of indexing */
-                            n_j=0.0;
-                            snew(temp_method,nbinq);
-                            for (j = 0; j < npairs[g][i]; j++)
+                            if (bPBC)
                             {
-                                jx = pairs[g][i][j];
-                                if (bPBC)
+                                pbc_dx(&pbc, xi, x_i1[j], dx);
+                            }
+                            else
+                            {
+                                rvec_sub(xi, x_i1[j], dx);
+                            }
+                            r2 = iprod(dx, dx);
+                            if ( r2 <= rmax2 )
+                            {   
+                                r_dist = sqrt(r2);
+                                count[g][(int)(r_dist*invhbinw)]++;
+                                n_j ++ ;
+                                if ((fade == 0.0) || (r_dist <= fade))
                                 {
-                                    pbc_dx(&pbc, xi, x[jx], dx);
+                                    mod_f = beta_lab[i]*beta_lab[j]  ;
+                                    for (qq = 0; qq < nbinq; qq++)
+                                    {
+                                        temp_method[qq] += mod_f*cos(iprod(arr_qvec,dx))  ;
+                                    }
                                 }
                                 else
                                 {
-                                    rvec_sub(xi, x[jx], dx);
-                                }
-    
-                                r2 = iprod(dx, dx);
-                                if (r2 > 0.0 &&  r2 <= rmax2)
-                                {
-                                    r_dist = sqrt(r2);
-                                    count[g][(int)(r_dist*invhbinw)]++;
-                                    n_j ++ ;
-                                    if ((fade == 0.0) || (r_dist <= fade))
+                                    mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
+                                    for (qq = 0; qq < nbinq; qq++)
                                     {
-                                        mod_f = 1.0 /r_dist ;
-                                        for (qq = 0; qq < nbinq; qq++)
-                                        {
-                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        mod_f = sqr(cos((r_dist-fade)*inv_width))/r_dist ;
-                                        for (qq = 0; qq < nbinq; qq++)
-                                        {
-                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
-                                        }                                    
+                                        temp_method[qq] += mod_f*cos(iprod(arr_qvec,dx))  ;
                                     }
                                 }
                             }
-                            for (qq = 0; qq < nbinq; qq++)
-                            {
-                                 s_method[g][qq] += temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol ;
-                            }
-                            sfree(temp_method);
                         }
-                        else
+                        for (qq = 0; qq < nbinq; qq++)
                         {
-                            /* Cheaper loop, no exclusions */
-                            isize_g = isize[g+1];
-                            n_j = 0.0;
-                            snew(temp_method,nbinq);
-                            for (j = 0; j < isize_g; j++)
-                            {
-                                if (bPBC)
-                                {
-                                    pbc_dx(&pbc, xi, x_i1[j], dx);
-                                }
-                                else
-                                {
-                                    rvec_sub(xi, x_i1[j], dx);
-                                }
-                                r2 = iprod(dx, dx);
-                                if (r2 > 0.0 && r2 <= rmax2)
-                                {   
-                                    r_dist = sqrt(r2);
-                                    count[g][(int)(r_dist*invhbinw)]++;
-                                    n_j ++ ;
-                                    if ((fade == 0.0) || (r_dist <= fade))
-                                    {
-                                        mod_f = 1.0 /r_dist ;
-                                        for (qq = 0; qq < nbinq; qq++)
-                                        {
-                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        mod_f = sqr(cos((r_dist-fade)*inv_width))/r_dist ;
-                                        for (qq = 0; qq < nbinq; qq++)
-                                        {
-                                            temp_method[qq] += mod_f*sin(arr_q[qq]*r_dist)  ;
-                                        }
-                                    }
-                                }
-                            }
-                            for (qq = 0; qq < nbinq; qq++)
-                            {
-                                 s_method[g][qq] += temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol ;
-                            }
-                            sfree(temp_method) ;
+                             s_method[g][qq] += temp_method[qq]/arr_q[qq] /*- analytical_integral[qq]*invvol*/ ;
                         }
+                        sfree(temp_method) ;
                     }
                 }
             }
@@ -676,10 +641,12 @@ void mol_unitvectors(const rvec xv1, const rvec xv2, const rvec xv3, rvec u1, rv
     
 }
 
-void rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, /*const real beta_m[DIM][DIM][DIM],*/ real beta_l)
+
+real rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, real ***beta_m)
 {
     int i, k, q;
     matrix um;
+    real beta_l = 0.0;
     real c1;
     rvec c2;
     clear_rvec(c2);
@@ -699,37 +666,12 @@ void rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, 
            c2[k] = iprod(um[k], qv);
            for ( q = 0; q < DIM; q++)
            {
-               /*fprintf(stderr,"%f %f %f\n", um[i][XX], um[k][XX], um[q][XX]);*/
-               fprintf(stderr,"%f %f %f\n", c1, c2[k], iprod(um[q],qv));
-               beta_l += c1*c2[k]*iprod(um[q],qv)*2.0;
-               fprintf(stderr,"beta_lab %f\n", beta_l);
+               beta_l += c1*c2[k]*iprod(um[q],qv)*beta_m[i][k][q];
            }
        }
    }
-
+   return beta_l;
 }
-
-/*void rotate_beta(const rvec uv[], const rvec qv, beta_m, beta_l)
-{
-   int  i, k, q;
-   real c1;
-   rvec c2;
-   clear_rvec(beta_m);
-   for ( i = 0; i < DIM; i++)
-   {
-       c1 = iprod(uv[i], qv);
-       for ( j = 0; j < DIM; j++)
-       {
-           c2[j] = iprod(xv2, qv);
-           for ( k = 0; k < DIM; k++)
-           {
-               beta_l += c1*c2[j]*iprod(xv3,qv)
-           }
-       }
-   }
-
-    iprod 
-}*/
 
 void dipole_atom2molindex(int *n, int *index, t_block *mols)
 {
