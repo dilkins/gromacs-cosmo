@@ -78,12 +78,12 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
-    int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, n_j ,nframes;
+    int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, nframes;
     int          **count;
     real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel;
-    real          *temp_method, *cos_q, *sin_q, ***beta_mol, *beta_lab;
+    real          *cos_q, *sin_q, ***beta_mol, *beta_lab, beta_labsq = 0.0;
     /*char         **grpname;*/
-    int            isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
+    int            isize_cm = 0, nrdf = 0, max_i, isize0, isize_g, ind0;
     atom_id      /* **index, */ *index_cm = NULL;
     gmx_int64_t   *sum;
     real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
@@ -167,9 +167,15 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
             snew(beta_mol[i][j], DIM);
         }
     }
-    beta_mol[2][0][0] = 0.25;
-    beta_mol[2][2][2] = 9.8;
-    beta_mol[2][1][1] = 5.2;
+
+    /*beta_mol parameters in a.u. taken from Kusalik Mol. Phys. 99 1107-1120, (2001)*/
+    /*convert from a.u. to [e^3]*[nm^3]/[Hartree^2]*/
+    beta_mol[2][0][0] = 5.7/**0.000148184711*/;
+    beta_mol[2][2][2] = 31.6/**0.000148184711*/;
+    beta_mol[2][1][1] = 10.9/**0.000148184711*/;
+    fprintf(stderr,"beta_mol[2][0][0] %f\n",beta_mol[2][0][0]);
+    fprintf(stderr,"beta_mol[2][2][2] %f\n",beta_mol[2][2][2]);
+    fprintf(stderr,"beta_mol[2][1][1] %f\n",beta_mol[2][1][1]);
     
     for (g = 0; g < ng; g++)
     {
@@ -186,7 +192,6 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
         snew(s_method[g], nbinq);
         snew(s_method_g_r[g], nbinq);
         snew(arr_q,nbinq);
-        snew(temp_method,nbinq);
         snew(cos_q,nbinq);
         snew(sin_q,nbinq);
         snew(analytical_integral,nbinq);
@@ -219,37 +224,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
 
         for (i = 0; i < isize[0]; i++)
         {   
-            /* We can only have exclusions with atomic rdfs */
-            ix = molindex[0][i];
-            for (j = 0; j < natoms; j++)
-            {
-                bExcl[j] = FALSE;
-            }
-            k = 0;
-            snew(pairs[g][i], isize[g+1]);
-            bNonSelfExcl = FALSE;
-            for (j = 0; j < isize[g+1]; j++)
-            {
-                jx = molindex[g+1][j];
-                if (!bExcl[jx])
-                {
-                    pairs[g][i][k++] = jx;
-                }
-                else if (ix != jx)
-                {
-                    bNonSelfExcl = TRUE;
-                }
-            }
-            if (bNonSelfExcl)
-            {
-                npairs[g][i] = k;
-                srenew(pairs[g][i], npairs[g][i]);
-            }
-            else
-            {
-                npairs[g][i] = -1;
-                sfree(pairs[g][i]);
-            }
+            npairs[g][i] = -1;
+            sfree(pairs[g][i]);
         }
     }
     sfree(bExcl);
@@ -281,93 +257,51 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     
             for (g = 0; g < ng; g++)
             {
-                for (i = 0; i < isize[g+1]; i++)
+                for (i = 0; i < isize0; i++)
                 {
-                    int ind0 ;
                     copy_rvec(x[molindex[g+1][i]], x_i1[i]);
                     ind0  = mols->index[molindex[g+1][i]];
-                    mol_unitvectors(x[ind0], x[ind0+1], x[ind0+2], uv1, uv2, uv3);
+                    /*fprintf(stderr,"x[ind0] %f %f %f\n, x[ind0+1] %f %f %f\n, x[ind0+2] %f %f %f \n", x[ind0][XX], x[ind0][YY], x[ind0][ZZ], x[ind0+1][XX], x[ind0+1][YY], x[ind0+1][ZZ], x[ind0+2][XX], x[ind0+2][YY], x[ind0+2][ZZ]);*/
                     beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec , beta_mol );
-                    /*fprintf(stderr,"beta_lab %f\n",beta_lab[i]);*/
+                    beta_labsq += sqr(beta_lab[i]);
                 }
                 for (i = 0; i < isize0; i++)
                 {
-                    if (bClose)
+                    /* Real rdf between points in space */
+                    copy_rvec(x[molindex[0][i]], xi);
+                    for (j = 0; j < isize0; j++)
                     {
-                        /* Special loop, since we need to determine the minimum distance
-                         * over all selected atoms in the reference molecule/residue. */
-                        isize_g = isize[g+1];
-                        for (j = 0; j < isize_g; j++)
+                        if (bPBC)
                         {
-                            r2 = 1e30;
-                            /* Loop over the selected atoms in the reference molecule */
-                            for (ii = coi[0][i]; ii < coi[0][i+1]; ii++)
-                            {
-                                if (bPBC)
-                                {
-                                    pbc_dx(&pbc, x[molindex[0][ii]], x_i1[j], dx);
-                                }
-                                else
-                                {
-                                    rvec_sub(x[molindex[0][ii]], x_i1[j], dx);
-                                }
-                                r2ii = iprod(dx, dx);
-                                if (r2ii < r2)
-                                {
-                                    r2 = r2ii;
-                                }
-                            }
-                            if (r2 > 0.0 && r2 <= rmax2)
-                            {
-                                count[g][(int)(sqrt(r2)*invhbinw)]++;
-                            }
+                            pbc_dx(&pbc, xi, x_i1[j], dx);
                         }
-                    }
-                    else
-                    {
-                        /* Cheaper loop, no exclusions */
-                        isize_g = isize[g+1];
-                        n_j = 0.0;
-                        snew(temp_method,nbinq);
-                        for (j = 0; j < isize_g; j++)
+                        else
                         {
-                            if (bPBC)
+                            rvec_sub(xi, x_i1[j], dx);
+                        }
+                        r2 = iprod(dx, dx);
+                        if (r2 > 0.0 && r2 <= rmax2 )
+                        {   
+                            r_dist = sqrt(r2);
+                            count[g][(int)(r_dist*invhbinw)]++;
+                            if ((fade == 0.0) || (r_dist <= fade))
                             {
-                                pbc_dx(&pbc, xi, x_i1[j], dx);
+                                mod_f = beta_lab[i]*beta_lab[j]  ;
+                                for (qq = 0; qq < nbinq; qq++)
+                                {
+                                    s_method[g][qq] += mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx))  ;
+                                    /*fprintf(stderr,"s_method[g][qq] %f\n", mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx)) );*/
+                                }
                             }
                             else
                             {
-                                rvec_sub(xi, x_i1[j], dx);
-                            }
-                            r2 = iprod(dx, dx);
-                            if ( r2 <= rmax2 )
-                            {   
-                                r_dist = sqrt(r2);
-                                count[g][(int)(r_dist*invhbinw)]++;
-                                n_j ++ ;
-                                if ((fade == 0.0) || (r_dist <= fade))
+                                mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
+                                for (qq = 0; qq < nbinq; qq++)
                                 {
-                                    mod_f = beta_lab[i]*beta_lab[j]  ;
-                                    for (qq = 0; qq < nbinq; qq++)
-                                    {
-                                        temp_method[qq] += mod_f*cos(iprod(arr_qvec,dx))  ;
-                                    }
-                                }
-                                else
-                                {
-                                    mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
-                                    for (qq = 0; qq < nbinq; qq++)
-                                    {
-                                        temp_method[qq] += mod_f*cos(iprod(arr_qvec,dx))  ;
-                                    }
+                                    s_method[g][qq] += mod_f*cos(iprod(arr_qvec,dx))  ;
                                 }
                             }
                         }
-                        for (qq = 0; qq < nbinq; qq++)
-                        {
-                             s_method[g][qq] += temp_method[qq]/arr_q[qq] /*- analytical_integral[qq]*invvol*/ ;
-                        }
-                        sfree(temp_method) ;
                     }
                 }
             }
@@ -400,12 +334,13 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[molindex[0][i]], xi);
-                    /*isize_g = isize[g+1];*/
+                    ind0  = mols->index[molindex[g+1][i]];
+                    beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec , beta_mol );
                     for (qq = 0; qq < nbinq; qq++)
                     {
-                        q_xi=(minq+dq*qq)*iprod(arr_qvec,xi);
-                        cos_q[qq] += cos(q_xi);
-                        sin_q[qq] += sin(q_xi);
+                        q_xi = (minq+dq*qq)*iprod(arr_qvec,xi);
+                        cos_q[qq] += beta_lab[i]*cos(q_xi);
+                        sin_q[qq] += beta_lab[i]*sin(q_xi);
                     }
                 }
                 for (qq = 0; qq < nbinq; qq++)
@@ -490,7 +425,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
            /* compute analytical integral for the cosmo method and the S(q), and also the S(q) for the conventional g(r) method*/
            for (qq = 0; qq < nbinq ; qq++)
            {
-               s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) ;
+               s_method[g][qq] = 0.5*s_method[g][qq]/(nframes*isize0) ;
                for (i = 0; i< (nbin+1)/2 ; i++)
                {
                    r = i*binwidth;
@@ -522,6 +457,11 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     sprintf(gtitle, "Structure factor");
     fp = xvgropen(fnSFACT, gtitle, "q", "S(q)", oenv);
     sprintf(refgt, "%s", "");
+    if (method[0] != 's')
+    {
+        fprintf(fp, "@    s0 legend \"coherent\" \n");
+        fprintf(fp, "@target G0.S0\n");
+    }
     if (ng == 1)
     {
         if (output_env_get_print_xvgr_codes(oenv))
@@ -545,6 +485,32 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
             fprintf(fp, " %10g", s_method[g][qq]);
         }
         fprintf(fp, "\n");
+    }
+    if (method[0] != 's')
+    {
+       fprintf(fp,"&\n");
+       fprintf(fp, "@    s1 legend \"incoherent\"\n");
+       fprintf(fp, "@target G0.S1\n");
+       fprintf(fp, "@type xy\n");
+       for (qq = 0; qq < nbinq  ; qq++)
+       {
+           fprintf(fp, "%10g", arr_q[qq]);
+           fprintf(fp, " %10g", beta_labsq/(nframes*isize0));
+           fprintf(fp, "\n");
+       }
+       fprintf(fp,"&\n");
+       fprintf(fp, "@    s2 legend \"total\"\n");
+       fprintf(fp, "@target G0.S2\n");
+       fprintf(fp, "@type xy\n");
+       for (qq = 0; qq < nbinq  ; qq++)
+       {
+           fprintf(fp, "%10g", arr_q[qq]);
+           for (g = 0; g < ng; g++)
+           {
+               fprintf(fp, " %10g", s_method[g][qq] + beta_labsq/(nframes*isize0));
+           }
+           fprintf(fp, "\n");
+       }
     }
     gmx_ffclose(fp);
 
@@ -711,10 +677,13 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
     const char        *desc[] = {
         "The structure of liquids can be studied by either neutron or X-ray scattering",
         "[THISMODULE] calculates the non-linear optical scattering intensity per molecule in different ways.",
-        "The simplest method (sumexp) is to use 1/N|sum_i beta_IJK(i) exp[iqr_i]|^2.",
-        "This however converges slowly with the box size for small values of q.[PAR]",
+        "The simplest method (sumexp) is to use 1/N<|sum_i beta_IJK(i) exp[iq dot r_i]|^2>.",
+        "This however converges slowly with the simulation time.[PAR]",
         "The method cosmo (default) uses the following expression to compute I(q):",
-        "I(q)=1+ 1/N<sum_{ij} sin(q r_{ij})/(q r_{ij})> -4pi rho int r sin q r dr (to edit).",
+        "I(q)=1/N<sum_i beta_IJK(i)^2> + 1/(2N)< sum_i sum_{i!=j} beta_IJK(i)beta_IJK(j) cos(q dot r_ij) >.",
+        "I(q)=incoherent term + coherent term. For more details see Bersohn, et al. JCP 45, 3184 (1966)",
+        "The values for the hyperpolarizability for a water molecule beta_IJK are taken by",
+        "A. V. Gubskaya et al., Mol. Phys. 99, 13 1107 (2001) (computed at MP4 level with mean field liquid water). [PAR]", 
     };
     static gmx_bool    bPBC = TRUE, bNormalize = TRUE;
     static real        binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, faderdf = 0.0;
@@ -764,7 +733,7 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
         { efTRX, "-f",  NULL,     ffREAD },
         { efTPS, NULL,  NULL,     ffREAD },
         { efNDX, NULL,  NULL,     ffOPTRD },
-        { efXVG, "-o",  "sfact",    ffWRITE },
+        { efXVG, "-o",  "non_linear_sfact",    ffWRITE },
         { efXVG, "-osrdf", "sfact_rdf", ffOPTWR },
         { efXVG, "-ordf", "rdf", ffOPTWR },
     };
