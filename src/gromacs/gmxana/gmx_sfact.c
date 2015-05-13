@@ -90,7 +90,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     real          *inv_segvol, invvol, invvol_sum, rho;
     gmx_bool       bClose, *bExcl, bTop, bNonSelfExcl;
     matrix         box, box_pbc;
-    int          **npairs;
+    int          **npairs; 
     atom_id        ix, jx, ***pairs;
     t_topology    *top  = NULL;
     int            ePBC = -1, ePBCrdf = -1;
@@ -139,6 +139,8 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     else
     {
         isize0 = isize[0];
+        fprintf(stderr,"isize[0] %d isize[1] %d, isize[2] %d\n",isize[0], isize[1], isize[2]);
+        
     }
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
     if (!natoms)
@@ -368,6 +370,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                             /* Expensive loop, because of indexing */
                             n_j=0.0;
                             snew(temp_method,nbinq);
+                            fprintf(stderr,"npairs %d\n",npairs[g][i]);
                             for (j = 0; j < npairs[g][i]; j++)
                             {
                                 jx = pairs[g][i][j];
@@ -575,7 +578,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
        }
        for (g = 0; g < ng; g++)
        {
-           /* compute analytical integral for the cosmo method and the S(q), and also the S(q) for the conventional g(r) method*/
+           /* compute S(q) for cosmo and the conventional g(r) method*/
            for (qq = 0; qq < nbinq ; qq++)
            {
                s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) ;

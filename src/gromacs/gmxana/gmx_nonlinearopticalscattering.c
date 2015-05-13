@@ -69,7 +69,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                    const char *fnSFACT, const char *fnOSRDF, const char *fnORDF, /*const char *fnHQ, */
                    const char *method,
                    gmx_bool bPBC, gmx_bool bNormalize,
-                   real maxq, real minq, int nbinq, real kx, real ky, real kz, real binwidth,
+                   real maxq, real minq, int nbinq, real kx, real ky, real kz, 
+                   int p_out, int p_in1, int p_in2 ,real binwidth,
                    real fade, real faderdf, int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv)
 {
@@ -83,12 +84,12 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel;
     real          *cos_q, *sin_q, ***beta_mol, *beta_lab, beta_labsq = 0.0;
     /*char         **grpname;*/
-    int            isize_cm = 0, nrdf = 0, max_i, isize0, isize_g, ind0;
+    int            isize_cm = 0, nrdf = 0, max_i, isize0, ind0;
     atom_id      /* **index, */ *index_cm = NULL;
     gmx_int64_t   *sum;
     real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
     real           segvol, spherevol, prev_spherevol, **rdf;
-    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec, uv1, uv2, uv3;
+    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec, pol_out, pol_in1, pol_in2; 
     real          *inv_segvol, invvol, invvol_sum, rho;
     gmx_bool       bClose, *bExcl, bTop, bNonSelfExcl;
     matrix         box, box_pbc;
@@ -113,7 +114,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
     fprintf(stderr,"natoms %d\n",natoms);
     fprintf(stderr,"molindex %d\n",molindex[0][0]);
-    fprintf(stderr,"isize[0] %d\n",isize[0]);
+    fprintf(stderr,"isize[0] %d isize[1] %d, isize[2] %d\n",isize[0], isize[1], isize[2]);
     fprintf(stderr,"ng %d\n",ng);
 
     /* initialize some handy things */
@@ -125,7 +126,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     ePBCrdf = ePBC;
     if (bPBC)
     {
-        rmax2   = /*0.99*0.99* */ max_cutoff2(FALSE ? epbcXY : epbcXYZ, box_pbc);
+        rmax2   =  max_cutoff2(FALSE ? epbcXY : epbcXYZ, box_pbc);
         fprintf(stderr, "rmax2 = %f\n", rmax2);
         
     }
@@ -151,7 +152,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     snew(s_method, ng);
     snew(s_method_g_r, ng);
     snew(bExcl, natoms);
-    max_i = 0;
+    max_i = isize[0];
 
     /*allocate memory for beta in lab frame and initialize beta in mol frame*/
     snew(beta_lab, isize[0]);
@@ -179,10 +180,6 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     
     for (g = 0; g < ng; g++)
     {
-        if (isize[g+1] > max_i)
-        {
-            max_i = isize[g+1];
-        }
         /* this is THE array */
         snew(count[g], nbin+1);
         /* make pairlist array for groups and exclusions */
@@ -199,6 +196,15 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
         arr_qvec[XX] = kx*normfac;
         arr_qvec[YY] = ky*normfac;
         arr_qvec[ZZ] = kz*normfac;
+        for (i = 0 ; i<DIM; i++)
+        {
+          pol_out[i] = 0.0;
+          pol_in1[i] = 0.0;
+          pol_in2[i] = 0.0;
+        }
+        pol_out[p_out] = 1.0;
+        pol_in1[p_in1] = 1.0;
+        pol_in2[p_in2] = 1.0;
         inv_width = (fade == 0.0 ) ? 1.0 : M_PI*0.5/(rmax-fade) ; 
         dq=(maxq-minq)/nbinq ;       
         for (qq = 0; qq< nbinq; qq++)
@@ -259,16 +265,20 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
             {
                 for (i = 0; i < isize0; i++)
                 {
-                    copy_rvec(x[molindex[g+1][i]], x_i1[i]);
-                    ind0  = mols->index[molindex[g+1][i]];
-                    /*fprintf(stderr,"x[ind0] %f %f %f\n, x[ind0+1] %f %f %f\n, x[ind0+2] %f %f %f \n", x[ind0][XX], x[ind0][YY], x[ind0][ZZ], x[ind0+1][XX], x[ind0+1][YY], x[ind0+1][ZZ], x[ind0+2][XX], x[ind0+2][YY], x[ind0+2][ZZ]);*/
-                    beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec , beta_mol );
+                    ind0  = mols->index[molindex[g][i]]; 
+                    copy_rvec(x[ind0], x_i1[i]);
+                    /*fprintf(stderr,"i %d, ind0 %d, \n", i, ind0);
+                    fprintf(stderr,"x[ind0] %f %f %f \n",x[ind0][XX], x[ind0][YY], x[ind0][ZZ]);
+                    fprintf(stderr,"x[ind0+1] %f %f %f\n, x[ind0+2] %f %f %f\n", x[ind0+1][XX], x[ind0+1][YY], x[ind0+1][ZZ], x[ind0+2][XX], x[ind0+2][YY], x[ind0+2][ZZ]);
+*/
+                    beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], pol_out, pol_in1, pol_in2, beta_mol );
                     beta_labsq += sqr(beta_lab[i]);
                 }
                 for (i = 0; i < isize0; i++)
                 {
                     /* Real rdf between points in space */
-                    copy_rvec(x[molindex[0][i]], xi);
+                    ind0 = mols->index[molindex[g][i]];
+                    copy_rvec(x[ind0], xi);
                     for (j = 0; j < isize0; j++)
                     {
                         if (bPBC)
@@ -284,13 +294,15 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                         {   
                             r_dist = sqrt(r2);
                             count[g][(int)(r_dist*invhbinw)]++;
+                            /*fprintf(stderr,"count %d\n",count[g][(int)(r_dist*invhbinw)]);*/
                             if ((fade == 0.0) || (r_dist <= fade))
                             {
-                                mod_f = beta_lab[i]*beta_lab[j]  ;
+                                mod_f = beta_lab[i]*beta_lab[j]/r_dist  ;
                                 for (qq = 0; qq < nbinq; qq++)
                                 {
-                                    s_method[g][qq] += mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx))  ;
+                                    /*s_method[g][qq] += mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx))  ;*/
                                     /*fprintf(stderr,"s_method[g][qq] %f\n", mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx)) );*/
+                                     s_method[g][qq] += mod_f*sin(arr_q[qq]*r_dist)/arr_q[qq];
                                 }
                             }
                             else
@@ -298,7 +310,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                                 mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
                                 for (qq = 0; qq < nbinq; qq++)
                                 {
-                                    s_method[g][qq] += mod_f*cos(iprod(arr_qvec,dx))  ;
+                                    /*s_method[g][qq] += mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx))  ;*/
+                                      s_method[g][qq] += mod_f*sin(arr_q[qq]*r_dist)/arr_q[qq];
                                 }
                             }
                         }
@@ -333,9 +346,9 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                 snew(sin_q,nbinq);
                 for (i = 0; i < isize0; i++)
                 {
-                    copy_rvec(x[molindex[0][i]], xi);
-                    ind0  = mols->index[molindex[g+1][i]];
-                    beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], arr_qvec , beta_mol );
+                    ind0  = mols->index[molindex[g][i]];
+                    copy_rvec(x[ind0], xi);
+                    beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], pol_out, pol_in1, pol_in2, beta_mol );
                     for (qq = 0; qq < nbinq; qq++)
                     {
                         q_xi = (minq+dq*qq)*iprod(arr_qvec,xi);
@@ -384,7 +397,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
        for (g = 0; g < ng; g++)
        {
            /* We have to normalize by dividing by the number of frames */
-           normfac = 1.0/(nframes*invvol*isize0*isize[g+1]);
+           normfac = 1.0/(nframes*invvol*isize0*isize0);
            /* Do the normalization */
            nrdf = max((nbin+1)/2, 1+2*faderdf/binwidth);
            snew(rdf[g], nrdf);
@@ -608,7 +621,7 @@ void mol_unitvectors(const rvec xv1, const rvec xv2, const rvec xv3, rvec u1, rv
 }
 
 
-real rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, real ***beta_m)
+real rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2, real ***beta_m)
 {
     int i, k, q;
     matrix um;
@@ -626,13 +639,13 @@ real rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec qv, 
     
    for ( i = 0; i < DIM; i++)
    {
-       c1 = iprod(um[i], qv);
+       c1 = iprod(um[i], pout);
        for ( k = 0; k < DIM; k++)
        {
-           c2[k] = iprod(um[k], qv);
+           c2[k] = iprod(um[k], pin1);
            for ( q = 0; q < DIM; q++)
            {
-               beta_l += c1*c2[k]*iprod(um[q],qv)*beta_m[i][k][q];
+               beta_l += c1*c2[k]*iprod(um[q],pin2)*beta_m[i][k][q];
            }
        }
    }
@@ -666,7 +679,6 @@ void dipole_atom2molindex(int *n, int *index, t_block *mols)
         }
         /* Modify the index in place */
         index[nmol++] = m;
-        /*fprintf(stderr, "index nmol m %d %d %d\n", index[nmol], nmol, m);*/
     }
     printf("There are %d molecules in the selection\n", nmol);
     *n = nmol;
@@ -683,12 +695,14 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
         "I(q)=1/N<sum_i beta_IJK(i)^2> + 1/(2N)< sum_i sum_{i!=j} beta_IJK(i)beta_IJK(j) cos(q dot r_ij) >.",
         "I(q)=incoherent term + coherent term. For more details see Bersohn, et al. JCP 45, 3184 (1966)",
         "The values for the hyperpolarizability for a water molecule beta_IJK are taken by",
-        "A. V. Gubskaya et al., Mol. Phys. 99, 13 1107 (2001) (computed at MP4 level with mean field liquid water). [PAR]", 
+        "A. V. Gubskaya et al., Mol. Phys. 99, 13 1107 (2001) (computed at MP4 level with mean field liquid water).",
+        "pout, pin1, pin2 are the polarization directions of the three beams.",
+        "Common polarization combinations are PSS, PPP, SPP, SSS .[PAR]",
     };
     static gmx_bool    bPBC = TRUE, bNormalize = TRUE;
     static real        binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, faderdf = 0.0;
     static real        kx = 1, ky = 0, kz = 0;
-    static int         ngroups = 1, nbinq = 100;
+    static int         ngroups = 1, nbinq = 100, pout = 2, pin1 = 1, pin2 = 1;
 
     static const char *methodt[] = { NULL, "cosmo",  "sumexp",  NULL }; 
 
@@ -702,6 +716,9 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
         { "-qx",         FALSE, etREAL, {&kx}, "direction of q-vector in x (1 or 0), use with sumexp method" },
         { "-qy",         FALSE, etREAL, {&ky}, "direction of q-vector in y (1 or 0), use with sumexp method"},
         { "-qz",         FALSE, etREAL, {&kz}, "direction of q-vector in z (1 or 0), use with sumexp method" },
+        { "-pout",         FALSE, etINT, {&pout}, "polarization of outcoming beam (0, 1, or 2). For P choose 2, for S choose 1" },
+        { "-pin1",         FALSE, etINT, {&pin1}, "polarization of 1st incoming beam. For P choose 0, for S choose 1 "},
+        { "-pin2",         FALSE, etINT, {&pin2}, "polarization of 2nd incoming beam should the same as 1st for second harmonic scattering." },
         { "-bin",      FALSE, etREAL, {&binwidth},
           "Binwidth for g(r) (nm)" },
         { "-method",     FALSE, etENUM, {methodt},
@@ -776,7 +793,7 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
     do_nonlinearopticalscattering(top, /*fnNDX,*/ /*fnTPS,*/ ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),
            opt2fn_null("-ordf", NFILE, fnm),
-           methodt[0],  bPBC, bNormalize,  maxq, minq, nbinq, kx, ky, kz, binwidth,
+           methodt[0],  bPBC, bNormalize,  maxq, minq, nbinq, kx, ky, kz, pout, pin1, pin2 ,binwidth,
            fade, faderdf, gnx, grpindex, grpname, ngroups, oenv);
 
     return 0;
