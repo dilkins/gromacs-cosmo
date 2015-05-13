@@ -83,9 +83,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     int          **count;
     real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel;
     real          *cos_q, *sin_q, ***beta_mol, *beta_lab, beta_labsq = 0.0;
-    /*char         **grpname;*/
     int            isize_cm = 0, nrdf = 0, max_i, isize0, ind0;
-    atom_id      /* **index, */ *index_cm = NULL;
+    atom_id       *index_cm = NULL;
     gmx_int64_t   *sum;
     real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
     real           segvol, spherevol, prev_spherevol, **rdf;
@@ -95,7 +94,6 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     matrix         box, box_pbc;
     int          **npairs;
     atom_id        ix, jx, ***pairs;
-    /*t_topology    *top  = NULL;*/
     int            ePBC = -1, ePBCrdf = -1;
     t_block       *mols = NULL;
     t_blocka      *excl;
@@ -112,7 +110,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     mols = &(top->mols);
     isize0 = isize[0];
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
-    fprintf(stderr,"natoms %d\n",natoms);
+    fprintf(stderr,"\nnatoms %d\n",natoms);
     fprintf(stderr,"molindex %d\n",molindex[0][0]);
     fprintf(stderr,"isize[0] %d isize[1] %d, isize[2] %d\n",isize[0], isize[1], isize[2]);
     fprintf(stderr,"ng %d\n",ng);
@@ -307,7 +305,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                             }
                             else
                             {
-                                mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
+                                mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width))/r_dist ;
                                 for (qq = 0; qq < nbinq; qq++)
                                 {
                                     /*s_method[g][qq] += mod_f*cos((minq+dq*qq)*iprod(arr_qvec,dx))  ;*/
@@ -605,6 +603,18 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
        sfree(s_method);
        sfree(analytical_integral);
        sfree(arr_q);
+    }
+
+    for (i = 0; i < DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+            sfree(beta_mol[i][j]);
+        }
+    }
+    for (j = 0; j < DIM; j++)
+    {
+        sfree(beta_mol[j]);
     }
 }
 
