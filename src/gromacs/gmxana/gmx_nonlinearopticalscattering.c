@@ -79,32 +79,23 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
-    int            g, natoms, i, ii, j, k, nbin, qq, j0, j1, n, nframes;
+    int            g, natoms, i, j, k, nbin, qq, n, nframes;
     int          **count;
     real         **s_method, **s_method_g_r, *analytical_integral, *arr_q, qel;
     real          *cos_q, *sin_q, ***beta_mol, *beta_lab, beta_labsq = 0.0;
-    int            isize_cm = 0, nrdf = 0, max_i, isize0, ind0;
-    atom_id       *index_cm = NULL;
-    gmx_int64_t   *sum;
-    real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
+    int            nrdf = 0, max_i, isize0, ind0;
+    real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
     real           segvol, spherevol, prev_spherevol, **rdf;
-    rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec, pol_out, pol_in1, pol_in2; 
+    rvec          *x, dx,  *x_i1, xi, arr_qvec, pol_out, pol_in1, pol_in2; 
     real          *inv_segvol, invvol, invvol_sum, rho;
-    gmx_bool       bClose, *bExcl, bTop, bNonSelfExcl;
     matrix         box, box_pbc;
-    int          **npairs;
-    atom_id        ix, jx, ***pairs;
     int            ePBC = -1, ePBCrdf = -1;
     t_block       *mols = NULL;
-    t_blocka      *excl;
     t_atom        *atom = NULL;
     t_pbc          pbc;
     gmx_rmpbc_t    gpbc = NULL;
-    int           *is   = NULL, **coi = NULL, cur, mol, i1, res, a;
+    int            mol, a;
 
-    excl = NULL;
-
-    bClose = FALSE ; 
 
     atom = top->atoms.atom;
     mols = &(top->mols);
@@ -145,11 +136,8 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     rmax     = sqrt(rmax2);
 
     snew(count, ng);
-    snew(pairs, ng);
-    snew(npairs, ng);
     snew(s_method, ng);
     snew(s_method_g_r, ng);
-    snew(bExcl, natoms);
     max_i = isize[0];
 
     /*allocate memory for beta in lab frame and initialize beta in mol frame*/
@@ -180,9 +168,6 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
     {
         /* this is THE array */
         snew(count[g], nbin+1);
-        /* make pairlist array for groups and exclusions */
-        snew(pairs[g], isize[0]);
-        snew(npairs[g], isize[0]);
         /*allocate memory for s_method array */
         snew(s_method[g], nbinq);
         snew(s_method_g_r[g], nbinq);
@@ -224,15 +209,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                (2.*pow(qel,3)*pow(M_PI + qel*(fade - rmax),2)*pow(M_PI + qel*(-fade + rmax),2)));
             }                                                                 
         }
-
-
-        for (i = 0; i < isize[0]; i++)
-        {   
-            npairs[g][i] = -1;
-            sfree(pairs[g][i]);
-        }
     }
-    sfree(bExcl);
 
     snew(x_i1, max_i);
     nframes    = 0;
@@ -265,11 +242,13 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                 {
                     ind0  = mols->index[molindex[g][i]]; 
                     copy_rvec(x[ind0], x_i1[i]);
-                    /*fprintf(stderr,"i %d, ind0 %d, \n", i, ind0);
+                    fprintf(stderr,"i %d, ind0 %d, \n", i, ind0);
                     fprintf(stderr,"x[ind0] %f %f %f \n",x[ind0][XX], x[ind0][YY], x[ind0][ZZ]);
                     fprintf(stderr,"x[ind0+1] %f %f %f\n, x[ind0+2] %f %f %f\n", x[ind0+1][XX], x[ind0+1][YY], x[ind0+1][ZZ], x[ind0+2][XX], x[ind0+2][YY], x[ind0+2][ZZ]);
-*/
+
                     beta_lab[i] = rotate_beta(x[ind0], x[ind0+1], x[ind0+2], pol_out, pol_in1, pol_in2, beta_mol );
+                    fprintf(stderr,"beta_lab %f\n",beta_lab[i]);
+                    fprintf(stderr,"beta_lab_sqr %f\n",sqr(beta_lab[i]));
                     beta_labsq += sqr(beta_lab[i]);
                 }
                 for (i = 0; i < isize0; i++)
@@ -639,13 +618,16 @@ real rotate_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec pout
     real c1;
     rvec c2;
     clear_rvec(c2);
-    rvec_sub( xv2, xv3, um[1]);
-    unitv(um[1], um[1]);
-    svmul(2.0, xv1, um[0]);
-    rvec_sub( um[0], xv2, um[0]);
-    rvec_sub( um[0], xv2, um[0]);
+    rvec_sub( xv2, xv3, um[0]); /*this should be x*/
     unitv(um[0], um[0]);
-    cprod(um[0] , um[1], um[2]);
+    fprintf(stderr, "um[0] %f %f %f\n", um[0][XX], um[0][YY], um[0][ZZ]);
+    svmul(2.0, xv1, um[2]);
+    rvec_sub( um[2], xv2, um[2]);
+    rvec_sub( um[2], xv3, um[2]);
+    unitv(um[2], um[2]); /*this should be z*/
+    fprintf(stderr, "um[2] %f %f %f\n", um[2][XX], um[2][YY], um[2][ZZ]);
+    cprod(um[0] , um[2], um[1]); /*this should be y*/
+    fprintf(stderr, "um[1] %f %f %f\n", um[1][XX], um[1][YY], um[1][ZZ]); 
     
    for ( i = 0; i < DIM; i++)
    {
@@ -697,8 +679,8 @@ void dipole_atom2molindex(int *n, int *index, t_block *mols)
 int gmx_nonlinearopticalscattering(int argc, char *argv[])
 {
     const char        *desc[] = {
-        "The structure of liquids can be studied by either neutron or X-ray scattering",
-        "[THISMODULE] calculates the non-linear optical scattering intensity per molecule in different ways.",
+        "The structure of liquids can be studied by elastic second harmonic scattering (also Hyper-Raileigh scattering).",
+        "[THISMODULE] calculates the non-linear optical scattering intensity per molecule in 2 different ways.",
         "The simplest method (sumexp) is to use 1/N<|sum_i beta_IJK(i) exp[iq dot r_i]|^2>.",
         "This however converges slowly with the simulation time.[PAR]",
         "The method cosmo (default) uses the following expression to compute I(q):",
@@ -710,8 +692,8 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
         "Common polarization combinations are PSS, PPP, SPP, SSS .[PAR]",
     };
     static gmx_bool    bPBC = TRUE, bNormalize = TRUE;
-    static real        binwidth = 0.002, maxq=100.0, minq=2.0*M_PI/1000.0, fade = 0.0, faderdf = 0.0;
-    static real        kx = 1, ky = 0, kz = 0;
+    static real        binwidth = 0.002, maxq = 100.0, minq = 1.7320508*2.0*M_PI/1028.0, fade = 0.0, faderdf = 0.0;
+    static real        kx = 1, ky = 0, kz = -2;
     static int         ngroups = 1, nbinq = 100, pout = 2, pin1 = 1, pin2 = 1;
 
     static const char *methodt[] = { NULL, "cosmo",  "sumexp",  NULL }; 
