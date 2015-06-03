@@ -84,7 +84,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     int           *isize, isize_cm = 0, nrdf = 0, max_i, isize0, isize_g;
     atom_id      **index, *index_cm = NULL;
     gmx_int64_t   *sum;
-    real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width;
+    real           t, rmax2, rmax,  r, r_dist, r2, r2ii, q_xi, dq, invhbinw, normfac, mod_f, inv_width, invsize0;
     real           segvol, spherevol, prev_spherevol, **rdf;
     rvec          *x, dx, *x0 = NULL, *x_i1, xi, arr_qvec ;
     real          *inv_segvol, invvol, invvol_sum, rho;
@@ -139,6 +139,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
     else
     {
         isize0 = isize[0];
+        invsize0 = 1.0/isize[0];
         fprintf(stderr,"isize[0] %d isize[1] %d, isize[2] %d\n",isize[0], isize[1], isize[2]);
         
     }
@@ -409,7 +410,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                             }
                             for (qq = 0; qq < nbinq; qq++)
                             {
-                                 s_method[g][qq] += temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol ;
+                                 s_method[g][qq] += temp_method[qq]*invsize0/arr_q[qq] - analytical_integral[qq]*invvol*invsize0 ;
                             }
                             sfree(temp_method);
                         }
@@ -455,7 +456,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                             }
                             for (qq = 0; qq < nbinq; qq++)
                             {
-                                 s_method[g][qq] += temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol ;
+                                 s_method[g][qq] += invsize0*temp_method[qq]/arr_q[qq] - analytical_integral[qq]*invvol*invsize0 ;
                             }
                             sfree(temp_method) ;
                         }
@@ -501,7 +502,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
                 }
                 for (qq = 0; qq < nbinq; qq++)
                 {
-                    s_method[g][qq] += sqr(cos_q[qq]) + sqr(sin_q[qq]);
+                    s_method[g][qq] += (sqr(cos_q[qq]) + sqr(sin_q[qq]))*invsize0;
                 }
                 sfree(cos_q);
                 sfree(sin_q);
@@ -581,7 +582,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
            /* compute S(q) for cosmo and the conventional g(r) method*/
            for (qq = 0; qq < nbinq ; qq++)
            {
-               s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes*isize0) ;
+               s_method[g][qq] = 1.0 + s_method[g][qq]/(nframes) ;
                for (i = 0; i< (nbin+1)/2 ; i++)
                {
                    r = i*binwidth;
@@ -605,7 +606,7 @@ static void do_sfact(const char *fnNDX, const char *fnTPS, const char *fnTRX,
        {
            for (qq = 0; qq < nbinq ; qq++)
            {
-               s_method[g][qq] = s_method[g][qq]/(nframes*isize0)  ;
+               s_method[g][qq] = s_method[g][qq]/(nframes)  ;
            }
        }
     }
