@@ -296,6 +296,8 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Calculate structure factor");
     registerModule(manager, &gmx_nonlinearopticalscattering, "nonlinearopticalscattering",
                    "Calculate non linear optical scattering intensity");
+    registerModule(manager, &gmx_nonlinearopticalscatteringtheta, "nonlinearopticalscatteringtheta",
+                   "Calculate non linear optical scattering intensity as a function of scattering angle theta");
     registerModule(manager, &gmx_rms, "rms",
                    "Calculate RMSDs with a reference structure and RMSD matrices");
     registerModule(manager, &gmx_rmsdist, "rmsdist",

@@ -220,8 +220,11 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
         pol_in1[p_in1] = 1.0;
         pol_in2[p_in2] = 1.0;
         inv_width = (fade == 0.0 ) ? 1.0 : M_PI*0.5/(rmax-fade) ;
-        minq     = sqrt(2)*2*M_PI/rmax ; 
-        dq=(maxq-minq)/nbinq ;       
+        minq     = M_PI/rmax ; 
+        /* we re-define dq so that arr_q[qq] is commensurate with the box*/
+        dq = ( maxq <= nbinq ) ? minq : minq*gmx_nint((maxq-minq)/(nbinq*minq)) ;     
+        fprintf(stderr,"minimum q value = 2pi/L = %f \nbin in q-space that is commensurate with size of box %f \n", minq, dq);
+        fprintf(stderr,"max q value commensurate with size of box %f\n", minq + dq*(nbinq-1));
         for (qq = 0; qq< nbinq; qq++)
         {
             arr_q[qq]=minq+dq*qq;
@@ -350,7 +353,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                         {
                             r_dist = sqrt(r2);
                             count[g][(int)(r_dist*invhbinw)] ++;
-                            if (fade <= r_dist)
+                            if (r_dist <= fade)
                             {
                                 mod_f = beta_lab[i]*beta_lab[j]  ;
                                 for (qq = 0; qq < nbinq; qq++)
@@ -548,7 +551,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
                         {
                             r_dist = sqrt(r2);
                             count[g][(int)(r_dist*invhbinw)] ++;
-                            if (r_dist <= fade)
+                            if (fade <= r_dist)
                             {
                                 s_method_nospectrum[g] += 2.0*invsize0*beta_lab[i]*beta_lab[j]*sin(minq*r_dist)/(r_dist*minq);
                             }
@@ -656,7 +659,7 @@ static void do_nonlinearopticalscattering(t_topology *top, /*const char *fnNDX, 
         }
         while (read_next_x(oenv, status, &t, x, box));
     }
-    else if ((method[0] == 'c' && bSpectrum == TRUE && fade != 0.0) || (method[0] == 's' && fade != 0.0) || (method[0] == 'm' && fade != 0.0) )
+    else if ((method[0] == 'c' && bSpectrum == TRUE && fade != 0.0) || (method[0] == 's' && fade != 0.0)  )
     {
         gmx_fatal(FARGS,"Combination of method %c, spectrum %d and fading %d  unavailable", method[0], bSpectrum, fade);
     }
@@ -983,44 +986,6 @@ void mol_unitvectors(const rvec xv1, const rvec xv2, const rvec xv3, rvec u1, rv
     
 }
 
-
-void square_beta(const rvec xv1, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2,  real ***beta_m, real *beta_l, real *beta_sq)
-{
-    rvec xvec, yvec, zvec;
-    real cos200 = 0.0, cos211 = 0.0, cos222 = 0.0, cos020 = 0.0, cos002 = 0.0, cos121 = 0.0, cos112 = 0.0 ;
-    rvec_sub( xv2, xv3, xvec); /*this should be x*/
-    unitv(xvec, xvec);
-    svmul(-2.0, xv1, zvec);
-    rvec_add( zvec, xv2, zvec);
-    rvec_add( zvec, xv3, zvec);
-    unitv(zvec, zvec); /*this should be z*/
-    cprod(xvec , zvec, yvec); /*this should be y*/
-    cos200 = beta_m[2][0][0]*iprod(zvec, pout)*iprod(xvec, pin1)*iprod(xvec, pin2);
-    cos211 = beta_m[2][1][1]*iprod(zvec, pout)*iprod(yvec, pin1)*iprod(yvec, pin2);
-    cos222 = beta_m[2][2][2]*iprod(zvec, pout)*iprod(zvec, pin1)*iprod(zvec, pin2);
-    cos002 = beta_m[0][0][2]*iprod(xvec, pout)*iprod(xvec, pin1)*iprod(zvec, pin2);
-    cos020 = beta_m[0][2][0]*iprod(xvec, pout)*iprod(zvec, pin1)*iprod(xvec, pin2);
-    cos112 = beta_m[1][1][2]*iprod(yvec, pout)*iprod(yvec, pin1)*iprod(zvec, pin2);
-    cos121 = beta_m[1][2][1]*iprod(yvec, pout)*iprod(zvec, pin1)*iprod(yvec, pin2) ;
-    
-        
-
-    *beta_sq = cos002*cos002 + 2*cos002*cos020 + cos020*cos020 + 2*cos002*cos112 + 2*cos020*cos112 + cos112*cos112 + 2*cos002*cos121 + 
-    2*cos020*cos121 + 2*cos112*cos121 + cos121*cos121 + 2*cos002*cos200 + 2*cos020*cos200 + 2*cos112*cos200 + 2*cos121*cos200 + 
-    cos200*cos200 + 2*cos002*cos211 + 2*cos020*cos211 + 2*cos112*cos211 + 2*cos121*cos211 + 2*cos200*cos211 + cos211*cos211 + 
-    2*cos002*cos222 + 2*cos020*cos222 + 2*cos112*cos222 + 2*cos121*cos222 + 2*cos200*cos222 + 2*cos211*cos222 + cos222*cos222;
-
-    *beta_l = cos200 + cos211 +cos222 + cos002 + cos020 + cos112 + cos121;
-     fprintf(stderr,"beta_l beta_sq %f %f \n",*beta_l, *beta_sq);
-
-}
-
-
-
-
-
-
-
 real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2, real ***beta_m)
 {
     rvec xvec, yvec, zvec;
@@ -1066,7 +1031,7 @@ real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, c
    return beta_l;
 }
 
-void dipole_atom2molindex(int *n, int *index, t_block *mols)
+/*void dipole_atom2mol(int *n, int *index, t_block *mols)
 {
     int nmol, i, j, m;
 
@@ -1091,13 +1056,12 @@ void dipole_atom2molindex(int *n, int *index, t_block *mols)
             }
             i++;
         }
-        /* Modify the index in place */
         index[nmol++] = m;
     }
     printf("There are %d molecules in the selection\n", nmol);
     *n = nmol;
 }
-
+*/
 int gmx_nonlinearopticalscattering(int argc, char *argv[])
 {
     const char        *desc[] = {
@@ -1204,7 +1168,7 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
     get_index(&top->atoms, ftp2fn_null(efNDX, NFILE, fnm),
              ngroups +1 , gnx, grpindex, grpname);
 
-    dipole_atom2molindex(&gnx[0], grpindex[0], &(top->mols));
+    dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
    
     do_nonlinearopticalscattering(top, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),

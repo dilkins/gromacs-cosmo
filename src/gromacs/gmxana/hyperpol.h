@@ -51,7 +51,9 @@ extern void mol_unitvectors(const rvec xv1, const rvec xv2, const rvec xv3, rvec
 
 real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2, real ***beta_m);
 
-extern void square_beta(const rvec xv1, const rvec xv2, const rvec xc3, const rvec pout, const rvec pin1, const rvec pin2, real ***beta_m, real *beta_l, real *beta_sq);
+extern void rotate_beta_theta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pin1, const rvec pin2, real ***beta_m, real *beta_2, real *beta_1);
+
+extern void dipole_atom2mol(int *n, int *index, t_block *mols);
 
 /*extern void initialize_beta(real beta_m);
 */
