@@ -71,8 +71,8 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                    gmx_bool bPBC, gmx_bool bNormalize, gmx_bool bKleinmannsymm, gmx_bool bSpectrum, gmx_bool bCross,
                    real maxq,  int nbinq, real kx, real ky, real kz, 
                    int p_out, int p_in1, int p_in2 ,real binwidth,
-                   real fade, real faderdf, int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv)
+                   real faderatio, real faderdf, int *isize, int  *molindex[], char **grpname, int ng,
+                   const output_env_t oenv,gmx_bool bGPU,gmx_bool bFADE)
 {
     FILE          *fp;
     FILE          *fpn;
@@ -81,19 +81,19 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, i, j, k, nbin, qq, n, nframes;
     int          **count;
-    real         **s_method, **s_method_coh, *s_method_nospectrum, *temp_method, *s_method_coh_nospectrum, s_method_coh_temp = 0.0;
+    real         **s_method, **s_method_coh, *s_method_nospectrum, *temp_method, temp_method_0 ,*s_method_coh_nospectrum, s_method_coh_temp = 0.0;
     real         **s_method_g_r,  *arr_q, qel, minq;
-    real          *cos_q, *sin_q, *cos_q2, *sin_q2, ***beta_mol, *beta_mol_1d, *beta_lab, *beta_lab_t2, s_method_incoh = 0.0, beta_lab_sq_t = 0.0, beta_lab_1 = 0.0, beta_lab_2;
-    int            nrdf = 0, max_i, isize0, ind0;
+    real          *cos_q, *sin_q, *cos_q2, *sin_q2, ***beta_mol, *beta_mol_1d, *beta_lab, beta_lab_i, *beta_lab_t2, s_method_incoh = 0.0, beta_lab_sq_t = 0.0, beta_lab_1 = 0.0, beta_lab_2;
+    int            nrdf = 0, max_i, isize0, *ind0;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq, invhbinw, normfac, norm_x, norm_z, mod_f, inv_width, bl = 0.0,  bsq = 0.0;
     real           segvol, spherevol, prev_spherevol, **rdf, invsize0;
-    rvec          *x, dx,  *x_i1, xi, x01, x02, *arr_qvec, pol_out, pol_in1, pol_in2; 
-    real          *inv_segvol, invvol, invvol_sum, rho, *ftheta;
+    rvec          *x, dx,  *x_i1, xi, xj ,x01, x02, *arr_qvec, qvec_0 ,pol_out, pol_in1, pol_in2; 
+    real          *inv_segvol, invvol, invvol_sum, rho, *ftheta, temp, fade;
     matrix         box, box_pbc;
     int            ePBC = -1, ePBCrdf = -1;
     t_block       *mols = NULL;
     t_atom        *atom = NULL;
-    t_pbc          pbc;
+    t_pbc          pbc, *pbc_var;
     gmx_rmpbc_t    gpbc = NULL;
     int            mol, a;
 
@@ -101,10 +101,12 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     mols = &(top->mols);
     isize0 = isize[0];
     invsize0 = 1.0/isize0;
+    snew(ind0,isize0);
     fprintf(stderr,"\nAbout to read trajectory\n");
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
-    
+       
     fprintf(stderr,"\nNumber of Atoms %d\n",natoms);
+    fprintf(stderr,"\nNumber of Molecules %d\n",isize0);
     /*fprintf(stderr,"molindex %d\n",molindex[0][0]);
     fprintf(stderr,"x[0] %f %f %f\n", x[0][XX], x[0][YY], x[0][ZZ]);
     fprintf(stderr,"isize[0] %d isize[1] %d, isize[2] %d, invsize0 %f \n",isize[0], isize[1], isize[2], invsize0);
@@ -114,6 +116,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     if (ePBC == -1)
     {
         ePBC = guess_ePBC(box);
+        
     }
     copy_mat(box, box_pbc);
     ePBCrdf = ePBC;
@@ -131,15 +134,20 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     {
         fprintf(debug, "rmax2 = %g\n", rmax2);
     }
+    fade = (1.0 - faderatio*0.01)*sqrt(rmax2);
 
     set_pbc(&pbc, ePBCrdf, box_pbc);
-    ind0  = mols->index[molindex[0][0]];
-    pbc_dx(&pbc, x[ind0], x[ind0+1], x01);
-    pbc_dx(&pbc, x[ind0], x[ind0+2], x02);
+    ind0[0]  = mols->index[molindex[0][0]];
+    pbc_dx(&pbc, x[ind0[0]], x[ind0[0]+1], x01);
+    pbc_dx(&pbc, x[ind0[0]], x[ind0[0]+2], x02);
     rvec_sub( x01, x02, xi);
     norm_x = gmx_invsqrt(norm2(xi));
     rvec_add( x01, x02, xi);
     norm_z = gmx_invsqrt(norm2(xi));
+    for (i = 0; i< isize0; i++)
+    {
+       ind0[i] = mols->index[molindex[0][i]];
+    }
     /* We use the double amount of bins, so we can correctly
      * write the rdf and rdf_cn output at i*binwidth values.
      */
@@ -205,7 +213,6 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
         snew(s_method[g], nbinq);
         snew(s_method_coh[g], nbinq);
         snew(s_method_g_r[g], nbinq);
-        snew(temp_method, nbinq);
         snew(arr_q,nbinq);
         snew(arr_qvec,nbinq);
         snew(cos_q,nbinq);
@@ -255,7 +262,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
         pol_out[p_out] = 1.0;
         pol_in1[p_in1] = 1.0;
         pol_in2[p_in2] = 1.0;
-        inv_width = (fade == 0.0 ) ? 1.0 : M_PI*0.5/(rmax-fade) ;
+        inv_width = (bFADE == FALSE ) ? 1.0 : M_PI*0.5/(rmax-fade) ;
         minq     = M_PI/rmax ; 
         /* we re-define dq so that arr_q[qq] is commensurate with the box*/
         dq = ( maxq <= nbinq ) ? minq : minq*gmx_nint((maxq-minq)/(nbinq*minq)) ;     
@@ -269,59 +276,75 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
             arr_qvec[qq][ZZ] = arr_q[qq]*kz;
         }
     }
+    copy_rvec(arr_qvec[0],qvec_0);
+
 
     snew(x_i1, max_i);
     nframes    = 0;
     invvol_sum = 0;
-    if (bPBC && (NULL != top))
-    {
-        gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
-    }
-    if (method[0] == 'm' && bSpectrum == TRUE && fade == 0.0 && bCross == FALSE)
+    //if (bPBC && (NULL != top))
+    //{
+    //    gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
+    //}
+    //dump_pbc(stderr,&pbc);
+    if (method[0] == 'm' && bSpectrum == TRUE && bFADE == FALSE && bCross == FALSE)
     {
        fprintf(stderr,"modified direct method (modsumexp)\n");
        do
        {
-            copy_mat(box, box_pbc);
-            if (top != NULL)
-            {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
-
-            invvol      = 1/det(box_pbc);
-            invvol_sum += invvol;
+//            copy_mat(box, box_pbc);
+//            if (top != NULL)
+//             {
+//                gmx_rmpbc(gpbc, natoms, box, x);
+//             }
+//            set_pbc(&pbc, ePBCrdf, box_pbc);
+//
+//            invvol      = 1/det(box_pbc);
+//            invvol_sum += invvol;
             for (g = 0; g < ng; g++)
             {
                 beta_lab_sq_t = 0.0;
                 snew(temp_method, nbinq);
                 for (i = 0; i < isize0; i++)
                 {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], x_i1[i]);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+1], x01);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+2], x02);
+                    copy_rvec(x[ind0[i]], x_i1[i]);
+                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+1], x01);
+                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+2], x02);
                     beta_lab[i] = rotate_beta(norm_x, norm_z, x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
                     beta_lab_sq_t += sqr(beta_lab[i]);
                 }
-                for (i = 0; i < isize0 -1.0; i++)
-                {
-                    ind0 = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    for (j = i + 1; j < isize0 ; j++)
-                    {
-                        pbc_dx(&pbc, xi, x_i1[j], dx);
-                        r2 = iprod(dx, dx);
-                        if (r2 <= rmax2 )
-                        {
-                            mod_f = beta_lab[i]*beta_lab[j]  ;
-                            count[g][(int)(r_dist*invhbinw)] ++;
-                            for (qq = 0; qq < nbinq; qq++)
-                            {
-                               temp_method[qq] += mod_f*cos(iprod(arr_qvec[qq],dx));
-                            }
-                        }
-                    }
+  
+                if (bGPU) {
+                   if (nframes==0) fprintf(stderr,"*************** GPU Acceleration ***************\n");
+ //                   double_sum(&pbc,beta_lab,x_i1,isize0,rmax2,arr_qvec,nbinq,temp_method);
+                }
+
+                else {  
+                      
+                      for (i = 0; i < isize0 -1.0; i++) 
+                      {
+                          copy_rvec(x_i1[i],xi);
+                          beta_lab_i = beta_lab[i];
+                         
+
+                          for (j = i + 1; j < isize0 ; j++)
+                          { 
+                              temp=0; 
+
+                              pbc_dx_aiuc(&pbc, xi, x_i1[j], dx);
+                              r2 = iprod(dx, dx);
+                              if (r2 > 0 && r2 <= rmax2 )
+                              {
+                                  mod_f = beta_lab_i*beta_lab[j]  ; 
+      
+                                  for (qq = 0; qq < nbinq; qq++)
+                                  { 
+                                     temp=mod_f*cos(iprod(arr_qvec[qq],dx));
+                                     temp_method[qq] += mod_f*cos(iprod(arr_qvec[qq],dx));
+                                  }
+                              }
+                          }                      
+                     }
                 }
                 s_method_incoh += beta_lab_sq_t*invsize0 ;
                 for (qq = 0; qq < nbinq; qq++)
@@ -329,64 +352,73 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                    s_method_coh[g][qq] += 2.0*temp_method[qq]*invsize0 ;
                    s_method[g][qq] += (2.0*temp_method[qq] + beta_lab_sq_t)*invsize0 ;
                 }
+                sfree(temp_method);
             }
             nframes++;
         }
         while (read_next_x(oenv, status, &t, x, box));
     }
 
-    else if (method[0] == 'm' && bSpectrum == TRUE && fade != 0.0 && bCross == FALSE)
+    else if (method[0] == 'm' && bSpectrum == TRUE && bFADE == TRUE && bCross == FALSE)
     {
        fprintf(stderr,"modified direct method (modsumexp) with fading and spectrum\n");
        do
        {
-            copy_mat(box, box_pbc);
-            if (top != NULL)
-            {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
-
-            invvol      = 1/det(box_pbc);
-            invvol_sum += invvol;
+//            copy_mat(box, box_pbc);
+//           if (top != NULL)
+//           {
+//                gmx_rmpbc(gpbc, natoms, box, x);
+//            }
+//            set_pbc(&pbc, ePBCrdf, box_pbc);
+//
+//            invvol      = 1/det(box_pbc);
+//            invvol_sum += invvol;
             for (g = 0; g < ng; g++)
             {
                 beta_lab_sq_t = 0.0;
                 snew(temp_method, nbinq);
                 for (i = 0; i < isize0; i++)
                 {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], x_i1[i]);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+1], x01);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+2], x02);
+                    copy_rvec(x[ind0[i]], x_i1[i]);
+                    pbc_dx_aiuc(&pbc, x_i1[i], x[ind0[i]+1], x01);
+                    pbc_dx_aiuc(&pbc, x_i1[i], x[ind0[i]+2], x02);
                     beta_lab[i] = rotate_beta(norm_x, norm_z, x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
                     beta_lab_sq_t += sqr(beta_lab[i]);
                 }
-                for (i = 0; i < isize0 -1.0; i++)
-                {
-                    ind0 = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    for (j = i + 1; j < isize0 ; j++)
+
+
+                if (bGPU) {
+                   if (nframes==0) fprintf(stderr,"*************** GPU Acceleration ***************\n");
+//                   double_sum_fade(&pbc,beta_lab,x_i1,isize0,rmax2,arr_qvec,nbinq,fade,inv_width,temp_method);
+                }
+
+                else {
+                    for (i = 0; i < isize0 -1.0; i++)
                     {
-                        pbc_dx(&pbc, xi, x_i1[j], dx);
-                        r2 = iprod(dx, dx);
-                        if (r2 <= rmax2 )
+                        copy_rvec(x_i1[i], xi);
+                        beta_lab_i = beta_lab[i];
+                        for (j = i + 1; j < isize0 ; j++)
                         {
-                            r_dist = sqrt(r2);
-                            if (r_dist <= fade)
+                            pbc_dx_aiuc(&pbc, xi, x_i1[j], dx);
+                            r2 = iprod(dx, dx);
+                            if (r2 <= rmax2 )
                             {
-                                mod_f = beta_lab[i]*beta_lab[j]  ;
-                                for (qq = 0; qq < nbinq; qq++)
+                                r_dist = sqrt(r2);
+                                if (r_dist <= fade)
                                 {
-                                   temp_method[qq] += mod_f*cos(iprod(arr_qvec[qq],dx));
+                                    mod_f = beta_lab_i*beta_lab[j]  ;
+                                    for (qq = 0; qq < nbinq; qq++)
+                                    {
+                                       temp_method[qq] += mod_f*cos(iprod(dx,arr_qvec[qq]));
+                                    }
                                 }
-                            }
-                            else
-                            {
-                                mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
-                                for (qq = 0; qq < nbinq; qq++)
+                                else
                                 {
-                                   temp_method[qq] += mod_f*cos(iprod(arr_qvec[qq],dx));
+                                    mod_f = beta_lab[i]*beta_lab[j]*sqr(cos((r_dist-fade)*inv_width)) ;
+                                    for (qq = 0; qq < nbinq; qq++)
+                                    {
+                                       temp_method[qq] += mod_f*cos(iprod(dx,arr_qvec[qq]));
+                                    }
                                 }
                             }
                         }
@@ -398,36 +430,36 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                    s_method_coh[g][qq] += 2.0*temp_method[qq]*invsize0 ;
                    s_method[g][qq] += (2.0*temp_method[qq] + beta_lab_sq_t)*invsize0 ;
                 }
+                sfree(temp_method);
             }
             nframes++;
         }
         while (read_next_x(oenv, status, &t, x, box));
     }
 
-    else if (method[0] == 'm' && bSpectrum == TRUE && fade != 0.0 && bCross == TRUE)
+    else if (method[0] == 'm' && bSpectrum == TRUE && bFADE == TRUE && bCross == TRUE)
     {
        fprintf(stderr,"modified direct method (modsumexp) cross term with fading and spectrum\n");
        do
        {
-            copy_mat(box, box_pbc);
-            if (top != NULL)
-            {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
+//            copy_mat(box, box_pbc);
+//            if (top != NULL)
+//            {
+//                gmx_rmpbc(gpbc, natoms, box, x);
+//            }
+//            set_pbc(&pbc, ePBCrdf, box_pbc);
 
-            invvol      = 1/det(box_pbc);
-            invvol_sum += invvol;
+//            invvol      = 1/det(box_pbc);
+//            invvol_sum += invvol;
             for (g = 0; g < ng; g++)
             {
                 beta_lab_sq_t = 0.0;
                 snew(temp_method, nbinq);
                 for (i = 0; i < isize0; i++)
                 {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], x_i1[i]);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+1], x01);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+2], x02);
+                    copy_rvec(x[ind0[i]], x_i1[i]);
+                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+1], x01);
+                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+2], x02);
                     rotate_beta_theta(norm_x, norm_z, x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
                     beta_lab_sq_t += beta_lab_1*beta_lab_2;
                     beta_lab[i] = beta_lab_1;
@@ -435,11 +467,10 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 }
                 for (i = 0; i < isize0 -1.0; i++)
                 {
-                    ind0 = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
+                    copy_rvec(x[ind0[i]], xi);
                     for (j = i + 1; j < isize0 ; j++)
                     {
-                        pbc_dx(&pbc, xi, x_i1[j], dx);
+                        pbc_dx_aiuc(&pbc, xi, x_i1[j], dx);
                         r2 = iprod(dx, dx);
                         if (r2 <= rmax2 )
                         {
@@ -469,13 +500,12 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                    s_method_coh[g][qq] += 2.0*temp_method[qq]*invsize0 ;
                    s_method[g][qq] += (2.0*temp_method[qq] + beta_lab_sq_t)*invsize0 ;
                 }
+                sfree(temp_method);
             }
             nframes++;
         }
         while (read_next_x(oenv, status, &t, x, box));
     }
-
-
     else if (method[0] == 's' && bSpectrum == TRUE && bCross == FALSE)
     {   
         fprintf(stderr,"loop with sumexp method and spectrum\n");
@@ -496,10 +526,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 beta_lab_sq_t = 0.0;
                 for (i = 0; i < isize0; i++)
                 {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    pbc_dx(&pbc, xi, x[ind0+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0+2], x02);
+                    copy_rvec(x[ind0[i]], xi);
+                    pbc_dx(&pbc, xi, x[ind0[i]+1], x01);
+                    pbc_dx(&pbc, xi, x[ind0[i]+2], x02);
                     beta_lab[i] = rotate_beta(norm_x, norm_z, x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
                     
                     beta_lab_sq_t += sqr(beta_lab[i]);
@@ -545,10 +574,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 beta_lab_sq_t = 0.0;
                 for (i = 0; i < isize0; i++)
                 {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    pbc_dx(&pbc, xi, x[ind0+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0+2], x02);
+                    copy_rvec(x[ind0[i]], xi);
+                    pbc_dx(&pbc, xi, x[ind0[i]+1], x01);
+                    pbc_dx(&pbc, xi, x[ind0[i]+2], x02);
                     rotate_beta_theta(norm_x, norm_z, x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
                     beta_lab_sq_t += beta_lab_1*beta_lab_2;
                     for (qq = 0; qq < nbinq; qq++)
@@ -576,7 +604,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
         while (read_next_x(oenv, status, &t, x, box));
 
     }
-    else if (method[0] == 's' && fade != 0.0  )
+    else if ((method[0] == 's' && bFADE == TRUE) || bSpectrum == FALSE  )
     {
         gmx_fatal(FARGS,"Combination of method %c, spectrum %d and fading %d  unavailable", method[0], bSpectrum, fade);
     }
@@ -588,7 +616,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     
     close_trj(status);
 
-    sfree(x);
+    //sfree(x);
 
     /* Average volume */
     invvol = invvol_sum/nframes;
@@ -836,13 +864,11 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
           }
           fprintf(fp,"&\n");
        }
+       gmx_ffclose(fp);
+       do_view(oenv, fnOTHETA, NULL);
     }
-    gmx_ffclose(fp);
 
-    do_view(oenv, fnOTHETA, NULL);
-
-
-    if ((fnOSRDF || fnORDF) && method[0]!='s' && method[0]=='m' && fade == 0.0)
+    if ((fnOSRDF || fnORDF) && method[0]!='s' && method[0]=='m' && bFADE == FALSE)
     {
         if (fnOSRDF) {fp = xvgropen(fnOSRDF, "S(q) evaluated from g(r)", "q", "S(q)", oenv);}
         if (fnORDF)  {fpn = xvgropen(fnORDF, "Radial distribution function", "r", "g(r)", oenv);}
@@ -902,13 +928,14 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
           sfree(s_method_coh[g]);
           sfree(s_method_g_r[g]);
        }
+       sfree(ind0);
        sfree(rdf);
        sfree(s_method);
        sfree(s_method_coh);
        sfree(s_method_nospectrum);
        sfree(s_method_coh_nospectrum);
        sfree(s_method_g_r);
-       sfree(arr_q);
+       sfree(arr_q);      
        sfree(arr_qvec);
        sfree(cos_q);
        sfree(sin_q);
@@ -916,9 +943,10 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
        sfree(sin_q2);
        sfree(beta_lab);
        sfree(beta_lab_t2);
-       sfree(temp_method);
        sfree(beta_mol_1d);
+       
     }
+
     else if (method[0] == 's')  
     {
        for (g = 0; g < ng; g++)
@@ -926,6 +954,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
           sfree(s_method[g]);
           sfree(s_method_coh[g]);
        }
+       sfree(ind0);
        sfree(s_method);
        sfree(s_method_coh);
        sfree(arr_qvec);
@@ -947,6 +976,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     {
         sfree(beta_mol[j]);
     }
+
 }
 
 real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2, real *beta_m)
@@ -1004,12 +1034,14 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
         "Under Kleinmann symmetry beta_ijj = beta_jij = beta_jji otherwise beta_ijj = beta_jij. [PAR]",
     };
     static gmx_bool    bPBC = TRUE, bNormalize = TRUE, bKleinmannsymm = TRUE, bSpectrum = TRUE, bCross = FALSE;
-    static real        binwidth = 0.002, maxq = 100.0, fade = 0.0, faderdf = 0.0;
-    static real        kx = 1.0, ky = 1.0, kz = 1.0;
-    static int         ngroups = 1, nbinq = 100, pout = 2, pin1 = 0, pin2 = 0;
-
+    static int         ngroups = 1, nbinq = 20, pout = 2, pin1 = 0, pin2 = 0;
+    static real        binwidth = 0.002, maxq=20.0, faderatio = 25.0 , faderdf = 0.0;
+    static real        kx = 1.0, ky = 0.0, kz = 1.0;
+    static gmx_bool    bGPU=FALSE,bFADE=FALSE;
     static const char *methodt[] = { NULL, "modsumexp",  "sumexp", NULL }; 
 
+    //maxq=nbinq;
+ 
     t_pargs            pa[] = {
         { "-maxq",      FALSE, etREAL, {&maxq},
         "max wave-vector (1/nm)" },
@@ -1033,12 +1065,16 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
         { "-klein",    FALSE, etBOOL, {&bKleinmannsymm}, "Assume Kleinmann symmetry" },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups to compute RDFs around a central group" },
-        { "-fade",     FALSE, etREAL, {&fade},
-          "In the modsumexp method the modification function cos^2((rij-fade)*pi/(2*(L/2-fade))) is used in the fourier transform."
-          " If fade is 0.0 nothing is done." },
+        { "-fade",     FALSE, etBOOL, {&bFADE},
+          "Enable fade"},
+        { "-faderatio",     FALSE, etREAL, {&faderatio},
+          "In the modsumexp method the modification function cos^2((rij-fade)*pi/(2*(L/2-fade))) is used in the fourier transform, entered as percentage." },
         { "-faderdf",     FALSE, etREAL, {&faderdf},
           "From this distance onwards the RDF is tranformed by g'(r) = 1 + [g(r)-1] exp(-(r/faderdf-1)^2 to make it go to 1 smoothly. "
           " If faderdf is 0.0 nothing is done." },
+
+        { "-gpu", FALSE, etBOOL, {&bGPU},
+          "Utilize GPU acceleration" },
 
     };
 #define NPA asize(pa)
@@ -1099,8 +1135,8 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
     do_nonlinearopticalscattering(top, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn_null("-osrdf", NFILE, fnm),
            opt2fn_null("-ordf", NFILE, fnm), opt2fn_null("-otheta", NFILE, fnm),
-           methodt[0],  bPBC, bNormalize, bKleinmannsymm, bSpectrum, bCross, maxq, nbinq, kx, ky, kz, pout, pin1, pin2 ,binwidth,
-           fade, faderdf, gnx, grpindex, grpname, ngroups, oenv);
+           methodt[0],  bPBC, bNormalize, bKleinmannsymm, bSpectrum, bCross, maxq, nbinq, kx, ky, kz, pout,
+           pin1, pin2 ,binwidth,faderatio, faderdf, gnx, grpindex, grpname, ngroups, oenv,bGPU,bFADE);
 
     return 0;
 }

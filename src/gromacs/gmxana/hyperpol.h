@@ -55,8 +55,12 @@ extern void rotate_beta_theta(real invnormx, real invnormz, const rvec xv2, cons
 
 extern void dipole_atom2mol(int *n, int *index, t_block *mols);
 
-/*extern void initialize_beta(real beta_m);
-*/
+extern void double_sum_fade(t_pbc *pbc,real *beta,rvec *x,int n,real rmax2,rvec *qvec,int nbinq,real fade,real inv_width,real *temp_method);
+
+extern void double_sum(t_pbc *pbc,real *beta,rvec *x,int n,real rmax2,rvec *qvec,int nbinq,real *temp_method);
+
+extern void calc_beta(t_pbc *pbc,int natoms,int n,int *ind,rvec *x,real norm_x,real norm_z,rvec pol_out,rvec pol_in1,rvec pol_in2,real *bete_mol_1d,real *beta);
+
 #ifdef __cplusplus
 }
 #endif

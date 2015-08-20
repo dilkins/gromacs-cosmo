@@ -32,7 +32,11 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
+
+
+
 file(GLOB GMXANA_SOURCES *.c *.cpp)
+
 
 set(GMXANA_PUBLIC_HEADERS
     gstat.h
@@ -41,6 +45,13 @@ gmx_install_headers(gmxana ${GMXANA_PUBLIC_HEADERS})
 
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} ${GMXANA_SOURCES} PARENT_SCOPE)
 
+if(GMX_GPU)
+    add_subdirectory(gpu_kernel)
+    set(GMX_GPU_LIBRARIES ${GMX_GPU_LIBRARIES} gpu_kernel PARENT_SCOPE)
+endif()
+
+
 if(BUILD_TESTING)
     add_subdirectory(legacytests)
 endif()
+
