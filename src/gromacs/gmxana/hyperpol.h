@@ -53,6 +53,11 @@ real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, c
 
 extern void rotate_beta_theta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pin1, const rvec pin2, real *beta_m, real *beta_2, real *beta_1);
 
+void rotate_wave_vec(const rvec wave_vec, const int rot_label, rvec rot_vec); 
+
+void induced_second_order_dipole(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin, real ***betamol, real *mu_ind);
+
+
 extern void dipole_atom2mol(int *n, int *index, t_block *mols);
 
 extern void double_sum_fade(t_pbc *pbc,real *beta,rvec *x,int n,real rmax2,rvec *qvec,int nbinq,real fade,real inv_width,real *temp_method);

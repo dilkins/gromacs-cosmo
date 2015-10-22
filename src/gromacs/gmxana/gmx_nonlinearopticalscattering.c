@@ -183,9 +183,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
 
     /*beta_mol parameters in a.u. taken from Kusalik Mol. Phys. 99 1107-1120, (2001)*/
     /*convert from a.u. to [e^3]*[nm^3]/[Hartree^2]*/
-    beta_mol[2][0][0] = 5.7 /**0.000148184711*/;
-    beta_mol[2][2][2] = 31.6 /**0.000148184711*/;
-    beta_mol[2][1][1] = 10.9 /**0.000148184711*/;
+    beta_mol[2][0][0] = 5.7 /* 0.22 *0.000148184711*/;
+    beta_mol[2][2][2] = 31.6 ; // 12.8  /**0.000148184711*/;
+    beta_mol[2][1][1] = 10.9  ; // 7.5 /**0.000148184711*/;
     fprintf(stderr,"beta_mol[z][x][x] %f\n",beta_mol[2][0][0]);
     fprintf(stderr,"beta_mol[z][z][z] %f\n",beta_mol[2][2][2]);
     fprintf(stderr,"beta_mol[z][y][y] %f\n",beta_mol[2][1][1]);
@@ -219,7 +219,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
         snew(sin_q,nbinq);
         snew(cos_q2,nbinq);
         snew(sin_q2,nbinq);
-        if ((kx != 0.0 && kx != 1.0 ) || ( ky != 0.0 && ky != 1.0) || ( kz != 0.0 && kz != 1.0))
+        if ((kx != 0.0 && abs(kx) != 1.0 ) || ( ky != 0.0 && abs(ky) != 1.0) || ( kz != 0.0 && abs(kz) != 1.0))
         {
           gmx_fatal(FARGS,"qx, qy, or qz have to be equal to 1 or 0 qx=%f qy=%f qz=%f\n",kx,ky,kz);
         }
@@ -754,7 +754,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     {
         if (bSpectrum == TRUE)
         {
-            fprintf(fp, "%10g", arr_q[qq]);
+            fprintf(fp, "%10g", norm(arr_qvec[qq]));
         }
         else
         {
@@ -781,7 +781,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     {
         if (bSpectrum == TRUE) 
         {
-           fprintf(fp, "%10g", arr_q[qq]);
+           fprintf(fp, "%10g", norm(arr_qvec[qq]));
         }
         else
         {
@@ -798,7 +798,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
     {
         if (bSpectrum == TRUE) 
         {
-           fprintf(fp, "%10g", arr_q[qq]);
+           fprintf(fp, "%10g", norm(arr_qvec[qq]));
         }
         else
         {
@@ -1036,7 +1036,7 @@ int gmx_nonlinearopticalscattering(int argc, char *argv[])
     static gmx_bool    bPBC = TRUE, bNormalize = TRUE, bKleinmannsymm = TRUE, bSpectrum = TRUE, bCross = FALSE;
     static int         ngroups = 1, nbinq = 20, pout = 2, pin1 = 0, pin2 = 0;
     static real        binwidth = 0.002, maxq=20.0, faderatio = 25.0 , faderdf = 0.0;
-    static real        kx = 1.0, ky = 0.0, kz = 1.0;
+    static real        kx = 1.0, ky = 0.0, kz = -1.0;
     static gmx_bool    bGPU=FALSE,bFADE=FALSE;
     static const char *methodt[] = { NULL, "modsumexp",  "sumexp", NULL }; 
 
