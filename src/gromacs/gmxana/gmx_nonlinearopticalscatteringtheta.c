@@ -243,7 +243,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
            cprod(vec_kout, vec_2kin, pol_perp);
            cprod(vec_kout, pol_perp, pol_par);
            fprintf(stderr,"polarization vector perpendicular to outcoming beam %f %f %f\n",pol_perp[XX], pol_perp[YY], pol_perp[ZZ]);
-           fprintf(stderr,"polarization vector parallel to outcoming beam %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
+           fprintf(stderr,"polarization vector parallel to Outcoming beam %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
            svmul(sin(M_PI/180.0*pout_angle), pol_perp, pol_perp);
            svmul(cos(M_PI/180.0*pout_angle), pol_par,  pol_par);
            rvec_add(pol_perp, pol_par, vec_polout);
