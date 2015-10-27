@@ -69,7 +69,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                    const char *fnSFACT, const char *fnTHETA, const char *method,
                    gmx_bool bPBC, gmx_bool bKleinmannsymm, gmx_bool bSpectrum , gmx_bool bThetaswipe,
                    int qbin, int nbinq, real koutx, real kouty, real koutz,
-                   real kinx, real kiny, real kinz,
+                   real kinx, real kiny, real kinz, real  bmzxx, real  bmzyy, real bmzzz,
                    int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
                    real fade, int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv)
@@ -168,9 +168,9 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
 
     /*beta_mol parameters in a.u. taken from Kusalik Mol. Phys. 99 1107-1120, (2001)*/
     /*convert from a.u. to [e^3]*[nm^3]/[Hartree^2]*/
-    beta_mol[2][0][0] = 5.7 /**0.000148184711*/;
-    beta_mol[2][2][2] = 31.6 /**0.000148184711*/;
-    beta_mol[2][1][1] = 10.9 /**0.000148184711*/;
+    beta_mol[2][0][0] = bmzxx ; //0.22 ; //5.7 /**0.000148184711*/;
+    beta_mol[2][2][2] = bmzzz ; //12.8 ; //31.6 /**0.000148184711*/;
+    beta_mol[2][1][1] = bmzyy ; //7.5  ; //10.9 /**0.000148184711*/;
     fprintf(stderr,"beta_mol[z][x][x] %f\n",beta_mol[2][0][0]);
     fprintf(stderr,"beta_mol[z][z][z] %f\n",beta_mol[2][2][2]);
     fprintf(stderr,"beta_mol[z][y][y] %f\n",beta_mol[2][1][1]);
@@ -1178,6 +1178,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
     static gmx_bool    bPBC = TRUE, bKleinmannsymm = TRUE, bSpectrum = TRUE, bThetaswipe = FALSE;
     static real        fade = 0.0;
     static real        koutx = 1.0, kouty = 0.0 , koutz = 0.0, kinx = 0.0, kiny = 0.0, kinz = 1.0, pout_angle = 0.0 , pin_angle = 0.0;
+    static real        bmzxx = 5.7 , bmzyy = 10.9 , bmzzz = 31.6 ;
     static int         ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
 
     static const char *methodt[] = { NULL, "modsumexp", "sumexp" ,NULL }; 
@@ -1191,6 +1192,9 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
         "which wave-vector to sample which is 2pi/box-length*qbin" },
         { "-nbinq",      FALSE, etINT, {&nbinq},
         "how many bins in the reciprocal space" },
+        { "-bmzxx",         FALSE, etREAL, {&bmzxx}, "component of beta in zxx " },
+        { "-bmzyy",         FALSE, etREAL, {&bmzyy}, "component of beta in zyy " },
+        { "-bmzzz",         FALSE, etREAL, {&bmzzz}, "component of beta in zzz " },
         { "-koutx",         FALSE, etREAL, {&koutx}, "direction of kout in x direction " },
         { "-kouty",         FALSE, etREAL, {&kouty}, "direction of kout in y direction " },
         { "-koutz",         FALSE, etREAL, {&koutz}, "direction of kout in z direction " },
@@ -1269,7 +1273,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
    
     do_nonlinearopticalscatteringtheta(top, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), methodt[0],  bPBC, bKleinmannsymm, bSpectrum , bThetaswipe, qbin, nbinq,
-           koutx, kouty, koutz, kinx, kiny, kinz  ,nbintheta, nbingamma, pin_angle, pout_angle, 
+           koutx, kouty, koutz, kinx, kiny, kinz  , bmzxx, bmzyy, bmzzz ,nbintheta, nbingamma, pin_angle, pout_angle, 
            fade, gnx, grpindex, grpname, ngroups, oenv);
 
     return 0;
