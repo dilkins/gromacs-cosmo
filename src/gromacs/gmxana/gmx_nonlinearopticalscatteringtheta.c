@@ -81,7 +81,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces;
     real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t ;
-    real           qnorm, maxq, coh_temp = 0.0,  incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0;
+    real           qnorm, maxq, coh_temp = 0.0,  incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, *cq, *sq , *c_square, *s_square, *cs_sc ,***beta_mol, *beta_mol_1d, *beta_lab_2_t, *beta_lab_1_t, beta_fact, mu_ind =0.0, mu_sq =0.0 ;
     real           beta_lab_sq_2 = 0.0, beta_lab_sq_1 = 0.0, beta_lab_1_2 =0.0, beta_lab_2 = 0.0, beta_lab_1 = 0.0, b22 = 0.0, b21 = 0.0, b12 = 0.0, b11 = 0.0;
     int            max_i, isize0, ind0;
@@ -180,10 +180,10 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
 
     if (bKleinmannsymm)
     {
-       beta_mol[0][0][2] = 5.7 ;
-       beta_mol[0][2][0] = 5.7 ;
-       beta_mol[1][1][2] = 10.9;
-       beta_mol[1][2][1] = 10.9;
+       beta_mol[0][0][2] = bmzxx ;
+       beta_mol[0][2][0] = bmzxx ;
+       beta_mol[1][1][2] = bmzyy;
+       beta_mol[1][2][1] = bmzyy;
        beta_mol_1d[3] = beta_mol[0][0][2];
        beta_mol_1d[4] = beta_mol[0][2][0];
        beta_mol_1d[5] = beta_mol[1][1][2];
@@ -268,13 +268,16 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
            snew(sin_t, nbinq);
            theta0  = theta0*M_PI/180.0 ;
            qnorm = M_PI*2.0/(rmax*2.0)*qbin;
-           fprintf(stderr,"direction of incoming wave-vector is %f %f %f\n", vec_2kin[XX], vec_2kin[YY], vec_2kin[ZZ]);
-           fprintf(stderr,"direction of outcoming wave-vector is %f %f %f\n", vec_kout[XX], vec_kout[YY], vec_kout[ZZ]);
-           fprintf(stderr,"polarization of incoming wave-vector is %f %f %f\n", vec_polin[XX], vec_polin[YY], vec_polin[ZZ]);
-           fprintf(stderr,"polarization of outcoming wave-vector is %f %f %f\n", vec_polout[XX], vec_polout[YY], vec_polout[ZZ]);
-           fprintf(stderr,"direction of scattered wave-vector is %f %f %f\n", vec_kout[XX]-vec_2kin[XX], vec_kout[YY]-vec_2kin[YY], vec_kout[ZZ]-vec_2kin[ZZ]);
-           fprintf(stderr,"minimum wave-wector is (2pi/L)*qbin = %f\n", qnorm);
-           fprintf(stderr,"maximum wave-vector is (2pi/L)*qbin*nbinq = %f\n", qnorm*nbinq);
+           printf("----INITIALIZE DIRECTION OF INCOMING AND OUTCOMING WAVE-VECTORS----\n");
+           printf("direction of incoming wave-vector is %f %f %f\n", vec_2kin[XX], vec_2kin[YY], vec_2kin[ZZ]);
+           printf("direction of outcoming wave-vector is %f %f %f\n", vec_kout[XX], vec_kout[YY], vec_kout[ZZ]);
+           printf("----INITIALIZE DIRECTION OF INCOMING AND OUTCOMING POLARIZATION VECTORS----\n");
+           printf("polarization of incoming wave-vector is %f %f %f\n", vec_polin[XX], vec_polin[YY], vec_polin[ZZ]);
+           printf("polarization of outcoming wave-vector is %f %f %f\n", vec_polout[XX], vec_polout[YY], vec_polout[ZZ]);
+           printf("----INITIALIZE DIRECTION OF SCATTERED WAVE VECTOR: q=kout-2kin ----\n");
+           printf("direction of scattered wave-vector is %f %f %f\n", vec_kout[XX]-vec_2kin[XX], vec_kout[YY]-vec_2kin[YY], vec_kout[ZZ]-vec_2kin[ZZ]);
+           printf("minimum wave-vector is (2pi/L)*qbin = %f\n", qnorm);
+           printf("maximum wave-vector is (2pi/L)*qbin*nbinq = %f\n", qnorm*nbinq);
            cq[0] = cos(theta0) ;
            sq[0] = sin(theta0) ;
            c_square[0] = cq[0]*cq[0] ;
@@ -303,6 +306,11 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
               snew(vec_pin_theta_gamma, nfaces);
               snew(theta_vec, nbintheta);
               // this loop is to get the scattering wave-vector and polarization vectors for different faces of the cube
+              printf("\n----COMPUTE THE POLARIZATION VECTORS AT DIFFERENT SCATTERING ANGLES THETA.---------------------\n");
+              printf("----THETA IS DEFINED AS THE ANGLE BETWEEN THE INCOMING AND OUTCOMING WAVE-VECTORS.-------------\n");              
+              printf("----THE POLARIZATION VECTORS ARE ALSO COMPUTED AT DIFFERENT ANGLES GAMMA.----------------------\n");
+              printf("----GAMMA IS THE ANGLE DEFINED BY A PLANE THAT GOES THROUGH THE SCATTERING WAVE-VECTOR AND-----\n");
+              printf("----THE PLANE PARALLEL TO THE CHOSEN FACE OF THE SIMULATION BOX--------------------------------\n \n");
               for (rr = 0; rr< nfaces; rr++)
               {
                  snew(s_method_t[g][rr], nbinq);
@@ -316,9 +324,6 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                     arr_qvec_faces[rr][qq][YY] = 0.0 ;
                     arr_qvec_faces[rr][qq][ZZ] = (qnorm + qnorm*qq)*(-1.0) ;
                     rotate_wave_vec(arr_qvec_faces[rr][qq], rr, arr_qvec_faces[rr][qq]);
-                    fprintf(stderr,"Swipe over theta: initializing the non-linear structure factor for different values of q and theta and averaging over gamma\n");
-                    fprintf(stderr,"where gamma is the angle between the scattering plane and the plane parallel to the face of the cube\n");
-                    fprintf(stderr, "the scattered wave-vector q = 2pi/L*(x-z) \n");
                     snew(s_method_t[g][rr], nbintheta);
                     snew(s_method_coh_t[g][rr], nbintheta);
                     snew(s_method_incoh_t[g][rr], nbintheta);          
@@ -333,7 +338,6 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                         snew(vec_pout_theta_gamma[rr][tt], nbingamma);
                         snew(vec_pin_theta_gamma[rr][tt], nbingamma);
                     }
-                    fprintf(stderr,"Define the polarization vectors of the incoming and outcoming beams as a function of theta and gamma\n");
                         for (tt = 0; tt < nbintheta; tt++)
                         {
                             //theta is the angle between the outcoming wave-vector and the scattered wave-vector
@@ -377,6 +381,8 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                                 printf("incoming polarization vector = %f %f %f \n",vec_pin_theta_gamma[rr][tt][c][XX], vec_pin_theta_gamma[rr][tt][c][YY], vec_pin_theta_gamma[rr][tt][c][ZZ]);
                                 printf("outcoming polarization vector = %f %f %f \n",vec_pout_theta_gamma[rr][tt][c][XX], vec_pout_theta_gamma[rr][tt][c][YY], vec_pout_theta_gamma[rr][tt][c][ZZ]);
                                 printf("direction of scattered wave-vector = %f %f %f \n", vec_kout[XX] -vec_2kin[XX], vec_kout[YY] - vec_2kin[YY], vec_kout[ZZ] -vec_2kin[ZZ]);
+                                check_pol = iprod(vec_pin_theta_gamma[rr][tt][c],vec_pout_theta_gamma[rr][tt][c]);
+                                printf("(incoming polarization vec) dot (outcoming polarization vec) = %.17g\n",check_pol);
                             }
                         }
                  }

@@ -202,6 +202,9 @@ int
 gmx_nonlinearopticalscatteringtheta(int argc, char *argv[]);
 
 int
+gmx_fitbeta(int argc, char *argv[]);
+
+int
 gmx_rotmat(int argc, char *argv[]);
 
 int
