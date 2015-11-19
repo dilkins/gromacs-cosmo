@@ -66,7 +66,7 @@ extern void double_sum(t_pbc *pbc,real *beta,rvec *x,int n,real rmax2,rvec *qvec
 
 extern void calc_beta(t_pbc *pbc,int natoms,int n,int *ind,rvec *x,real norm_x,real norm_z,rvec pol_out,rvec pol_in1,rvec pol_in2,real *bete_mol_1d,real *beta);
 
-extern void Projected_Scattering_Amplitude(const int nf, const int nt, const int nga, const int nq, const real invnormx, const real invnormz,
+extern void Projected_Scattering_Amplitude(const int nf, const int nt, const int nga, const int nq,
      const rvec xi, const rvec xv2, const rvec xv3,  rvec **arr_scatt_wave_vec,
      rvec ***pout_theta_gamma, rvec ***pin_theta_gamma,
      real *********Onsite_term, real *******Cos_scatt_ampl, real *******Sin_scatt_ampl, 
@@ -86,7 +86,7 @@ extern void Scattering_Intensity_t(const int nf, const int nt, const int nga, co
                                real  *********tot_tensor_squared,      real *********incoh_tensor_squared,
                                real **********tot_tensor_squared_addr, real **********incoh_tensor_squared_addr);
 
-extern void Print_tensors(const int nt, const int nframes, const real invgamma, real *********tot_tensor_squared,
+extern void Print_tensors(const int nt, const int nframes, const real invgamma, real *theta_vec, real *********tot_tensor_squared,
                            real *********incoh_tensor_squared, const char *fnTENSOR,  const char *fnINCTENSOR ,char **grpname ,const output_env_t oenv);
 
 extern void Print_scattering_pattern(const int nt,  const int nframes, const real invgamma,

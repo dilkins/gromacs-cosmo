@@ -50,6 +50,7 @@
 #include "gromacs/fileio/futil.h"
 #include "gromacs/commandline/pargs.h"
 #include "gromacs/fileio/tpxio.h"
+#include "gromacs/random/random.h"
 #include "gromacs/fileio/trxio.h"
 #include "physics.h"
 #include "index.h"
@@ -67,7 +68,7 @@
 
 static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*/ const char *fnTRX,
                    const char *fnSFACT, const char *fnTHETA, const char *method,
-                   gmx_bool bPBC, gmx_bool bKleinmannsymm, gmx_bool bSpectrum , gmx_bool bThetaswipe,
+                   gmx_bool bPBC, gmx_bool bKleinmannsymm, gmx_bool bSpectrum , gmx_bool bRandbeta, gmx_bool bThetaswipe,
                    int qbin, int nbinq, real koutx, real kouty, real koutz,
                    real kinx, real kiny, real kinz, real  bmzxx, real  bmzyy, real bmzzz,
                    int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
@@ -96,6 +97,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     t_atom        *atom = NULL;
     t_pbc          pbc;
     gmx_rmpbc_t    gpbc = NULL;
+    gmx_rng_t      rng = NULL;
     int            mol, a;
 
     atom = top->atoms.atom;
@@ -400,6 +402,9 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
         gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
     }
 
+
+    rng=gmx_rng_init(gmx_rng_make_seed());
+
     if (method[0] == 'm' && fade != 0.0 && bSpectrum == TRUE)
     {
        fprintf(stderr,"modified direct method (modsumexp) with spectrum\n");
@@ -545,6 +550,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
             set_pbc(&pbc, ePBCrdf, box_pbc);
             invvol      = 1/det(box_pbc);
             invvol_sum += invvol;
+            
             for (g = 0; g < ng; g++)
             {
                 snew(cos_tq, nfaces);
@@ -574,6 +580,17 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                     copy_rvec(x[ind0], xi);
                     pbc_dx(&pbc, xi, x[ind0+1], x01);
                     pbc_dx(&pbc, xi, x[ind0+2], x02);
+                    if (bRandbeta)
+                    {
+                         beta_mol[2][0][0] = bmzxx*gmx_rng_gaussian_real(rng) + bmzxx;
+                         beta_mol[2][1][1] = bmzyy*gmx_rng_gaussian_real(rng) + bmzyy;
+                         beta_mol[2][2][2] = bmzzz*gmx_rng_gaussian_real(rng) + bmzzz;
+                         beta_mol[0][2][0] = bmzxx*gmx_rng_gaussian_real(rng) + bmzxx;
+                         beta_mol[0][0][2] = beta_mol[0][2][0];
+                         beta_mol[1][2][1] = bmzyy*gmx_rng_gaussian_real(rng) + bmzyy;
+                         beta_mol[1][1][2] = beta_mol[1][2][1];
+                         //printf("%f %f %f %f %f\n",beta_mol[2][0][0], beta_mol[2][1][1], beta_mol[2][2][2], beta_mol[0][2][0], beta_mol[1][2][1]);
+                    }
                     for (rr = 0; rr < nfaces; rr++)
                     {
                         for (tt = 0; tt < nbintheta; tt++ )
@@ -917,6 +934,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     }
 }
 
+
 void rotate_beta_theta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pin1, const rvec pin2, real *beta_m, real *beta_2, real *beta_1)
 {
     rvec xvec, yvec, zvec;
@@ -1181,7 +1199,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
         "Common polarization combinations are PSS, PPP, SPP, SSS .",
         "Under Kleinmann symmetry (default) beta_ijj = beta_jij = beta_jji otherwise beta_ijj = beta_jij. [PAR]",
     };
-    static gmx_bool    bPBC = TRUE, bKleinmannsymm = TRUE, bSpectrum = TRUE, bThetaswipe = FALSE;
+    static gmx_bool    bPBC = TRUE, bKleinmannsymm = TRUE, bSpectrum = TRUE, bThetaswipe = FALSE, bRandbeta = FALSE;
     static real        fade = 0.0;
     static real        koutx = 1.0, kouty = 0.0 , koutz = 0.0, kinx = 0.0, kiny = 0.0, kinz = 1.0, pout_angle = 0.0 , pin_angle = 0.0;
     static real        bmzxx = 5.7 , bmzyy = 10.9 , bmzzz = 31.6 ;
@@ -1214,6 +1232,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
         { "-pbc",      FALSE, etBOOL, {&bPBC},
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-spectrum",    FALSE, etBOOL, {&bSpectrum}, "compute spectrum at fixed angle of 5 degrees (only sumexp)" },
+        { "-randbeta",    FALSE, etBOOL, {&bRandbeta}, "for each molecule and at each step add gaussian noise to the value of beta determined by bmzxx, bmzyy, bmzzz" },        
         { "-thetaswipe",    FALSE, etBOOL, {&bThetaswipe}, "compute spectrum swiping over the scattering angle theta" },
         { "-klein",    FALSE, etBOOL, {&bKleinmannsymm}, "Assume Kleinmann symmetry" },
         { "-ng",       FALSE, etINT, {&ngroups}, 
@@ -1278,7 +1297,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
    
     do_nonlinearopticalscatteringtheta(top, ftp2fn(efTRX, NFILE, fnm),
-           opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), methodt[0],  bPBC, bKleinmannsymm, bSpectrum , bThetaswipe, qbin, nbinq,
+           opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), methodt[0],  bPBC, bKleinmannsymm, bSpectrum, bRandbeta, bThetaswipe, qbin, nbinq,
            koutx, kouty, koutz, kinx, kiny, kinz  , bmzxx, bmzyy, bmzzz ,nbintheta, nbingamma, pin_angle, pout_angle, 
            fade, gnx, grpindex, grpname, ngroups, oenv);
 
