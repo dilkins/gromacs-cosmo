@@ -83,7 +83,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces;
     real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t ;
     real           qnorm, maxq, coh_temp = 0.0,  incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
-    real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, *cq, *sq , *c_square, *s_square, *cs_sc ,***beta_mol, *beta_mol_1d, *beta_lab_2_t, *beta_lab_1_t, beta_fact, mu_ind =0.0, mu_sq =0.0 ;
+    real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, *cq, *sq , *c_square, *s_square, *cs_sc ,***beta_mol, ***beta_mol_const, ***beta_const_dev, *beta_mol_1d, *beta_lab_2_t, *beta_lab_1_t, beta_fact, mu_ind =0.0, mu_sq =0.0 ;
     real           beta_lab_sq_2 = 0.0, beta_lab_sq_1 = 0.0, beta_lab_1_2 =0.0, beta_lab_2 = 0.0, beta_lab_1 = 0.0, b22 = 0.0, b21 = 0.0, b12 = 0.0, b11 = 0.0;
     int            max_i, isize0, ind0;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq, invhbinw, normfac, norm_x, norm_z, mod_f, inv_width;
@@ -135,8 +135,8 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     /*here find the normalization of the OH bond-length and of the dipole vector*/
     set_pbc(&pbc, ePBCrdf, box_pbc);
     ind0  = mols->index[molindex[0][0]];
-    pbc_dx(&pbc, x[ind0], x[ind0+1], x01);
-    pbc_dx(&pbc, x[ind0], x[ind0+2], x02);
+    pbc_dx(&pbc, x[ind0+1], x[ind0], x01);
+    pbc_dx(&pbc, x[ind0+2], x[ind0], x02);
     rvec_sub( x01, x02, xi);
     norm_x = gmx_invsqrt(norm2(xi));
     rvec_add( x01, x02, xi);
@@ -155,16 +155,22 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     snew(beta_lab_2_t, isize[0]);
     snew(beta_lab_1_t, isize[0]);
     snew(beta_mol, DIM);
+    snew(beta_mol_const, DIM);
+    snew(beta_const_dev, DIM);
     snew(beta_mol_1d, 7);
     for (i = 0; i < DIM; i++)
     {
         snew(beta_mol[i], DIM);
+        snew(beta_mol_const[i], DIM);
+        snew(beta_const_dev[i], DIM);
     }
     for (i = 0; i < DIM; i++)
     {
         for (j = 0; j < DIM; j++)
         {
             snew(beta_mol[i][j], DIM);
+            snew(beta_mol_const[i][j], DIM);
+            snew(beta_const_dev[i][j], DIM);
         }
     }
 
@@ -173,9 +179,14 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     beta_mol[2][0][0] = bmzxx ; //0.22 ; //5.7 /**0.000148184711*/;
     beta_mol[2][2][2] = bmzzz ; //12.8 ; //31.6 /**0.000148184711*/;
     beta_mol[2][1][1] = bmzyy ; //7.5  ; //10.9 /**0.000148184711*/;
+    beta_mol_const[2][0][0] = bmzxx ; //0.22 ; //5.7 /**0.000148184711*/;
+    beta_mol_const[2][2][2] = bmzzz ; //12.8 ; //31.6 /**0.000148184711*/;
+    beta_mol_const[2][1][1] = bmzyy ; //7.5  ; //10.9 /**0.000148184711*/;
+
     fprintf(stderr,"beta_mol[z][x][x] %f\n",beta_mol[2][0][0]);
     fprintf(stderr,"beta_mol[z][z][z] %f\n",beta_mol[2][2][2]);
     fprintf(stderr,"beta_mol[z][y][y] %f\n",beta_mol[2][1][1]);
+
     beta_mol_1d[0] = beta_mol[2][0][0];
     beta_mol_1d[1] = beta_mol[2][1][1];
     beta_mol_1d[2] = beta_mol[2][2][2];
@@ -186,10 +197,37 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
        beta_mol[0][2][0] = bmzxx ;
        beta_mol[1][1][2] = bmzyy;
        beta_mol[1][2][1] = bmzyy;
+       beta_mol_const[0][0][2] = bmzxx ;
+       beta_mol_const[0][2][0] = bmzxx ;
+       beta_mol_const[1][1][2] = bmzyy;
+       beta_mol_const[1][2][1] = bmzyy;
        beta_mol_1d[3] = beta_mol[0][0][2];
        beta_mol_1d[4] = beta_mol[0][2][0];
        beta_mol_1d[5] = beta_mol[1][1][2];
        beta_mol_1d[6] = beta_mol[1][2][1];
+    }
+    for (i = 0; i < DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+            for (k = 0; k < DIM; k++)
+            {
+                if ((i == 0 &&  j == 2 && k == 0) || 
+                  (i == 0 &&  j == 0 && k == 2) ||
+                  (i == 1 &&  j == 1 && k == 2) ||
+                  (i == 1 &&  j == 2 && k == 1) ||
+                  (i == 2 &&  j == 1 && k == 1) ||
+                  (i == 2 &&  j == 0 && k == 0) ||
+                  (i == 2 &&  j == 2 && k == 2))
+                  {
+                     beta_const_dev[i][j][k] = beta_mol_const[i][j][k];
+                  }
+                else
+                  {
+                     beta_const_dev[i][j][k] = 1.0 ;
+                  }
+            }
+        }
     }
 
     
@@ -429,9 +467,9 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                 {
                     ind0  = mols->index[molindex[g][i]];
                     copy_rvec(x[ind0], x_i1[i]);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+1], x01);
-                    pbc_dx(&pbc, x_i1[i], x[ind0+2], x02);
-                    rotate_beta_theta(norm_x, norm_z, x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
+                    pbc_dx(&pbc, x[ind0+1], x_i1[i], x01);
+                    pbc_dx(&pbc, x[ind0+2], x_i1[i], x02);
+                    rotate_beta_theta(x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
                     beta_lab_sq_2 += beta_lab_2*beta_lab_2 ;
                     beta_lab_sq_1 += beta_lab_1*beta_lab_1 ;
                     beta_lab_1_2  += beta_lab_1*beta_lab_2 ;
@@ -512,9 +550,9 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                 {
                     ind0  = mols->index[molindex[g][i]];
                     copy_rvec(x[ind0], xi);
-                    pbc_dx(&pbc, xi, x[ind0+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0+2], x02);
-                    induced_second_order_dipole(norm_x, norm_z, x01, x02, vec_polout, vec_polin, beta_mol, &mu_ind);
+                    pbc_dx(&pbc, x[ind0+1], xi, x01);
+                    pbc_dx(&pbc, x[ind0+2], xi, x02);
+                    induced_second_order_dipole(x01, x02, vec_polout, vec_polin, beta_mol, &mu_ind);
                     mu_sq += mu_ind*mu_ind; 
                     for (qq = 0; qq < nbinq; qq++)
                     {
@@ -578,17 +616,19 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                 {
                     ind0  = mols->index[molindex[g][i]];
                     copy_rvec(x[ind0], xi);
-                    pbc_dx(&pbc, xi, x[ind0+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0+2], x02);
+                    pbc_dx(&pbc, x[ind0+1], xi, x01);
+                    pbc_dx(&pbc, x[ind0+2], xi,  x02);
+
                     if (bRandbeta)
                     {
-                         beta_mol[2][0][0] = bmzxx*gmx_rng_gaussian_real(rng) + bmzxx;
-                         beta_mol[2][1][1] = bmzyy*gmx_rng_gaussian_real(rng) + bmzyy;
-                         beta_mol[2][2][2] = bmzzz*gmx_rng_gaussian_real(rng) + bmzzz;
-                         beta_mol[0][2][0] = bmzxx*gmx_rng_gaussian_real(rng) + bmzxx;
-                         beta_mol[0][0][2] = beta_mol[0][2][0];
-                         beta_mol[1][2][1] = bmzyy*gmx_rng_gaussian_real(rng) + bmzyy;
-                         beta_mol[1][1][2] = beta_mol[1][2][1];
+                         beta_gaussian_noise(beta_mol_const, beta_const_dev, rng, &beta_mol);
+//                         beta_mol[2][0][0] = bmzxx*gmx_rng_gaussian_real(rng) + bmzxx;
+//                         beta_mol[2][1][1] = bmzyy*gmx_rng_gaussian_real(rng) + bmzyy;
+//                         beta_mol[2][2][2] = bmzzz*gmx_rng_gaussian_real(rng) + bmzzz;
+//                         beta_mol[0][2][0] = bmzxx*gmx_rng_gaussian_real(rng) + bmzxx;
+//                         beta_mol[0][0][2] = beta_mol[0][2][0];
+//                         beta_mol[1][2][1] = bmzyy*gmx_rng_gaussian_real(rng) + bmzyy;
+//                         beta_mol[1][1][2] = beta_mol[1][2][1];
                          //printf("%f %f %f %f %f\n",beta_mol[2][0][0], beta_mol[2][1][1], beta_mol[2][2][2], beta_mol[0][2][0], beta_mol[1][2][1]);
                     }
                     for (rr = 0; rr < nfaces; rr++)
@@ -597,7 +637,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                         {
                             for (c  = 0; c < nbingamma; c++)
                             {
-                                induced_second_order_dipole(norm_x, norm_z, x01, x02, vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], beta_mol, &mu_ind);
+                                induced_second_order_dipole(x01, x02, vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], beta_mol, &mu_ind);
                                 mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
                                 for (qq = 0; qq < nbinq; qq++)
                                 {
@@ -919,33 +959,41 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     sfree(cs_sc);
     sfree(beta_lab_1_t);
     sfree(beta_lab_2_t);
-
+    
+    gmx_rng_destroy(rng);
 
     for (i = 0; i < DIM; i++)
     {
         for (j = 0; j < DIM; j++)
         {
             sfree(beta_mol[i][j]);
+            sfree(beta_mol_const[i][j]);
+            sfree(beta_const_dev[i][j]);
         }
     }
     for (j = 0; j < DIM; j++)
     {
         sfree(beta_mol[j]);
+        sfree(beta_mol_const[j]);
+        sfree(beta_const_dev[j]);
     }
+    sfree(beta_mol);
+    sfree(beta_mol_const);
+    sfree(beta_const_dev);
 }
 
 
-void rotate_beta_theta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pin1, const rvec pin2, real *beta_m, real *beta_2, real *beta_1)
+void rotate_beta_theta( const rvec xv2, const rvec xv3, const rvec pin1, const rvec pin2, real *beta_m, real *beta_2, real *beta_1)
 {
     rvec xvec, yvec, zvec;
     real x_in1, y_in1, z_in1;
     real x_in2, y_in2, z_in2;
 
-    rvec_sub( xv2, xv3, xvec); /*this should be x*/
-    svmul(invnormx, xvec ,xvec );
     rvec_add( xv2, xv3, zvec);
-    svmul(invnormz, zvec, zvec ); /*this should be z*/
-    cprod(xvec , zvec, yvec); /*this should be y*/
+    cprod(zvec,xv2, yvec);
+    unitv(zvec,zvec);
+    unitv(yvec,yvec);
+    cprod(yvec,zvec,xvec);
 
     x_in1 = iprod(xvec, pin1);
     y_in1 = iprod(yvec, pin1);
@@ -1053,8 +1101,26 @@ void rotate_wave_vec(const rvec wave_vec, const int rot_label, rvec rot_vec)
 }
 
 
+void beta_gaussian_noise(real ***beta_const_mean, real ***beta_const_dev, gmx_rng_t rng, real ****beta_gauss)
+{
+    int a, b, c;
 
-void induced_second_order_dipole(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin, real ***betamol, real *mu_ind)
+    for (a = 0; a < DIM; a++)
+    {
+        for (b = 0; b < DIM; b++)
+        {
+            for (c = 0; c < DIM; c++)
+            {
+                (*beta_gauss)[a][b][c] = beta_const_dev[a][b][c]*gmx_rng_gaussian_real(rng) + beta_const_mean[a][b][c];
+                //printf("beta_mol %d %d %d %f\n", a, b, c, (*beta_gauss)[a][b][c]);
+            }
+        }
+    }  
+
+
+}
+
+void induced_second_order_dipole(const rvec xv2, const rvec xv3, const rvec pout, const rvec pin, real ***betamol, real *mu_ind)
 {
     int i, j, k;
     int p, l, m;
@@ -1079,11 +1145,12 @@ void induced_second_order_dipole(real invnormx, real invnormz, const rvec xv2, c
         }
     }
 
-    rvec_sub( xv2, xv3, xvec); /*this is x molecular axis*/
-    svmul(invnormx, xvec ,xvec );
     rvec_add( xv2, xv3, zvec);
-    svmul(invnormz, zvec, zvec ); /*this is z molecular axis*/
-    cprod(xvec , zvec, yvec); /*this is y molecular axis*/
+    cprod(zvec,xv2, yvec);
+    unitv(zvec,zvec);
+    unitv(yvec,yvec);
+    cprod(yvec,zvec,xvec);
+
 
     cosdirmat[0][0] = xvec[0]; cosdirmat[0][1] = yvec[0]; cosdirmat[0][2] = zvec[0];
     cosdirmat[1][0] = xvec[1]; cosdirmat[1][1] = yvec[1]; cosdirmat[1][2] = zvec[1];

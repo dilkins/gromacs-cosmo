@@ -308,9 +308,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[ind0[i]], x_i1[i]);
-                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+1], x01);
-                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+2], x02);
-                    beta_lab[i] = rotate_beta(norm_x, norm_z, x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
+                    pbc_dx(&pbc, x[ind0[i]+1], x_i1[i], x01);
+                    pbc_dx(&pbc, x[ind0[i]+2], x_i1[i],  x02);
+                    beta_lab[i] = rotate_beta(x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
                     beta_lab_sq_t += sqr(beta_lab[i]);
                 }
   
@@ -380,9 +380,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[ind0[i]], x_i1[i]);
-                    pbc_dx_aiuc(&pbc, x_i1[i], x[ind0[i]+1], x01);
-                    pbc_dx_aiuc(&pbc, x_i1[i], x[ind0[i]+2], x02);
-                    beta_lab[i] = rotate_beta(norm_x, norm_z, x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
+                    pbc_dx_aiuc(&pbc, x[ind0[i]+1], x_i1[i], x01);
+                    pbc_dx_aiuc(&pbc, x[ind0[i]+2], x_i1[i], x02);
+                    beta_lab[i] = rotate_beta( x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
                     beta_lab_sq_t += sqr(beta_lab[i]);
                 }
 
@@ -458,9 +458,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[ind0[i]], x_i1[i]);
-                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+1], x01);
-                    pbc_dx(&pbc, x_i1[i], x[ind0[i]+2], x02);
-                    rotate_beta_theta(norm_x, norm_z, x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
+                    pbc_dx(&pbc, x[ind0[i]+1], x_i1[i], x01);
+                    pbc_dx(&pbc, x[ind0[i]+2], x_i1[i], x02);
+                    rotate_beta_theta( x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
                     beta_lab_sq_t += beta_lab_1*beta_lab_2;
                     beta_lab[i] = beta_lab_1;
                     beta_lab_t2[i] = beta_lab_2;
@@ -527,9 +527,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[ind0[i]], xi);
-                    pbc_dx(&pbc, xi, x[ind0[i]+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0[i]+2], x02);
-                    beta_lab[i] = rotate_beta(norm_x, norm_z, x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
+                    pbc_dx(&pbc, x[ind0[i]+1], xi, x01);
+                    pbc_dx(&pbc, x[ind0[i]+2], xi,  x02);
+                    beta_lab[i] = rotate_beta(x01, x02, pol_out, pol_in1, pol_in2, beta_mol_1d );
                     
                     beta_lab_sq_t += sqr(beta_lab[i]);
                     for (qq = 0; qq < nbinq; qq++)
@@ -575,9 +575,9 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
                 for (i = 0; i < isize0; i++)
                 {
                     copy_rvec(x[ind0[i]], xi);
-                    pbc_dx(&pbc, xi, x[ind0[i]+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0[i]+2], x02);
-                    rotate_beta_theta(norm_x, norm_z, x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
+                    pbc_dx(&pbc, x[ind0[i]+1], xi, x01);
+                    pbc_dx(&pbc, x[ind0[i]+2], xi, x02);
+                    rotate_beta_theta( x01, x02, pol_in1, pol_in2, beta_mol_1d, &beta_lab_2, &beta_lab_1 );
                     beta_lab_sq_t += beta_lab_1*beta_lab_2;
                     for (qq = 0; qq < nbinq; qq++)
                     {
@@ -979,7 +979,7 @@ static void do_nonlinearopticalscattering(t_topology *top, const char *fnTRX,
 
 }
 
-real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2, real *beta_m)
+real rotate_beta( const rvec xv2, const rvec xv3, const rvec pout, const rvec pin1, const rvec pin2, real *beta_m)
 {
     rvec xvec, yvec, zvec;
     real z_out, x_out, y_out;
@@ -991,11 +991,12 @@ real rotate_beta(real invnormx, real invnormz, const rvec xv2, const rvec xv3, c
     Y[0] = 0; Y[1] = 1; Y[2] = 0 ;
     Z[0] = 0; Z[1] = 0; Z[2] = 1 ;*/
     real beta_l = 0.0;
-    rvec_sub( xv2, xv3, xvec); /*this should be x*/
-    svmul(invnormx, xvec ,xvec );
     rvec_add( xv2, xv3, zvec);
-    svmul(invnormz, zvec, zvec ); /*this should be z*/
-    cprod(xvec , zvec, yvec); /*this should be y*/
+    cprod(zvec,xv2, yvec);
+    unitv(zvec,zvec);
+    unitv(yvec,yvec);
+    cprod(yvec,zvec,xvec);
+
     z_out = iprod(zvec, pout);
     x_out = iprod(xvec, pout);
     y_out = iprod(yvec, pout);

@@ -205,6 +205,9 @@ int
 gmx_fitbeta(int argc, char *argv[]);
 
 int
+gmx_eshs(int argc, char *argv[]);
+
+int
 gmx_rotmat(int argc, char *argv[]);
 
 int

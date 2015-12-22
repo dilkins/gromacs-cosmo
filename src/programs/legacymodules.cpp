@@ -300,6 +300,8 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Calculate non linear optical scattering intensity as a function of scattering angle theta");
     registerModule(manager, &gmx_fitbeta, "fitbeta",
                    "Calculate hyperpolarizability of a molecule in a liquid by fitting to second-harmonic scattering");
+    registerModule(manager, &gmx_eshs, "eshs",
+                   "Calculate non linear optical scattering intensity using molecular hyperpolarizability that depends on electric field of neighbouring molecules");
     registerModule(manager, &gmx_rms, "rms",
                    "Calculate RMSDs with a reference structure and RMSD matrices");
     registerModule(manager, &gmx_rmsdist, "rmsdist",

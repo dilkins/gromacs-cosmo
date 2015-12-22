@@ -67,7 +67,8 @@
 
 
 static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*/ const char *fnTRX,
-                   const char *fnTENSOR, const char *fnINCTENSOR, const char *fnTHETA, const char *method,
+                   const char *fnTENSOR, const char *fnINCTENSOR, const char *fnTIMEEVOLTENSOR, 
+                   const char *fnTHETA, const char *method,
                    gmx_bool bPBC, int nbinq, int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
                    real bmzxx, real bmzyy, real bmzzz,
                    int *isize, int  *molindex[], char **grpname, int ng,
@@ -81,7 +82,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     int            max_i, isize0, ind0;
     real           *********onsite_term, *******cos_scattering_ampl, *******sin_scattering_ampl;
     real           **dummy_ptr_bast, *********tot_tensor_squared, *********incoh_tensor_squared;
-    real           t, rmax2, rmax,  r_dist, r2,  dq, invhbinw, normfac, norm_x, norm_z, mod_f, inv_width;
+    real           t, rmax2, rmax,  r_dist, r2,  dq, invhbinw, invnormfac, norm_x, norm_z, mod_f, inv_width;
     real           invsize0, invgamma, theta=0, *theta_vec;
     rvec          *x, dx,  *x_i1, xi, x01, x02,  **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
     rvec           pol_perp, pol_par,vec_kout, vec_2kin, pol_in1, pol_in2, vec_kout_2kin ; 
@@ -93,6 +94,8 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     t_pbc          pbc;
     gmx_rmpbc_t    gpbc = NULL;
     int            mol, a;
+    FILE          *fptime;
+
 
     atom = top->atoms.atom;
     mols = &(top->mols);
@@ -100,6 +103,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     nfaces = 6;
     invsize0 = 1.0/isize0;
     invgamma = 1.0/nbingamma;
+    invnormfac = invsize0*invgamma/3.0;
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
     
     fprintf(stderr,"\nnumber of atoms %d\n",natoms);
@@ -225,6 +229,13 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
         gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
     }
 
+    if (fnTIMEEVOLTENSOR)
+    {
+      fptime = xvgropen(fnTIMEEVOLTENSOR, " time (ps) theta (degrees) <Scat_ampl_ijk*Scatt_ampl_lmn(time)>", " ", " ", oenv);
+      sprintf(refgt,"%s", "");
+      fprintf(fptime, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
+    }
+
     if (method[0] == 's')
     {
         fprintf(stderr,"use sumexp method, compute the 729 elements of the tensor containing orientational correlations of the molecules\n");
@@ -260,15 +271,20 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                 // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
                 // and also incoh_tensor_squared += incoherent_term
                 // the sum runs over frames
-                Scattering_Intensity_t(nfaces, nbintheta,  nbingamma ,nbinq, invsize0,
+                Scattering_Intensity_t(nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec,
                                        onsite_term, cos_scattering_ampl, sin_scattering_ampl,
                                        tot_tensor_squared, incoh_tensor_squared,
-                                       &tot_tensor_squared, &incoh_tensor_squared);          
+                                       &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
                 Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
             }
             nframes++;
         }
         while (read_next_x(oenv, status, &t, x, box));
+    }
+
+    if (fnTIMEEVOLTENSOR)
+    {
+        gmx_ffclose(fptime); 
     }
 
     fprintf(stderr, "\n");
@@ -510,15 +526,12 @@ void Projected_Scattering_Amplitude(const int nf, const int nt, const int nga, c
     matrix cosdirmat, cosdirmat_t;
     real ***rot_element_matrix_prime;
     real co_q_xi, si_q_xi, q_xi, rot_element_matrix_pqs ;
-    real invnormx, invnormz;
 
-    rvec_sub( xv2, xv3, xvec); //this is x molecular axis
-    invnormx = gmx_invsqrt(norm2(xvec));
-    svmul(invnormx, xvec ,xvec );
     rvec_add( xv2, xv3, zvec);
-    invnormz=  gmx_invsqrt(norm2(zvec));
-    svmul(invnormz, zvec, zvec ); //this is z molecular axis
-    cprod(xvec , zvec, yvec); //this is y molecular axis
+    cprod(zvec,xv2, yvec);
+    unitv(zvec,zvec);
+    unitv(yvec,yvec);
+    cprod(yvec,zvec,xvec);
 
     cosdirmat[0][0] = xvec[0]; cosdirmat[0][1] = yvec[0]; cosdirmat[0][2] = zvec[0];
     cosdirmat[1][0] = xvec[1]; cosdirmat[1][1] = yvec[1]; cosdirmat[1][2] = zvec[1];
@@ -734,20 +747,34 @@ void Free_scattering_amplitude(const int nf, const int nt, const int nga, real *
 }
 
 
-void Scattering_Intensity_t(const int nf, const int nt, const int nga, const int nq, 
-                               const real inversesize, real *********Incoh_term, real *******Cos_scatt_ampl, real *******Sin_scatt_ampl,
+void Scattering_Intensity_t(const int nf, real time, const int nt, const int nga, const int nq,
+                               const real inversenorm, const real inversesize,  const  real *theta_vec,
+                               real *********Incoh_term, real *******Cos_scatt_ampl, real *******Sin_scatt_ampl,
                                real  *********tot_tensor_squared,      real *********incoh_tensor_squared,
-                               real **********tot_tensor_squared_addr, real **********incoh_tensor_squared_addr)
-{
+                               real **********tot_tensor_squared_addr, real **********incoh_tensor_squared_addr, 
+                               const char *fnTIMEEVOLTENSOR, FILE  *fname)
+{ 
     // this function computes the 27*27 elements cos_scatt_ampl[pm][qm][sm]*cos_scatt_ampl[ppm][qpm][spm] + sin_scatt_ampl[pm][qm][sm]*sin_scatt_ampl[ppm][qpm][spm]
-    int i, j, k, pm, qm, sm, ppm, qpm, spm, rr, tt, c, qq;
+    int i, j, k, pm, qm, sm, ppm, qpm, spm, rr, tt, c, qq, pl;
     real co_q_xi, si_q_xi, q_xi;
     real incoh_temp, tot_temp ;
+    real print_temp = 0.0;
+    real theta;
 
+
+    if (fnTIMEEVOLTENSOR)
+    {
+       fprintf(fname, "%10g ", time);
+    }
     for (rr = 0; rr < nf; rr++)
     {
         for (tt = 0; tt < nt; tt++ )
         {
+            if (fnTIMEEVOLTENSOR && rr==0)
+            {
+               theta = 2.0*theta_vec[tt]*180.0/M_PI;
+               fprintf(fname, "%10g ",theta);
+            }
             for (c  = 0; c < nga; c++)
             {
                 for (pm = 0; pm < DIM; pm++)
@@ -762,6 +789,21 @@ void Scattering_Intensity_t(const int nf, const int nt, const int nga, const int
                                  {
                                      for (spm = 0; spm < DIM; spm++)
                                      {
+                                         if ((fnTIMEEVOLTENSOR) && (c==0) && (rr==0) )
+                                         {
+                                            print_temp = 0.0;
+                                            for (pl = 0; pl < nga; pl++)
+                                            {
+                                              print_temp += (Cos_scatt_ampl[1][tt][pl][pm][qm][sm][0]*Cos_scatt_ampl[1][tt][pl][ppm][qpm][spm][0] +
+                                                       Sin_scatt_ampl[1][tt][pl][pm][qm][sm][0]*Sin_scatt_ampl[1][tt][pl][ppm][qpm][spm][qq]);
+                                              print_temp +=   (Cos_scatt_ampl[3][tt][pl][pm][qm][sm][0]*Cos_scatt_ampl[3][tt][pl][ppm][qpm][spm][0] +
+                                                       Sin_scatt_ampl[3][tt][pl][pm][qm][sm][0]*Sin_scatt_ampl[3][tt][pl][ppm][qpm][spm][0]);
+                                              print_temp += (Cos_scatt_ampl[5][tt][pl][pm][qm][sm][0]*Cos_scatt_ampl[5][tt][pl][ppm][qpm][spm][0] +
+                                                       Sin_scatt_ampl[5][tt][pl][pm][qm][sm][0]*Sin_scatt_ampl[5][tt][pl][ppm][qpm][spm][0]);
+                                            }
+                                            fprintf(fname, "%10g ", print_temp*inversenorm);
+                                             
+                                         }
                                          for (qq = 0; qq < nq; qq++)
                                          {
                                            tot_temp = (Cos_scatt_ampl[rr][tt][c][pm][qm][sm][qq]*Cos_scatt_ampl[rr][tt][c][ppm][qpm][spm][qq] + 
@@ -769,6 +811,7 @@ void Scattering_Intensity_t(const int nf, const int nt, const int nga, const int
                                            tot_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm][qq]  +=  tot_temp;
                                            incoh_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm][qq]  +=  Incoh_term[rr][tt][c][pm][qm][sm][ppm][qpm][spm]*inversesize;
                                          }
+                                    
                                      }
                                  }
                              }
@@ -777,6 +820,11 @@ void Scattering_Intensity_t(const int nf, const int nt, const int nga, const int
                 }
             }
         }
+    }
+
+    if (fnTIMEEVOLTENSOR)
+    {
+       fprintf(fname, "\n");
     }
 
     *tot_tensor_squared_addr = tot_tensor_squared;
@@ -943,9 +991,10 @@ int gmx_fitbeta(int argc, char *argv[])
     t_filenm           fnm[] = {
         { efTRX, "-f",  NULL,     ffREAD },
         { efTPS, NULL,  NULL,     ffREAD },
-        { efNDX, NULL,  NULL,     ffOPTRD },
+        { efNDX, NULL,  NULL,     ffREAD },
         { efXVG, "-o",  "tot_intensity",    ffWRITE },
-        { efXVG, "-oin",  "inc_intensity",    ffWRITE },
+        { efXVG, "-oin",  "inc_intensity",    ffOPTWR },
+        { efXVG, "-oev",  "time_evol_intensity",    ffOPTWR },
         { efXVG, "-otheta", "non_linear_sfact_vs_theta", ffOPTWR },
 
     };
@@ -993,7 +1042,7 @@ int gmx_fitbeta(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
    
     do_fitbeta(top, ftp2fn(efTRX, NFILE, fnm),
-           opt2fn("-o", NFILE, fnm), opt2fn_null("-oin", NFILE, fnm), opt2fn_null("-otheta", NFILE, fnm), methodt[0],  bPBC, nbinq,
+           opt2fn("-o", NFILE, fnm), opt2fn_null("-oin", NFILE, fnm), opt2fn_null("-oev", NFILE, fnm), opt2fn_null("-otheta", NFILE, fnm), methodt[0],  bPBC, nbinq,
            nbintheta, nbingamma, pin_angle, pout_angle,
            bmzxx, bmzyy, bmzzz, 
            gnx, grpindex, grpname, ngroups, oenv);
