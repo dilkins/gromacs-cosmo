@@ -1153,6 +1153,8 @@ int gmx_trjconv(int argc, char *argv[])
                    bFit ? "least squares" : "translational");
             get_index(atoms, ftp2fn_null(efNDX, NFILE, fnm),
                       1, &ifit, &ind_fit, &gn_fit);
+            fprintf(stderr,"ind_fit %d %d %d %lu\n", ind_fit[0], ind_fit[1],ind_fit[2], sizeof(ind_fit));
+            //gmx_fatal(FARGS,"end\n");
 
             if (bFit)
             {
@@ -1211,9 +1213,11 @@ int gmx_trjconv(int argc, char *argv[])
         if (bReset)
         {
             snew(w_rls, atoms->nr);
+ 
             for (i = 0; (i < ifit); i++)
             {
                 w_rls[ind_fit[i]] = atoms->atom[ind_fit[i]].m;
+                fprintf(stderr,"ind fit %d\n",ind_fit[i]);
             }
 
             /* Restore reference structure and set to origin,
@@ -1627,10 +1631,25 @@ int gmx_trjconv(int argc, char *argv[])
 
                             if (bReset)
                             {
+//                                printf("original O %f %f %f\n",fr.x[0][XX],fr.x[0][YY], fr.x[0][ZZ]);
+//                                printf("original H %f %f %f\n",fr.x[1][XX],fr.x[1][YY], fr.x[1][ZZ]);
+//                                printf("original H %f %f %f\n",fr.x[2][XX],fr.x[2][YY], fr.x[2][ZZ]);
+//                                printf("original M %f %f %f\n",fr.x[3][XX],fr.x[3][YY], fr.x[3][ZZ]);                      
                                 reset_x_ndim(nfitdim, ifit, ind_fit, natoms, NULL, fr.x, w_rls);
+
                                 if (bFit)
                                 {
+//                                    printf("ifit %d\n",ifit);
+//                                    printf("resetted O %f %f %f\n",fr.x[0][XX],fr.x[0][YY], fr.x[0][ZZ]);
+//                                    printf("resetted H %f %f %f\n",fr.x[1][XX],fr.x[1][YY], fr.x[1][ZZ]);
+//                                    printf("resetted H %f %f %f\n",fr.x[2][XX],fr.x[2][YY], fr.x[2][ZZ]);
+//                                    printf("resetted M %f %f %f\n",fr.x[3][XX],fr.x[3][YY], fr.x[3][ZZ]);                                
                                     do_fit_ndim(nfitdim, natoms, w_rls, xp, fr.x);
+//                                    printf("O %f %f %f\n",fr.x[0][XX],fr.x[0][YY], fr.x[0][ZZ]);
+//                                    printf("H %f %f %f\n",fr.x[1][XX],fr.x[1][YY], fr.x[1][ZZ]);
+//                                    printf("H %f %f %f\n",fr.x[2][XX],fr.x[2][YY], fr.x[2][ZZ]);
+//                                    printf("M %f %f %f\n",fr.x[3][XX],fr.x[3][YY], fr.x[3][ZZ]);
+
                                 }
                                 if (!bCenter)
                                 {
@@ -1638,6 +1657,11 @@ int gmx_trjconv(int argc, char *argv[])
                                     {
                                         rvec_inc(fr.x[i], x_shift);
                                     }
+//                                    printf("O shift %13.7f %13.7f %13.7f\n",fr.x[0][XX],fr.x[0][YY], fr.x[0][ZZ]);
+//                                    printf("H shift %13.7f %13.7f %13.7f\n",fr.x[1][XX],fr.x[1][YY], fr.x[1][ZZ]);
+//                                    printf("H shift %13.7f %13.7f %13.7f\n",fr.x[2][XX],fr.x[2][YY], fr.x[2][ZZ]);
+//                                    printf("M shift %13.7f %13.7f %13.7f\n",fr.x[3][XX],fr.x[3][YY], fr.x[3][ZZ]);
+
                                 }
                             }
 

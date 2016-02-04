@@ -63,40 +63,43 @@
 #include "gmx_ana.h"
 #include "hyperpol.h"
 #include "names.h"
+#include "gromacs/math/do_fit.h"
+
 
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
 #define nm2Bohr 10.0/0.529177
+#define ANG2NM 0.1
 #define AU2VNM 5.14220652e2
 
 
 static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, const char *fnKRR,
                    const char *fnGRD, const char *fnPOT,
-                   const char *fnSFACT, const char *fnTHETA, const char *method,
-                   gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
+                   const char *fnSFACT, const char *fnTHETA, const real angle_corr, const char *fnBETACORR, const char *fnREFMOL, const char *method,
+                   gmx_bool bIONS, char *catname, char *anname, gmx_bool bEWALD, gmx_bool bFADE, gmx_bool bCONSTBETA, gmx_bool bPBC, 
                    int qbin, int nbinq, real koutx, real kouty, real koutz,
-                   real kinx, real kiny, real kinz,
+                   real kinx, real kiny, real kinz, real binwidth, 
+                   //int pind1, int pind2, int pind3, 
                    int nbintheta, int nbingamma, real pin_angle, real pout_angle,
-                   real cutoff_field, real kernstd,
+                   real cutoff_field, real kappa, real core_term,real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv)
 {
-    FILE          *fp;
-    FILE          *fpn;
+    FILE          *fp, *fpn;
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
-    int            g, natoms, nanions, ncations, i, j, k, qq, n, c, tt, rr, nframes, nfaces;
-    real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t ;
+    int            g, natoms, nanions, ncations, i, j, k, qq, n, c, tt, rr, nframes, nfaces, gr_ind, nbin, aa, bb, cc;
+    real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t; // ****mu_ind_t ;
     real           qnorm, maxq, coh_temp = 0.0,  incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq,   mu_ind =0.0, mu_sq =0.0 ;
-    real          *field_ad, electrostatic_cutoff, ***beta_mol;
+    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, invkappa2, ***beta_mol, *mu_ind_mols, *beta_corr;
     int            max_i, isize0, ind0;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
-    real           segvol, spherevol, prev_spherevol, invsize0, invgamma, theta=0, *theta_vec;
-    rvec          *x, dx,  *x_i1, xi, x01, x02, *arr_qvec, **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
+    real           segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
+    rvec          *x, xcm, xcm_transl, dx,  *x_i1, xi, x01, x02, *arr_qvec, **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
     rvec           pol_perp, pol_par,vec_kout, vec_2kin, pol_in1, pol_in2, vec_kout_2kin ;
-    rvec           xvec, yvec, zvec;
+    rvec           xvec, yvec, zvec, *xmol, *xref;
     matrix         cosdirmat; 
     real           invvol, invvol_sum;
     t_Map         *Map=NULL;
@@ -110,33 +113,44 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
     t_pbc          pbc;
     gmx_rmpbc_t    gpbc = NULL;
     gmx_rng_t      rng = NULL;
-    int            mol, a;
+    int            mol, a, molsize;
 
     // read electrostatic fit map input file
     if (fnMAP)
     {
        Map=(t_Map *)calloc(1,sizeof(t_Map));
        readMap(fnMAP, Map);
+       
     }
     else
     {
        Krr = (t_Kern *)calloc(1,sizeof(t_Kern));
        readKern(fnKRR, fnGRD, fnPOT, Krr);
-       Krr->kerndev = -0.5/((kernstd*kernstd));
+       Krr->kerndev = 0.5/((kernstd*kernstd));
        fprintf(stderr,"kernel of standard dev %f\n", Krr->kerndev);
        fprintf(stderr,"first 2 and last coefficients %f %f %f\n",Krr->coeff[0][XX][XX][XX], Krr->coeff[0][ZZ][ZZ][ZZ], Krr->coeff[Krr->ndataset-1][ZZ][ZZ][ZZ]);
-       fprintf(stderr,"last potential %f\n",Krr->V[Krr->gridpoints-1][Krr->ndataset-1]);
+       fprintf(stderr,"last potential %f\n",Krr->V[Krr->ndataset-1][Krr->gridpoints-1]);
     }
 
     atom = top->atoms.atom;
     mols = &(top->mols);
     isize0 = isize[0];
+    molsize = mols->index[molindex[0][1]] - mols->index[molindex[0][0]];
+
     nfaces = 6;
     invsize0 = 1.0/isize0;
     invgamma = 1.0/nbingamma;
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
+    
+    snew(xmol,molsize);
+    snew(xref,molsize);
+    if (fnREFMOL)
+    {
+      read_reference_mol(fnREFMOL,&xref);
+    } 
 
     fprintf(stderr,"\nNumber of atoms %d\n",natoms);
+    printf("number of atoms in molecule %d\n number of molecules %d\n ",molsize,top->atoms.nr);
     fprintf(stderr,"\nName of molecules %s\n",grpname[0]);
 
     if (bIONS )
@@ -194,9 +208,36 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
     if (bPBC)
     {
         rmax2   =  max_cutoff2(FALSE ? epbcXY : epbcXYZ, box_pbc);
-        electrostatic_cutoff =  min(cutoff_field*cutoff_field, rmax2);
+        nbin     = (int)(sqrt(rmax2)/binwidth);
+        invhbinw = 1.0 / binwidth;
+
+        electrostatic_cutoff2 = (bFADE == FALSE ) ?  min(cutoff_field*cutoff_field, rmax2) : cutoff_field*cutoff_field ;
         fprintf(stderr, "rmax2 = %f\n", rmax2);
-        fprintf(stderr, "cutoff for electric field calculation = %f\n", sqrt(electrostatic_cutoff));
+        if (!bEWALD)
+        {   fprintf(stderr, "cutoff for electric field calculation = %f\n", sqrt(electrostatic_cutoff2));
+        }
+        if (fnBETACORR)
+        {
+            fprintf(stderr, "number of bins for <beta(0)*beta(r)> = %d\n", nbin);
+            nfaces = 1;
+            if (nbingamma >1 || nbintheta >1  )
+            {
+                gmx_fatal(FARGS, "when computing <beta(0)*beta(r)> choose nplanes = 1");
+            }
+        } 
+        inv_width = (bFADE == FALSE ) ? 1.0 : M_PI*0.5/(sqrt(rmax2)-sqrt(electrostatic_cutoff2)) ;
+        electrostatic_cutoff = sqrt(electrostatic_cutoff2);
+        if (bEWALD)
+        {
+           fprintf(stderr, "screening kappa parameter used in ewald = %f\n", kappa);
+           fprintf(stderr, "hard core smoothening parameter = %f\n", core_term);
+        }
+        if (bFADE)
+        {
+           fprintf(stderr, "switching parameter (PI/2)*1/(L/2 - cutoff) = %f\n", inv_width);
+        }
+        invkappa2 = 0.5/(kappa*kappa);
+        
     }
     else
     {
@@ -213,6 +254,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
     rmax     = sqrt(rmax2);
     //initialize beta tensor
     snew(beta_mol, DIM);
+    snew(mu_ind_mols, isize0);
+    snew(beta_corr, nbin+1);
     for (i = 0; i < DIM; i++)
     {
         snew(beta_mol[i], DIM);
@@ -343,14 +386,18 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                      snew(vec_pout_theta_gamma[rr][tt], nbingamma);
                      snew(vec_pin_theta_gamma[rr][tt], nbingamma);
                  }
-                     for (tt = 0; tt < nbintheta; tt++)
-                     {
+                 for (tt = 0; tt < nbintheta; tt++)
+                 {
                          //theta is the angle between the outcoming wave-vector and the scattered wave-vector
                          //the experimental_theta is the angle between the incoming and outcoming wave-vectors and it is twice this value
                          theta_vec[tt] = ( tt< nbintheta*0.5 ) ? /*5.0/(6.0*2.0)*/ 0.5*M_PI*(-1.0 + tt*2.0/nbintheta) : /*5.0/(6.0*2.0)**/ 0.5*M_PI*(-1.0 + 2.0/nbintheta + tt*2.0/nbintheta) ;
                          // we get very close to ±90 degrees because kin and kout -> infinity at theta=±90 degrees
                          theta_vec[0] = 0.5*M_PI*(-1.0)*0.999;
                          theta_vec[nbintheta-1] = 0.5*M_PI*(-1.0 + 2.0/nbintheta + (nbintheta-1)*2.0/nbintheta)*0.999 ;
+                         if (fnBETACORR)
+                         {
+                            theta_vec[tt] = angle_corr*M_PI/(2.0*180.0);
+                         }
                          // this loop is to  rotate the scattering plane wrt the scattering wave-vector
                          for (c = 0; c < nbingamma; c++)
                          {
@@ -389,7 +436,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                              check_pol = iprod(vec_pin_theta_gamma[rr][tt][c],vec_pout_theta_gamma[rr][tt][c]);
                              printf("(incoming polarization vec) dot (outcoming polarization vec) = %.17g\n",check_pol);
                          }
-                     }
+                 }
               }
               printf("wave_vec %f %f %f\n", arr_qvec_faces[rr][0][XX], arr_qvec_faces[rr][0][YY], arr_qvec_faces[rr][0][ZZ]);
            }
@@ -436,7 +483,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                    {
                        snew(cos_tq[rr][tt],nbingamma);
                        snew(sin_tq[rr][tt],nbingamma);
-                       snew(mu_sq_t[rr][tt], nbintheta);
+                       snew(mu_sq_t[rr][tt], nbingamma);
                        for (c = 0; c <nbingamma; c++)
                        {
                            snew(cos_tq[rr][tt][c],nbinq);
@@ -448,32 +495,45 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                 {
                     ind0  = mols->index[molindex[g][i]];
                     copy_rvec(x[ind0], xi);
+                    for (aa = 0; aa < molsize; aa++)
+                    {
+                       copy_rvec(x[aa],xmol[aa]);
+                    }
+
+                    calc_cosdirmat( fnREFMOL, &pbc, top, mols, molindex, molsize, ind0,  xref, xmol, &cosdirmat, &xvec, &yvec, &zvec );
                     
-                    pbc_dx(&pbc, x[ind0+1], xi, x01);
-                    pbc_dx(&pbc, x[ind0+2], xi, x02);
- 
-                    rvec_add( x01, x02, zvec);
-                    cprod(zvec,x01, yvec);
-                    unitv(yvec,yvec);
-                    unitv(zvec,zvec);
-                    cprod(yvec,zvec,xvec);
-                    cosdirmat[0][0] = xvec[0]; cosdirmat[0][1] = yvec[0]; cosdirmat[0][2] = zvec[0];
-                    cosdirmat[1][0] = xvec[1]; cosdirmat[1][1] = yvec[1]; cosdirmat[1][2] = zvec[1];
-                    cosdirmat[2][0] = xvec[2]; cosdirmat[2][1] = yvec[2]; cosdirmat[2][2] = zvec[2];                    
-                    if (fnMAP)
+                    if (fnMAP && !bCONSTBETA)
                     {
                         calc_efield_map(&pbc, top, mols, Cation, Anion, molindex, g, isize0, ncations, nanions,
-                                x, ind0, xvec, yvec, zvec, electrostatic_cutoff, &field_ad);
+                                x, ind0, xvec, yvec, zvec, electrostatic_cutoff2, &field_ad);
                         calc_beta_efield_map(Map, field_ad, beta_mol, &beta_mol );
                     }
-                    else
+                    else if (fnKRR)
                     {
-                        calc_beta_krr(Krr, &pbc, top, mols, molindex, g, isize0, x, ind0, cosdirmat  ,electrostatic_cutoff, beta_mol, &beta_mol );
-                        printf("beta %d %d %d %f\n",0, 0, 0, beta_mol[0][0][0]);
-                        printf("beta %d %d %d %f\n",2, 2, 2, beta_mol[2][2][2]);
-                        printf("beta %d %d %d %f\n",2, 0, 0, beta_mol[2][0][0]);
-                        printf("beta %d %d %d %f\n",0, 2, 0, beta_mol[0][2][0]);
-                        printf("beta %d %d %d %f\n",0, 0, 2, beta_mol[0][0][2]);
+                        for (gr_ind =0; gr_ind < Krr->gridpoints; gr_ind++)
+                        {
+                           mvmul(cosdirmat,Krr->Vgrid[gr_ind],Krr->translgrid[gr_ind]);
+                        }
+                        //copy_rvec(x[ind0],xcm_transl);
+                        //we use this only temporarily, because the centre water molecule has been centred in the centre of core charge
+                        svmul(0.0117176,zvec,xcm);
+                        rvec_add(xcm,x[ind0],xcm_transl);
+                        calc_beta_krr(Krr, &pbc, bEWALD, bFADE, top, mols, molindex, g, isize0, x, xcm_transl, ind0,
+                                      electrostatic_cutoff, kappa, invkappa2, core_term, inv_width, 
+                                      rmax2, rmax, cosdirmat ,beta_mol, &beta_mol );
+                    }
+                    else if (fnMAP && bCONSTBETA)
+                    {
+                      for (aa = 0; aa < DIM; aa++)
+                      {
+                          for (bb = 0; bb < DIM; bb++)
+                          {
+                              for (cc = 0; cc < DIM; cc++)
+                              {
+                                 beta_mol[aa][bb][cc] = Map->beta_gas[aa*9+ bb*3+ cc];
+                              }
+                          }
+                      }
                     }
                     for (rr = 0; rr < nfaces; rr++)
                     {
@@ -481,11 +541,14 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                         {
                             for (c  = 0; c < nbingamma; c++)
                             {
-
                                 induced_second_order_fluct_dipole(cosdirmat, 
                                                                   vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], 
                                                                   beta_mol, &mu_ind);
                                 mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
+                                if (fnBETACORR )
+                                {
+                                   mu_ind_mols[i] = mu_ind;
+                                }
                                 for (qq = 0; qq < nbinq; qq++)
                                 {
                                     q_xi = iprod(arr_qvec_faces[rr][qq],xi);
@@ -513,6 +576,10 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                        }
                    }
                 }
+                if (fnBETACORR)
+                {
+                 calc_beta_corr( &pbc,  mols, molindex, g, isize0, nbin, rmax2, invhbinw, x, mu_ind_mols, &beta_corr);
+                }                
             }
             for (rr = 0; rr < nfaces; rr++)
             {
@@ -539,10 +606,149 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
         while (read_next_x(oenv, status, &t, x, box));
     }
 
-    else if ( method[0]!='s')
+/*    else if ( method[0] =='m')
     {
-        gmx_fatal(FARGS,"Method %c\n", method[0]);
+        fprintf(stderr,"loop over atoms with double summation method, and swiping over the scattering angle\n");
+        do
+        {
+            // Must init pbc every step because of pressure coupling 
+            copy_mat(box, box_pbc);
+            if (top != NULL)
+            {
+                gmx_rmpbc(gpbc, natoms, box, x);
+            }
+            set_pbc(&pbc, ePBCrdf, box_pbc);
+            invvol      = 1/det(box_pbc);
+            invvol_sum += invvol;
+
+            for (g = 0; g < ng; g++)
+            {
+                snew(mu_ind_t, isize0);
+                for (i = 0; i < isize0; i++)
+                {
+                    snew(mu_ind_t[i],nfaces);
+                    for (rr = 0; rr < nfaces; rr++)
+                    {
+                       snew(mu_ind_t[i][rr], nbintheta);
+                    }
+
+                    ind0  = mols->index[molindex[g][i]];
+                    copy_rvec(x[ind0], xi);
+
+                    pbc_dx(&pbc, x[ind0+1], xi, x01);
+                    pbc_dx(&pbc, x[ind0+2], xi, x02);
+
+                    rvec_add( x01, x02, zvec);
+                    cprod(zvec,x01, yvec);
+                    unitv(yvec,yvec);
+                    unitv(zvec,zvec);
+                    cprod(yvec,zvec,xvec);
+                    cosdirmat[0][0] = xvec[0]; cosdirmat[0][1] = yvec[0]; cosdirmat[0][2] = zvec[0];
+                    cosdirmat[1][0] = xvec[1]; cosdirmat[1][1] = yvec[1]; cosdirmat[1][2] = zvec[1];
+                    cosdirmat[2][0] = xvec[2]; cosdirmat[2][1] = yvec[2]; cosdirmat[2][2] = zvec[2];
+
+                    if (fnMAP && !bCONSTBETA)
+                    {
+                        calc_efield_map(&pbc, top, mols, Cation, Anion, molindex, g, isize0, ncations, nanions,
+                                x, ind0, xvec, yvec, zvec, electrostatic_cutoff2, &field_ad);
+                        calc_beta_efield_map(Map, field_ad, beta_mol, &beta_mol );
+                    }
+                    else if (fnKRR)
+                    {
+                        for (gr_ind =0; gr_ind < Krr->gridpoints; gr_ind++)
+                        {
+                           mvmul(cosdirmat,Krr->Vgrid[gr_ind],Krr->translgrid[gr_ind]);
+                        }
+                        copy_rvec(x[ind0],xcm_transl);
+                        calc_beta_krr(Krr, &pbc, bEWALD, bFADE, top, mols, molindex, g, isize0, x, xcm_transl, ind0,
+                                      electrostatic_cutoff, kappa, invkappa2, core_term, inv_width,
+                                      rmax2, rmax, cosdirmat ,beta_mol, &beta_mol );
+                    }
+                    else if (fnMAP && bCONSTBETA)
+                    {
+                      for (aa = 0; aa < DIM; aa++)
+                      {
+                          for (bb = 0; bb < DIM; bb++)
+                          {
+                              for (cc = 0; cc < DIM; cc++)
+                              {
+                                 beta_mol[aa][bb][cc] = Map->beta_gas[aa*9+ bb*3+ cc];
+                              }
+                          }
+                      }
+                    }
+                    for (rr = 0; rr < nfaces; rr++)
+                    {
+                        for (tt = 0; tt < nbintheta; tt++ )
+                        {
+
+                                induced_second_order_fluct_dipole(cosdirmat,
+                                                                  vec_pout_theta_gamma[rr][tt][0], vec_pin_theta_gamma[rr][tt][0],
+                                                                  beta_mol, &mu_ind);
+                              
+                                mu_ind_t[i][rr][tt] = mu_ind;
+                                mu_sq_t[rr][tt][0] += mu_ind*mu_ind;
+                                if (fnBETACORR && tt == 0)
+                                {
+                                   mu_ind_mols[i] += mu_ind;
+                                }
+                                for (qq = 0; qq < nbinq; qq++)
+                                {
+                                    q_xi = iprod(arr_qvec_faces[rr][qq],xi);
+                                    cos_tq[rr][tt][c][qq] += mu_ind*cos(q_xi);
+                                    sin_tq[rr][tt][c][qq] += mu_ind*sin(q_xi);
+                                }
+                            }
+                        }
+                     }
+                }
+                for (rr = 0; rr < nfaces; rr++)
+                {
+                   for (tt = 0; tt < nbintheta; tt++)
+                   {
+                       for (c = 0; c < nbingamma; c++)
+                       {
+                           incoh_temp = mu_sq_t[rr][tt][c]*invsize0;
+                           for (qq = 0; qq < nbinq; qq++)
+                           {
+                              tot_temp = (cos_tq[rr][tt][c][qq]*cos_tq[rr][tt][c][qq] + sin_tq[rr][tt][c][qq]*sin_tq[rr][tt][c][qq])*invsize0;
+                              s_method_t[g][rr][tt][qq] +=  tot_temp  ;
+                              s_method_coh_t[g][rr][tt][qq] += tot_temp - incoh_temp;
+                              s_method_incoh_t[g][rr][tt][qq] += incoh_temp ;
+                           }
+                       }
+                   }
+                }
+                if (fnBETACORR)
+                {
+                 calc_beta_corr( &pbc,  mols, molindex, g, isize0, nbin, rmax2, invhbinw, x, mu_ind_mols, &beta_corr);
+                }
+            }
+            for (rr = 0; rr < nfaces; rr++)
+            {
+               for (tt  = 0; tt < nbintheta; tt++)
+               {
+                   for (c = 0; c < nbingamma; c++)
+                   {
+                      sfree(cos_tq[rr][tt][c]);
+                      sfree(sin_tq[rr][tt][c]);
+                   }
+                   sfree(cos_tq[rr][tt]);
+                   sfree(sin_tq[rr][tt]);
+                   sfree(mu_sq_t[rr][tt]);
+               }
+               sfree(cos_tq[rr]);
+               sfree(sin_tq[rr]);
+               sfree(mu_sq_t[rr]);
+            }
+            sfree(cos_tq);
+            sfree(sin_tq);
+            sfree(mu_sq_t);
+            nframes++;
+        }
+        while (read_next_x(oenv, status, &t, x, box));
     }
+    */
     fprintf(stderr, "\n");
     if (bPBC && (NULL != top))
     {
@@ -614,7 +820,9 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
        }
     }
     gmx_ffclose(fp);
-
+    
+    if (!fnBETACORR)
+    {
     nplots = 1;
     sprintf(gtitle, "Non-linear optical scattering ");
     fpn = xvgropen(fnSFACT, "S(q)", "q (nm^-1)", "S(q)", oenv);
@@ -623,7 +831,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
     {
        theta = 2.0*theta_vec[tt]*180.0/M_PI;
        if ((round(theta) == -45.0) || (round(theta) == -30.0 ) || (round(theta) == -60.0 ) || (round(theta) == -90.0)
-          || (round(theta) == -150.0)  || (round(theta) == -120.0) || (tt ==  0))
+          || (round(theta) == -150.0)  || (round(theta) == -120.0) || (tt ==  0) || (tt == nbintheta/2))
        {
            fprintf(fpn, "@    s%d legend \"incoherent theta=%g all faces\"\n",nplots,theta);
            fprintf(fpn, "@target G0.S%d\n",nplots);
@@ -706,6 +914,24 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
        }
     }
     do_view(oenv, fnSFACT, NULL);
+    }
+
+
+    if (fnBETACORR)
+    {
+       sprintf(gtitle, "Non-linear optical scattering ");
+       fpn = xvgropen(fnBETACORR, "hyperpolarizability spatial correlation", "r [nm]", "beta(0) beta(r)", oenv);
+       sprintf(refgt, "%s", "");
+       //fprintf(fpp, "@    s1 legend \" beta corr %d%d%d \"\n",pind1,pind2,pind3);
+       fprintf(fpn, "@type xy\n");
+
+       for (i = 0; i < nbin+1; i++)
+       {
+           fprintf(fpn, "%10g %10g\n", i*binwidth, beta_corr[i]/nframes );
+       }
+       gmx_ffclose(fpn);
+    }
+
 
     for (g = 0; g < ng; g++)
     {
@@ -731,6 +957,35 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
     {
         sfree(beta_mol[j]);
     }
+    sfree(beta_corr);
+    sfree(mu_ind_mols);
+}
+
+void read_reference_mol(const char *fnREFMOL, rvec **xref)
+{
+      char refatomname[256], commentline[256];
+      FILE *fp;
+      int n_outputs, nats, i;
+      real temp;
+
+      fp = gmx_ffopen(fnREFMOL, "r");
+      printf("reference molecule file\n");
+      n_outputs = fscanf(fp,"%d ",&nats);
+      printf("%d\n",nats);
+      n_outputs = fscanf(fp,"%s ",commentline);
+      printf("%s\n",commentline);
+      for (i = 0; i< nats ; i++)
+      {
+          n_outputs = fscanf(fp,"%s ",refatomname);
+          n_outputs = fscanf(fp,"%f ", &temp);
+          (*xref)[i][XX] = temp*ANG2NM;
+          n_outputs = fscanf(fp,"%f ", &temp);
+          (*xref)[i][YY] = temp*ANG2NM;
+          n_outputs = fscanf(fp,"%f ", &temp);
+          (*xref)[i][ZZ] = temp*ANG2NM;
+          printf("%s %f %f %f\n",refatomname, (*xref)[i][XX],(*xref)[i][YY],(*xref)[i][ZZ]);
+      }
+      fclose(fp);
 }
 
 
@@ -745,14 +1000,10 @@ void readMap(const char *fnMAP, t_Map *Map)
     {
         n_outputs = fscanf(fm,"%f ",&Map->beta_gas[i]);
     }
-    for (i = 0; i<81; i++)
-    {
-       n_outputs = fscanf(fm,"%f ",&Map->gamma_gas[i]);
 
-    }
     // read coefficients
     for (i=0;i<27;i++) {  // 27 elements
-      for (j=0;j<212;j++) {  // 212 components
+      for (j=0;j<36;j++) {  // 212 components
         n_outputs = fscanf(fm,"%f ",&Map->D[i][j]);
       }
     }
@@ -831,6 +1082,7 @@ void readKern(const char *fnKRR, const char *fnGRD, const char *fnPOT, t_Kern *K
         for ( j = 0; j < Krr->gridpoints; j++)
         {
             n_outputs = fscanf(fp, "%f", &Krr->V[i][j]) ;
+            //printf("vij %d %d %f\n",i,j,Krr->V[i][j]);
         }
         for (a = 0; a < DIM; a++)
         {
@@ -849,18 +1101,19 @@ void readKern(const char *fnKRR, const char *fnGRD, const char *fnPOT, t_Kern *K
         n_outputs = fscanf(fg, "%f", &Krr->Vgrid[j][XX]);
         n_outputs = fscanf(fg, "%f", &Krr->Vgrid[j][YY]);
         n_outputs = fscanf(fg, "%f", &Krr->Vgrid[j][ZZ]);
-        if (Krr->Vgrid[j][XX] == 0.0 && Krr->Vgrid[j][YY] == 0.0 &&  Krr->Vgrid[j][ZZ] == 0.0)
+//        if (Krr->Vgrid[j][XX] == 0.0 && Krr->Vgrid[j][YY] == 0.0 &&  Krr->Vgrid[j][ZZ] == 0.0)
+//        {
+        if (Krr->V[0][j] == 0.0)
         {
-           if (Krr->V[0][j] == 0.0)
-           {
-              Krr->gridcenter = j;
-           }
-           else
-           {
-              gmx_fatal(FARGS,"could not find the correct grid center (0.0 ,0.0 ,0.0) for the reference of the electrostatic potential\n check the input files");
-           }
+           Krr->gridcenter = j;
         }
+//           else
+//           {
+//              gmx_fatal(FARGS,"could not find the correct grid center (0.0 ,0.0 ,0.0) for the reference of the electrostatic potential\n check the input files");
+//           }
+//        }
     }
+    
     fclose(fk);
     fclose(fp);
     fclose(fg);
@@ -902,6 +1155,15 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
     int p, l, m;
     //betal is the hyperpolarizability in lab frame
     real ***betal,  mu_temp = 0.0;
+    rvec pout_temp, pin_temp;
+
+    pout_temp[XX] = 0.0;
+    pout_temp[YY] = 0.0;
+    pout_temp[ZZ] = 1.0;
+    pin_temp[XX] = 0.0;
+    pin_temp[YY] = 0.0;
+    pin_temp[ZZ] = 1.0;
+
 
     //initialize beta
     snew(betal, DIM);
@@ -961,6 +1223,20 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
                betal[2][ 1][ 1]*pin[1]) + ((betal[2][ 0][ 2] + betal[2][ 2][ 0])*pin[0] +
                (betal[2][ 1][ 2] + betal[2][ 2][ 1])*pin[1])*pin[2] + betal[2][ 2][ 2]*pin[2]*pin[2])*pout[2] ;
 
+
+/*    for (i = 0; i< DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+           for (k = 0; k < DIM; k++)
+           {
+               mu_temp += betal[i][j][k]*pout_temp[i]*pin_temp[j]*pin_temp[k];
+           }
+        }
+    }
+    *mu_ind = mu_temp;
+*/
+
     //FREE beta lab
     for (i = 0; i < DIM; i++)
     {
@@ -978,15 +1254,16 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
     sfree(betal);
 }
 
-void calc_beta_krr(t_Kern *Krr, t_pbc *pbc,t_topology *top, t_block *mols, int  *molindex[],
+void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, gmx_bool bEWALD, gmx_bool bFADE, t_topology *top, t_block *mols, int  *molindex[],
                  const int gind , const int isize0,
-                 rvec *x, const int imol, matrix cosdirmat, 
-                 real electrostatic_cutoff , real ***betamol, real ****betamol_addr)
+                 rvec *x, rvec xcm_transl, const int imol, 
+                 real electrostatic_cutoff, real kappa, real invkappa2, real core_term, real inv_width, real rmax2, real rmax,
+                 matrix cosdirmat, real ***betamol, real ****betamol_addr)
 {
    int    grid_ind, set_ind, j, m, indj, a, b, c;
-   real   d2, r, delV, kernel_fn, *Vij;
-   rvec   vecij, vecrotated, vecr;
-   matrix cosdirmatj;
+   real   d2, delV, kernel_fn, *Vij, v_t, vreference, r_dist, el_cut2, sw_coeff;
+   rvec   vecij, vecr, *vecs, *vecs_deb=NULL;
+   matrix inverted_mat;
 
    //initialize molecular beta
    for (a = 0; a < DIM; a++)
@@ -1001,50 +1278,138 @@ void calc_beta_krr(t_Kern *Krr, t_pbc *pbc,t_topology *top, t_block *mols, int  
    }
    //initialize potential at a point in the grid in the vicinity of molecule imol due to all molecules in a cutoff
    snew(Vij,Krr->gridpoints);
-   for (j = 0; j < isize0; j++)
+   snew(vecs,4);
+//   snew(vecs_deb,4);
+//   m_inv(cosdirmat, inverted_mat);
+   vreference = 0.0;
+   v_t = 0.0;
+   if (bEWALD)
    {
-       indj = mols->index[molindex[gind][j]];
-       pbc_dx(pbc, x[imol], x[indj] ,vecij);
-       d2 = norm2(vecij);
-       if (d2 < electrostatic_cutoff && indj != imol) 
+       for (j = 0; j < isize0; j++)
        {
-           for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
+           indj = mols->index[molindex[gind][j]];
+           pbc_dx(pbc, xcm_transl, x[indj] ,vecij); 
+           d2 = norm2(vecij);
+           if (d2 < 0.8*0.8/*rmax2*/ && imol != indj)
            {
-              //translate each point of the grid to the point of molecule i (not used)
-              rvec_add(x[imol], Krr->Vgrid[grid_ind], Krr->translgrid[grid_ind]);
-              for (m = 1; m < 4; m++)
-              {
-                  //compute displacement vector between molecule i and each atom of molecule j
-                  //printf("vec i %f %f %f\n", x[imol][XX], x[imol][YY], x[imol][ZZ]);
-                  pbc_dx(pbc,x[indj+m],x[imol],vecij);
-                  //printf("vec j+m %f %f %f j+m %d\n", x[indj+m][XX], x[indj+m][YY], x[indj+m][ZZ],indj+m);
-                  //printf("displecement vecij %f %f %f\n",vecij[XX], vecij[YY], vecij[ZZ]);
-                  //rotate molecule j according to the direction cosines of molecule i
-                  mvmul(cosdirmat,vecij,vecrotated);
-                  //printf("rotated displacement vecij %f %f %f\n",vecrotated[XX], vecrotated[YY], vecrotated[ZZ]);
-                  //now compute displacement vector between a point in the grid and the atom of molecule j rotated according to molecule i
-                  rvec_sub(vecrotated,Krr->Vgrid[grid_ind],vecr);
-                  //printf("translated grid %f %f %f grid_ind %d\n",Krr->translgrid[grid_ind][XX], Krr->translgrid[grid_ind][YY], Krr->translgrid[grid_ind][ZZ], grid_ind);
-                  //printf("final displacement vector %f %f %f\n",vecr[XX],vecr[YY],vecr[ZZ]);
-                  r=10.0*norm(vecr);
-                  Vij[grid_ind] += (top->atoms.atom[m].q)/r;
-              }
+               for (m = 1; m < 4; m++)
+               {
+                  pbc_dx(pbc,x[indj+m],x[imol],vecs[m]);
+               }
+
+               for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
+               {
+                   for (m = 1; m < 4; m++)
+                   {
+                       rvec_sub(vecs[m], Krr->translgrid[grid_ind],vecr);
+                       r_dist = norm(vecr);
+                       v_t = (top->atoms.atom[m].q)*exp(-invkappa2*r_dist*r_dist)/(core_term + r_dist) ;
+                       Vij[grid_ind] += v_t;
+                       vreference += v_t;
+//                       printf("within cutoff potential %d %d %f %f %f\n", m, grid_ind, sqrt(d2) ,r_dist, Vij[grid_ind]);
+                   }
+               }
+           }
+       }
+//       gmx_fatal(FARGS,"end\n");
+   }
+   else if (bFADE)
+   {
+       el_cut2 = electrostatic_cutoff*electrostatic_cutoff;
+       for (j = 0; j < isize0; j++)
+       {
+           indj = mols->index[molindex[gind][j]];
+           pbc_dx(pbc, xcm_transl, x[indj] ,vecij);
+           d2 = norm2(vecij);
+           //fprintf(stderr,"distance squared %d %f\n",imol, d2);
+           if (d2 < el_cut2 && indj != imol)
+           {
+               for (m = 1; m < 4; m++)
+               {
+                  pbc_dx(pbc,x[indj+m],x[imol],vecs[m]);
+               }
+               for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
+               {
+                   for (m = 1; m < 4; m++)
+                   {
+                       rvec_sub(vecs[m], Krr->translgrid[grid_ind],vecr);
+                       v_t += (top->atoms.atom[m].q)*invnorm(vecr) ;
+                       Vij[grid_ind] += v_t;
+                       vreference += v_t;
+                       //printf("within cutoff potential %d %d %f %f %f\n",indj, m, sqrt(d2) ,r_dist, Vij[grid_ind]);
+                   }
+               }
+           }
+           else  if (d2 > el_cut2 && d2 < rmax2 )
+           {
+               r_dist = sqrt(d2);
+               sw_coeff = cos((r_dist-electrostatic_cutoff)*inv_width);
+               sw_coeff *= sw_coeff;
+               for (m = 1; m < 4; m++)
+               {
+                  pbc_dx(pbc,x[indj+m],x[imol],vecs[m]);
+               }
+               for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
+               {
+                  for (m = 1; m < 4; m++)
+                  {
+                     rvec_sub(vecs[m], Krr->translgrid[grid_ind],vecr);
+                     v_t =  (top->atoms.atom[m].q)*sw_coeff*invnorm(vecr);
+                     Vij[grid_ind] += v_t;
+                     vreference += v_t;
+                    //printf("above cutoff %d %d %f %f %f\n",indj, m, sqrt(d2), norm(vecr), Vij[grid_ind]);
+                  }
+               }
            }
        }
    }
+   else
+   {
+       el_cut2 = electrostatic_cutoff*electrostatic_cutoff;
+       for (j = 0; j < isize0; j++)
+       {
+           indj = mols->index[molindex[gind][j]];
+           pbc_dx(pbc, xcm_transl, x[indj] ,vecij);
+           d2 = norm2(vecij);
+           if (d2 < el_cut2 && indj != imol)
+           {
+               for (m = 1; m < 4; m++)
+               {
+                   pbc_dx(pbc,x[indj+m],x[imol],vecs[m]);
+               }
+               for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
+               {
+                  for (m = 1; m < 4; m++)
+                  {
+                      rvec_sub(vecs[m], Krr->translgrid[grid_ind],vecr);
+
+                      v_t += (top->atoms.atom[m].q)*invnorm(vecr);
+                      Vij[grid_ind] += v_t;
+                      vreference += v_t;
+                      //printf("distance potential %d %d %f %f\n",indj, m, norm(vecr), Vij[grid_ind]);
+                      //gmx_fatal(FARGS, "end\n");
+                  }
+               }
+           }
+       }
+   }
+   vreference /= Krr->gridpoints;
    for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
    {
-       Vij[grid_ind] -=  Vij[Krr->gridcenter];
-       //printf("Vij %f grid label %d\n",Vij[grid_ind], grid_ind);
+       Vij[grid_ind] -= vreference;
+//       printf("v final imol grid_ind %d %d %f\n",imol,grid_ind,Vij[grid_ind]);
    }
+   gmx_fatal(FARGS,"end\n");
    for (set_ind = 0; set_ind < Krr->ndataset; set_ind++)
    {
         delV = 0.0;
         for (grid_ind = 0; grid_ind < Krr->gridpoints; grid_ind++)
         {
-            delV += sqr( (Vij[grid_ind]) - (Krr->V[set_ind][grid_ind]) );
+            delV -= sqr( (Vij[grid_ind]) - (Krr->V[set_ind][grid_ind]) );
+//            printf("del V %f %d %d %d\n",sqr( (Vij[grid_ind]) - (Krr->V[set_ind][grid_ind]) ), grid_ind, set_ind, imol );
         }
         kernel_fn = exp(delV*(Krr->kerndev));
+        //printf("kernel_fn %d %d %f %f\n", set_ind, imol, delV, kernel_fn);
         for (a = 0; a < DIM; a++)
         {
             for (b = 0; b < DIM; b++)
@@ -1052,60 +1417,138 @@ void calc_beta_krr(t_Kern *Krr, t_pbc *pbc,t_topology *top, t_block *mols, int  
                 for (c = 0; c < DIM; c++)
                 {
                    betamol[a][b][c] += (Krr->coeff[set_ind][a][b][c])*kernel_fn;
-                   //fprintf(stderr,"beta %d %d %d  %f\n", a, b, c, betamol[a][b][c]);
-                   //*(betamol_addr)[a][b][c] += (Krr->coeff[set_ind][a][b][c])*kernel_fn; 
-                   //fprintf(stderr,"beta %d %d %d  %f\n", a, b, c, *(betamol_addr)[a][b][c]);
+//                   printf("betamol krr %d %d %d %d %f %f %f\n",a,b,c,set_ind,(Krr->coeff[set_ind][a][b][c])*kernel_fn, kernel_fn, (Krr->coeff[set_ind][a][b][c]));
                 }
             }
         }
    }
+//   for (a = 0; a < DIM; a++)
+//   {
+//       for (b = 0; b < DIM; b++)
+//       {
+//           for (c = 0; c < DIM; c++)
+//           {
+//               printf("betamol final %d %d %d %f\n",a,b,c,betamol[a][b][c]);
+//           }
+//       }
+//   }
    sfree(Vij);
+   sfree(vecs);
   *betamol_addr = betamol;
 }
 
+void switch_fn(real r_dist, real electrostatic_cutoff, real rmax, real inv_width, real *sw_coeff)
+{
+   real temp;
+
+   if (r_dist <= electrostatic_cutoff)
+   {
+      *sw_coeff = 1.0;
+   }
+   else if (r_dist >= rmax)
+   {
+     *sw_coeff = 0.0;
+   }
+   else
+   {
+      temp = cos((r_dist-electrostatic_cutoff)*inv_width);
+     *sw_coeff = temp*temp ;
+   }
+}
+
+void calc_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
+                 const int gind , const int isize0,  int nbin, const real rmax2,  real invhbinw,
+                 rvec *x, real *mu_ind_mols, real **beta_corr)
+{
+
+   rvec   dx;
+   real   d2;
+   real  *beta_t_corr;
+   int    i, j, indj, imol, bin_ind;
+   int    *count;
+   
+   snew(beta_t_corr,nbin+1);
+   snew(count,nbin+1);
+
+   for (i = 0; i < isize0 -1; i ++)
+   {
+      imol = mols->index[molindex[gind][i]];
+      for (j = i+1 ; j < isize0 ; j++)
+      {
+          indj = mols->index[molindex[gind][j]];
+          pbc_dx(pbc, x[imol], x[indj] ,dx);
+          d2 = iprod(dx, dx);
+          if ( d2 < rmax2 )
+          {
+             bin_ind = sqrt(d2)*invhbinw;
+             beta_t_corr[bin_ind] += mu_ind_mols[i]*mu_ind_mols[j];
+             count[bin_ind] += 2;
+          }
+      }
+   }
+
+   for ( i = 0; i < nbin +1; i++)
+   {
+       if (count[i] != 0)
+       {
+          (*beta_corr)[i] += beta_t_corr[i]/(count[i]);
+       }
+   }
+   sfree(beta_t_corr);
+   sfree(count);
+}
+
+
 void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t_Ion *Anion, int  *molindex[], 
                  const int gind , const int isize0, const int ncations, const int nanions,
-                 rvec *x, const int imol,  rvec xvec, rvec yvec,  rvec zvec, real electrostatic_cutoff, real **field_addr)
+                 rvec *x, const int imol,  rvec xvec, rvec yvec,  rvec zvec, real electrostatic_cutoff2, real ***field_addr)
 {
-   int    j, m, indj;
+   int    j, m, n, indj;
    real  chg, d2, r, r2, ir, ir3, ir5;
    real   vx, vy, vz, chr3, chr5;
-   real  *Efield;
+   real **Efield;
    rvec   vecij, vecr;
 
-   snew(Efield,9);
+   snew(Efield,3);
+   for (n = 0; n < 3; n++)
+   {
+       snew(Efield[n],9);
+   }
    for (j = 0; j < isize0; j++)
    {
        indj = mols->index[molindex[gind][j]];
        pbc_dx(pbc, x[imol],x[indj],vecij);
        d2 = norm2(vecij);
-       if (d2 < electrostatic_cutoff && indj != imol)
+       if (d2 < electrostatic_cutoff2 && indj != imol)
        {
-          for (m = 1; m < 4; m++)
+          for (n = 0; n < 3; n++)
           {
-              pbc_dx(pbc,x[imol],x[indj+m],vecr);
-              svmul(nm2Bohr,vecr,vecr);
-              r=norm(vecr);
-              r2=r*r;
-              ir=1.0/r;
-              ir3=ir*ir*ir;
-              ir5=ir3*ir*ir;
-              chg = top->atoms.atom[m].q;
-              vx = iprod(vecr,xvec);
-              vy = iprod(vecr,yvec);
-              vz = iprod(vecr,zvec);
-              chr3 = chg*ir3;
-              chr5 = chg*ir5;
-              Efield[0] += vx*chr3 ;
-              Efield[1] += vy*chr3 ;
-              Efield[2] += vz*chr3 ;
-              // electric field gradient
-              Efield[3] += chr5*(r2 - 3*vx*vx );
-              Efield[4] += chr5*(r2 - 3*vy*vy );
-              Efield[5] += chr5*(r2 - 3*vz*vz );
-              Efield[6] -= chr5*( 3*vx*vy );
-              Efield[7] -= chr5*( 3*vy*vz );
-              Efield[8] -= chr5*( 3*vz*vx );
+              for (m = 1; m < 4; m++)
+              {
+                  pbc_dx(pbc,x[imol+n],x[indj+m],vecr);
+                  svmul(nm2Bohr,vecr,vecr);
+                  r=norm(vecr);
+                  r2=r*r;
+                  ir=1.0/r;
+                  ir3=ir*ir*ir;
+                  ir5=ir3*ir*ir;
+                  chg = top->atoms.atom[m].q;
+                  vx = iprod(vecr,xvec);
+                  vy = iprod(vecr,yvec);
+                  vz = iprod(vecr,zvec);
+                  chr3 = chg*ir3;
+                  chr5 = chg*ir5;
+                  Efield[n][0] += vx*chr3 ;
+                  Efield[n][1] += vy*chr3 ;
+                  Efield[n][2] += vz*chr3 ;
+                  // electric field gradient
+                  Efield[n][3] += chr5*(r2 - 3*vx*vx );
+                  Efield[n][4] += chr5*(r2 - 3*vy*vy );
+                  Efield[n][5] += chr5*(r2 - 3*vz*vz );
+                  Efield[n][6] -= chr5*( 3*vx*vy );
+                  Efield[n][7] -= chr5*( 3*vy*vz );
+                  Efield[n][8] -= chr5*( 3*vz*vx );
+              }
           }
        }
    }
@@ -1113,33 +1556,36 @@ void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t
    {
        pbc_dx(pbc, x[imol],x[Cation[j].atom[0]],vecij);
        d2 = norm2(vecij);
-       if (d2 < electrostatic_cutoff )
+       if (d2 < electrostatic_cutoff2 )
        {
-          for (m = 0; m < 1; m++)
+          for (n = 0; n < 3; n++)
           {
-              pbc_dx(pbc,x[imol],x[Cation[j].atom[m]],vecr);
-              svmul(nm2Bohr,vecr,vecr);
-              r=norm(vecr);
-              r2=r*r;
-              ir=1.0/r;
-              ir3=ir*ir*ir;
-              ir5=ir3*ir*ir;
-              chg =Cation[j].q[m];
-              vx = iprod(vecr,xvec);
-              vy = iprod(vecr,yvec);
-              vz = iprod(vecr,zvec);
-              chr3 = chg*ir3;
-              chr5 = chg*ir5;
-              Efield[0] += vx*chr3 ;
-              Efield[1] += vy*chr3 ;
-              Efield[2] += vz*chr3 ;
-              // electric field gradient
-              Efield[3] += chr5*(r2 - 3*vx*vx );
-              Efield[4] += chr5*(r2 - 3*vy*vy );
-              Efield[5] += chr5*(r2 - 3*vz*vz );
-              Efield[6] -= chr5*( 3*vx*vy );
-              Efield[7] -= chr5*( 3*vy*vz );
-              Efield[8] -= chr5*( 3*vz*vx );
+             for (m = 0; m < 1; m++)
+             {
+                 pbc_dx(pbc,x[imol+n],x[Cation[j].atom[m]],vecr);
+                 svmul(nm2Bohr,vecr,vecr);
+                 r=norm(vecr);
+                 r2=r*r;
+                 ir=1.0/r;
+                 ir3=ir*ir*ir;
+                 ir5=ir3*ir*ir;
+                 chg =Cation[j].q[m];
+                 vx = iprod(vecr,xvec);
+                 vy = iprod(vecr,yvec);
+                 vz = iprod(vecr,zvec);
+                 chr3 = chg*ir3;
+                 chr5 = chg*ir5;
+                 Efield[n][0] += vx*chr3 ;
+                 Efield[n][1] += vy*chr3 ;
+                 Efield[n][2] += vz*chr3 ;
+                 // electric field gradient
+                 Efield[n][3] += chr5*(r2 - 3*vx*vx );
+                 Efield[n][4] += chr5*(r2 - 3*vy*vy );
+                 Efield[n][5] += chr5*(r2 - 3*vz*vz );
+                 Efield[n][6] -= chr5*( 3*vx*vy );
+                 Efield[n][7] -= chr5*( 3*vy*vz );
+                 Efield[n][8] -= chr5*( 3*vz*vx );
+             }
           }
        }
    }
@@ -1147,35 +1593,38 @@ void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t
    {
        pbc_dx(pbc, x[imol],x[Anion[j].atom[0]],vecij);
        d2 = norm2(vecij);
-       if (d2 < electrostatic_cutoff)
+       if (d2 < electrostatic_cutoff2)
        {
-          for (m = 0; m < 1; m++)
+          for (n = 0; n < 3; n++)
           {
-              pbc_dx(pbc,x[imol],x[Anion[j].atom[m]],vecr);
-              //printf("anion position  %f %f %f\n" , x[Anion[j].atom[m]][0], x[Anion[j].atom[m]][1], x[Anion[j].atom[m]][2]);
-              //printf("vector distance %f %f %f\n", vecr[0], vecr[1], vecr[2]);
-              svmul(nm2Bohr,vecr,vecr);
-              r=norm(vecr);
-              r2=r*r;
-              ir=1.0/r;
-              ir3=ir*ir*ir;
-              ir5=ir3*ir*ir;
-              chg =Anion[j].q[m];
-              vx = iprod(vecr,xvec);
-              vy = iprod(vecr,yvec);
-              vz = iprod(vecr,zvec);
-              chr3 = chg*ir3;
-              chr5 = chg*ir5;
-              Efield[0] += vx*chr3 ;
-              Efield[1] += vy*chr3 ;
-              Efield[2] += vz*chr3 ;
-              // electric field gradient
-              Efield[3] += chr5*(r2 - 3*vx*vx );
-              Efield[4] += chr5*(r2 - 3*vy*vy );
-              Efield[5] += chr5*(r2 - 3*vz*vz );
-              Efield[6] -= chr5*( 3*vx*vy );
-              Efield[7] -= chr5*( 3*vy*vz );
-              Efield[8] -= chr5*( 3*vz*vx );
+             for (m = 0; m < 1; m++)
+             {
+                 pbc_dx(pbc,x[imol+n],x[Anion[j].atom[m]],vecr);
+                 //printf("anion position  %f %f %f\n" , x[Anion[j].atom[m]][0], x[Anion[j].atom[m]][1], x[Anion[j].atom[m]][2]);
+                 //printf("vector distance %f %f %f\n", vecr[0], vecr[1], vecr[2]);
+                 svmul(nm2Bohr,vecr,vecr);
+                 r=norm(vecr);
+                 r2=r*r;
+                 ir=1.0/r;
+                 ir3=ir*ir*ir;
+                 ir5=ir3*ir*ir;
+                 chg =Anion[j].q[m];
+                 vx = iprod(vecr,xvec);
+                 vy = iprod(vecr,yvec);
+                 vz = iprod(vecr,zvec);
+                 chr3 = chg*ir3;
+                 chr5 = chg*ir5;
+                 Efield[n][0] += vx*chr3 ;
+                 Efield[n][1] += vy*chr3 ;
+                 Efield[n][2] += vz*chr3 ;
+                 // electric field gradient
+                 Efield[n][3] += chr5*(r2 - 3*vx*vx );
+                 Efield[n][4] += chr5*(r2 - 3*vy*vy );
+                 Efield[n][5] += chr5*(r2 - 3*vz*vz );
+                 Efield[n][6] -= chr5*( 3*vx*vy );
+                 Efield[n][7] -= chr5*( 3*vy*vz );
+                 Efield[n][8] -= chr5*( 3*vz*vx );
+             }
           }
        }
    }
@@ -1183,12 +1632,12 @@ void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t
     //fprintf(stderr,"efield %f %f %f\n",Efield[0], Efield[1], Efield[2]);
 }
 
-void calc_beta_efield_map(t_Map *Map, real *Efield, real ***betamol, real ****betamol_addr)
+void calc_beta_efield_map(t_Map *Map, real **Efield, real ***betamol, real ****betamol_addr)
 {
 
-  int i,index,N=1,M=4;
-  int a,b,c,d,e,f,g;
-  real delta,term;
+  int i,index, n;
+  int a,b,c;
+  real delta;
   real betatemp[27] = {0.0};
 
   for (i=0;i<27;i++)
@@ -1198,40 +1647,33 @@ void calc_beta_efield_map(t_Map *Map, real *Efield, real ***betamol, real ****be
     index=0;
 
    // Electric field components
-    for (a=0;a<=N;a++) {
-      for (b=0;b<=N;b++) {
-        for (c=0;c<=N;c++) {
-          if (a+b+c>0 && a+b+c<=N) {
-            term=pow(Efield[0],a)*pow(Efield[1],b)*pow(Efield[2],c);
-            delta+=term*Map->D[i][index];
-            index++;
-          }
-        }
-      }
+   for (n=0;n<3;n++) {
+     delta+=Efield[0][n]*Map->D[i][index*3]+
+            Efield[1][n]*Map->D[i][index*3+1]+
+            Efield[2][n]*Map->D[i][index*3+2];
+     index++;
+   }
+
+    // E^2 components   
+    for (n=0;n<3;n++) {
+      delta+=Efield[0][n]*Efield[0][n]*Map->D[i][index*3]+
+             Efield[1][n]*Efield[1][n]*Map->D[i][index*3+1]+
+             Efield[2][n]*Efield[2][n]*Map->D[i][index*3+2];
+      index++;
     }
-    // Electric field gradient components
-    for (a=0;a<=M;a++) {
-      for (b=0;b<=M;b++) {
-        for (c=0;c<=M;c++) {
-          for (d=0;d<=M;d++) {
-            for (e=0;e<=M;e++) {
-              for (f=0;f<=M;f++) {
-                if (a+b+c+d+e+f>0 && a+b+c+d+e+f<=M) {
-                  term=pow(Efield[3],a)*pow(Efield[4],b)*pow(Efield[5],c)*pow(Efield[6],d)*pow(Efield[7],e)*pow(Efield[8],f);
-                  delta+=term*Map->D[i][index];
-                  index++;
-                }
-              }
-            }
-          }
-        }
-      }
+
+    // Gradient components
+    for (n=3;n<9;n++) {
+      delta+=Efield[0][n]*Map->D[i][index*3]+
+             Efield[1][n]*Map->D[i][index*3+1]+
+             Efield[2][n]*Map->D[i][index*3+2];
+      index++;
     }
-    // Calculate molecular beta sorrounded by electric field of molecules
-    betatemp[i]=Map->beta_gas[i]+
-                  (Map->gamma_gas[i*3]*Efield[0]+Map->gamma_gas[i*3+1]*Efield[1]+Map->gamma_gas[i*3+2]*Efield[2])+delta;
-//    printf("beta temp %f map beta gas %f gamma term %f delta %f Ex %f\n",betatemp[i], Map->beta_gas[i], (Map->gamma_gas[i*3]*Efield[0]+Map->gamma_gas[i*3+1]*Efield[1]+Map->gamma_gas[i*3+2]*Efield[2]), delta, Efield[0] );
+
+    // Calculate beta_liquid
+    betatemp[i]=Map->beta_gas[i]+delta;
   }
+
   for (a = 0; a < DIM; a++)
   {
       for (b = 0; b < DIM; b++)
@@ -1255,10 +1697,67 @@ void calc_beta_efield_map(t_Map *Map, real *Efield, real ***betamol, real ****be
   //printf("bzxx %f bzyy %f bzzz %f\n",betamol[2][0][0], betamol[2][1][1], betamol[2][2][2]);
   //printf("betatemp_zxx %f betatemp_zyy %f betatemp_zzz %f\n",betatemp[2*9], betatemp[2*9 + 1*3 +1], betatemp[26]);
   *betamol_addr = betamol;
+
+   for (n = 0; n < 3; n++)
+   {
+     sfree(Efield[n]);
+   }
    sfree(Efield);
 }
 
-    
+
+void calc_cosdirmat(const char *fnREFMOL, t_pbc *pbc,t_topology *top, t_block *mols,  int  *molindex[], int molsize,  int ind0, rvec *xref, rvec *xmol,
+                    matrix *cosdirmat, rvec *xvec, rvec *yvec, rvec *zvec)
+{
+    rvec x01, x02, x_shift, *xref_t=NULL ;
+    real *w_rls =NULL;
+    matrix cosdirmat_t;
+    int i;
+    atom_id *ind_fit;
+
+    pbc_dx(pbc, xmol[1], xmol[0], x01);
+    pbc_dx(pbc, xmol[2], xmol[0], x02);
+    rvec_add( x01, x02, *zvec);
+    cprod(*zvec, x01, *yvec);
+    unitv(*yvec,*yvec);
+    unitv(*zvec,*zvec);
+    cprod(*yvec,*zvec,*xvec);
+
+    if (!fnREFMOL)
+    {
+       (*cosdirmat)[0][0] = (*xvec)[0]; (*cosdirmat)[0][1] = (*yvec)[0]; (*cosdirmat)[0][2] = (*zvec)[0];
+       (*cosdirmat)[1][0] = (*xvec)[1]; (*cosdirmat)[1][1] = (*yvec)[1]; (*cosdirmat)[1][2] = (*zvec)[1];
+       (*cosdirmat)[2][0] = (*xvec)[2]; (*cosdirmat)[2][1] = (*yvec)[2]; (*cosdirmat)[2][2] = (*zvec)[2];
+    //   printf("cosdirmat %13.7f %13.7f %13.7f\n",(*cosdirmat)[0][0],(*cosdirmat)[0][1],(*cosdirmat)[0][2]);
+    }
+    else
+    {
+      snew(w_rls,molsize);
+      snew(ind_fit,molsize);
+      snew(xref_t,molsize);
+      for (i = 0; i < molsize; i++)
+      {
+          w_rls[i] = top->atoms.atom[ind0+i].m;
+          ind_fit[i]  = ind0+i;
+          copy_rvec(xref[i],xref_t[i]);
+      }
+
+      copy_rvec(xref_t[0], x_shift);
+      reset_x_ndim(DIM, molsize, ind_fit, molsize, NULL, xref_t, w_rls);
+      rvec_dec(x_shift, xref_t[0]);
+      
+      reset_x_ndim(DIM, molsize, ind_fit, molsize, NULL, xmol, w_rls);
+
+      calc_fit_R(DIM, molsize, w_rls, xref_t, xmol, cosdirmat_t);
+//      printf("cosdirmat_t %13.7f %13.7f %13.7f\n",cosdirmat_t[0][0],cosdirmat_t[0][1],cosdirmat_t[0][2]);
+      m_inv(cosdirmat_t, *cosdirmat);
+//      printf("cosdirmat %13.7f %13.7f %13.7f\n",(*cosdirmat)[0][0],(*cosdirmat)[0][1],(*cosdirmat)[0][2]);
+     
+      sfree(w_rls);
+      sfree(ind_fit);
+      sfree(xref_t);
+    }
+}   
  
 int gmx_eshs(int argc, char *argv[])
 {
@@ -1276,10 +1775,12 @@ int gmx_eshs(int argc, char *argv[])
         "Common polarization combinations are PSS, PPP, SPP, SSS .",
         "Under Kleinmann symmetry (default) beta_ijj = beta_jij = beta_jji otherwise beta_ijj = beta_jij. [PAR]",
     };
-    static gmx_bool          bPBC = TRUE, bIONS = FALSE;
-    static real              electrostatic_cutoff = 2.0, kernstd = 0.9 ;
+    static gmx_bool          bPBC = TRUE, bIONS = FALSE, bEWALD = FALSE, bFADE = FALSE, bCONSTBETA = FALSE;
+    static real              electrostatic_cutoff = 2.0, kappa = 4.0, core_term = 6.0/(5.0*2.0), kernstd = 1.5 ;
     static real              koutx = 1.0, kouty = 0.0 , koutz = 0.0, kinx = 0.0, kiny = 0.0, kinz = 1.0, pout_angle = 0.0 , pin_angle = 0.0;
+    static real              binwidth = 0.002, angle_corr = 90.0 ;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
+    static int               pind1 = 0, pind2 = 0, pind3 = 0;
 
     static const char *methodt[] = {NULL, "sumexp", NULL }; 
     static char *catname = NULL;
@@ -1290,6 +1791,8 @@ int gmx_eshs(int argc, char *argv[])
         "number of bins over scattering angle theta chosen between -pi/2 and + pi/2 (available only with thetaswipe)" },
         { "-nplanes",       FALSE, etINT, {&nbingamma},
         "number of scattering planes that lie on the scattered wave-vector to average over, -PI/2< gamma< PI/2" },
+        { "-angle_corr",       FALSE, etREAL, {&angle_corr},
+        "angle at which to compute <beta(0)beta(r)>" },
         { "-qbin",          FALSE, etINT, {&qbin},
         "which wave-vector to sample which is 2pi/box-length*qbin" },
         { "-nbinq",         FALSE, etINT, {&nbinq},
@@ -1300,21 +1803,28 @@ int gmx_eshs(int argc, char *argv[])
         { "-kinx",          FALSE, etREAL, {&kinx}, "direction of kin in x direction " },
         { "-kiny",          FALSE, etREAL, {&kiny}, "direction of kin in y direction " },
         { "-kinz",          FALSE, etREAL, {&kinz}, "direction of kin in z direction " },
+        { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
         { "-pout",          FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
         { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electric field or electrostatic potential around a molecule" },
+        { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the short range ewald term" },
+        { "-core_term",        FALSE, etREAL, {&core_term}, "parameter to treat the divergence of potential at r = 0" },
+        { "-fade",        FALSE, etBOOL, {&bFADE}, "modification function cos^2((rij-electrostatic_cutoff)*pi/(2*(L/2-electrostatic_cutoff))) is used to truncate the electrostatic potential or electric field" },
         { "-kernstd",       FALSE, etREAL, {&kernstd}, "standard deviation of kernel function. only makes sense if kernel ridge reduction is used"},
+
         { "-method",     FALSE, etENUM, {methodt}, "I(q) using the different methods" },
+        { "-ewald",  FALSE, etBOOL, {&bEWALD}, "use ewald sum to compute the potential in a grid"},
         { "-ions",   FALSE, etBOOL, {&bIONS}, "compute molecular hyperpolarizability when ions are present"},
         { "-cn",     FALSE, etSTR, {&catname}, "name of cation"},
         { "-an",     FALSE, etSTR, {&anname}, "name of anion"},
         { "-pbc",      FALSE, etBOOL, {&bPBC},
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
+        { "-constbeta",     FALSE, etBOOL, {&bCONSTBETA}, "constant beta from electric field map`"},
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups to compute RDFs around a central group" },
     };
 #define NPA asize(pa)
-    const char        *fnTPS, *fnNDX, *fnMAP , *fnKRR , *fnGRD , *fnPOT ;
+    const char        *fnTPS, *fnNDX, *fnMAP , *fnKRR , *fnGRD , *fnPOT , *fnBETACORR, *fnREFMOL = NULL;
     output_env_t       oenv;
     int           *gnx;
     int            nFF[2];
@@ -1328,10 +1838,13 @@ int gmx_eshs(int argc, char *argv[])
         { efDAT, "-vinp",    "vinput.dat", ffOPTRD},
         { efDAT, "-vgrid",   "vgrid.dat", ffOPTRD},
         { efDAT, "-krrpar",  "krr_param.dat", ffOPTRD},
+        { efDAT, "-refmol",  "refmol.dat", ffOPTRD},
         { efTPS, NULL,  NULL,     ffREAD },
         { efNDX, NULL,  NULL,     ffOPTRD },
         { efXVG, "-o",  "non_linear_sfact",    ffWRITE },
         { efXVG, "-otheta", "non_linear_sfact_vs_theta", ffOPTWR },
+        { efXVG, "-betacorr", "beta_correlation", ffOPTWR },
+
 
     };
 #define NFILE asize(fnm)
@@ -1355,6 +1868,9 @@ int gmx_eshs(int argc, char *argv[])
     fnKRR = opt2fn_null("-krrpar", NFILE,fnm);
     fnGRD = opt2fn_null("-vgrid", NFILE,fnm);
     fnPOT = opt2fn_null("-vinp", NFILE,fnm);
+    fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
+    fnREFMOL = opt2fn_null("-refmol", NFILE, fnm);
+
 
     if (!fnTPS && !fnNDX)
     {
@@ -1379,6 +1895,10 @@ int gmx_eshs(int argc, char *argv[])
            gmx_fatal(FARGS, "specify all the kernel ridge reduction files\n");
        }
     }
+    if (bEWALD && bFADE)
+    {
+        gmx_fatal(FARGS, "specify either ewald sum or fade, not both\n");
+    }
 
 
     snew(top, ngroups+1);
@@ -1396,10 +1916,12 @@ int gmx_eshs(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
    
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
-           fnMAP, fnKRR, fnGRD, fnPOT, opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), methodt[0], 
-           bIONS, catname, anname, bPBC, qbin, nbinq,
-           koutx, kouty, koutz, kinx, kiny, kinz, nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, kernstd, gnx, grpindex, grpname, ngroups, oenv);
+           fnMAP, fnKRR, fnGRD, fnPOT, opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr, fnBETACORR,
+           fnREFMOL, methodt[0], bIONS, catname, anname, bEWALD, bFADE, bCONSTBETA, bPBC,  qbin, nbinq,
+           koutx, kouty, koutz, kinx, kiny, kinz, binwidth,
+//           pind1, pind2, pind3,
+           nbintheta, nbingamma, pin_angle, pout_angle, 
+           electrostatic_cutoff, kappa, core_term, kernstd, gnx, grpindex, grpname, ngroups, oenv);
 
     return 0;
 }

@@ -102,7 +102,6 @@ extern void Free_Scattering_Intensity(const int nf, const int nt,
 
 typedef struct {
   real beta_gas[27];
-  real gamma_gas[81];
   real D[27][212];
 } t_Map;
 
@@ -124,22 +123,40 @@ typedef struct {
 
 
 void readMap(const char *fnMAP, t_Map *Map);
+
 void readKern(const char *fnKRR, const char *fnGRD, const char *fnPOT, t_Kern *Krr);
 
 
 void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t_Ion *Anion, int  *molindex[],
                  const int gind , const int isize0, const int ncations, const int nanions,
-                 rvec *x, const int imol,  rvec xvec, rvec yvec,  rvec zvec, real electrostatic_cutoff, real **field_addr);
+                 rvec *x, const int imol,  rvec xvec, rvec yvec,  rvec zvec, real electrostatic_cutoff2, real ***field_addr);
 
 extern void induced_second_order_fluct_dipole( matrix cosdirmat,
                                        const rvec pout, const rvec pin,
                                        real ***betamol,
                                        real *mu_ind);
-void calc_beta_efield_map(t_Map *Map, real *field, real ***betamol, real ****betamol_addr);
+void calc_beta_efield_map(t_Map *Map, real **Efield, real ***betamol, real ****betamol_addr);
 
-void calc_beta_krr(t_Kern *Krr, t_pbc *pbc,t_topology *top, t_block *mols, int  *molindex[],
+
+void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, gmx_bool bEWALD, gmx_bool bFADE, t_topology *top, t_block *mols, int  *molindex[],
                  const int gind , const int isize0,
-                 rvec *x, const int imol, matrix cosdirmat, real electrostatic_cutoff, real ***betamol, real ****betamol_addr);
+                 rvec *x, rvec xcm_transl, const int imol,
+                 real electrostatic_cutoff, real kappa, real invkappa2, real core_term, real inv_width, real rmax2, real rmax,
+                 matrix cosdirmat, real ***betamol, real ****betamol_addr);
+
+void switch_fn(real r_dist, real electrostatic_cutoff, real rmax, real inv_width, real *sw_coeff);
+
+
+extern void  calc_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
+                 const int gind , const int isize0, int nbin, const real rmax2,  real invhbinw,
+                 rvec *x, real *mu_ind_mols, real **beta_corr);
+
+void calc_cosdirmat(const char *fnREFMOL, t_pbc *pbc,t_topology *top, t_block *mols,  int  *molindex[],  int molsize, int ind0, rvec *xref, rvec *xmol, 
+                    matrix *cosdirmat, rvec *xvec, rvec *yvec, rvec *zvec);
+
+void read_reference_mol(const char *fnREFMOL, rvec **xref);
+
+
 
 int check_ion(t_topology *top, char *name);
 void identifyIon(t_topology *top,t_Ion *Ion, char *name);
