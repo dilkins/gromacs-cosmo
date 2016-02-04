@@ -1399,7 +1399,7 @@ void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, gmx_bool bEWALD, gmx_bool bFADE, t_t
        Vij[grid_ind] -= vreference;
 //       printf("v final imol grid_ind %d %d %f\n",imol,grid_ind,Vij[grid_ind]);
    }
-   gmx_fatal(FARGS,"end\n");
+//   gmx_fatal(FARGS,"end\n");
    for (set_ind = 0; set_ind < Krr->ndataset; set_ind++)
    {
         delV = 0.0;
