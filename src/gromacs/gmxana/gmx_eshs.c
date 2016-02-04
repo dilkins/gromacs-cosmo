@@ -1289,7 +1289,7 @@ void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, gmx_bool bEWALD, gmx_bool bFADE, t_t
            indj = mols->index[molindex[gind][j]];
            pbc_dx(pbc, xcm_transl, x[indj] ,vecij); 
            d2 = norm2(vecij);
-           if (d2 < 0.8*0.8/*rmax2*/ && imol != indj)
+           if (d2 < rmax2 && imol != indj)
            {
                for (m = 1; m < 4; m++)
                {
