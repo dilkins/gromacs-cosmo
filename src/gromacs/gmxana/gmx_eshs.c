@@ -497,11 +497,10 @@ static void do_eshs(t_topology *top,  const char *fnTRX, const char *fnMAP, cons
                     copy_rvec(x[ind0], xi);
                     for (aa = 0; aa < molsize; aa++)
                     {
-                       copy_rvec(x[aa],xmol[aa]);
+                       copy_rvec(x[ind0+aa],xmol[aa]);
                     }
 
                     calc_cosdirmat( fnREFMOL, &pbc, top, mols, molindex, molsize, ind0,  xref, xmol, &cosdirmat, &xvec, &yvec, &zvec );
-                    
                     if (fnMAP && !bCONSTBETA)
                     {
                         calc_efield_map(&pbc, top, mols, Cation, Anion, molindex, g, isize0, ncations, nanions,
@@ -1738,7 +1737,7 @@ void calc_cosdirmat(const char *fnREFMOL, t_pbc *pbc,t_topology *top, t_block *m
       for (i = 0; i < molsize; i++)
       {
           w_rls[i] = top->atoms.atom[ind0+i].m;
-          ind_fit[i]  = ind0+i;
+          ind_fit[i]  = i;
           copy_rvec(xref[i],xref_t[i]);
       }
 
