@@ -43,6 +43,10 @@
 #include "vec.h"
 #include "network.h"
 #include "gromacs/random/random.h"
+#include "coulomb.h"
+#include "gromacs/math/gmxcomplex.h"
+#include "types/inputrec.h"
+#include "complex.h"
 
 
 #ifdef __cplusplus
@@ -106,14 +110,23 @@ typedef struct {
 } t_Map;
 
 typedef struct {
-  real   **V; //potential that is read from file and it is V[ndataset][gridpoints]
-  rvec    *Vgrid; //input grid geometry
-  rvec    *translgrid; //translated grid that is centered on molecule i
-  real ****coeff;// coefficients for molecular beta obtained from kernel ridge regression. pointer of dimension ndataset*3*3*3
+  real   **krrinput; // input quantity for krr that is read from file and it is krrinput[ndataset][gridpoints] 
+  rvec    *grid; // input local grid geometry centred on a given atom
+  rvec    *translgrid; //translated and rotated grid for each molecule
+  rvec    *rotgrid; //rotated grid for each molecule
+  real ****coeff;// coefficients for molecular beta obtained from kernel. pointer of dimension ndataset*3*3*3 in case of krr or gridpoints*3*3*3 in case of scalar fit
+  real    *meanquant; //average of feature vector on each grid point
   int      gridpoints; // number of points in the grid
-  int      gridcenter; //index of the grid that is taken as reference of the potential;
+  int      gridcenter; //index of the grid that is taken as reference of the potential or field;
   real     kerndev;
-  int      ndataset; //number of points used to train the krr
+  int      ndataset; //number of points used to train the kernel
+  rvec     rspace_grid; // a point in the global grid that fills all unit cell
+  real  ***quantity_on_grid; //scalar quantity computed on the global grid, i.e. density
+  real  ***quantity_on_grid_x,***quantity_on_grid_y,***quantity_on_grid_z ; // vector quantities computed on global grid, i.e. electric field
+  real    *interp_quant_grid; // interpolated quantity from the global onto local grid (i.e. density)
+  rvec    *vec_interp_quant_grid; // interpolated vector quantity from the global onto local grid (i.e. electric field)
+  real    *weights; // weigh the density based on the distance from central atom
+  real    *selfterm;  // self term in the density
 } t_Kern;
 
 typedef struct {
@@ -122,44 +135,85 @@ typedef struct {
 } t_Ion;
 
 
+//read input files for the calculation of beta using an electric field map
 void readMap(const char *fnMAP, t_Map *Map);
-
-void readKern(const char *fnKRR, const char *fnGRD, const char *fnPOT, t_Kern *Krr);
-
-
+//compute the electrostatic field using a map the form of the field is r^-2
 void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t_Ion *Anion, int  *molindex[],
                  const int gind , const int isize0, const int ncations, const int nanions,
                  rvec *x, const int imol,  rvec xvec, rvec yvec,  rvec zvec, real electrostatic_cutoff2, real ***field_addr);
+//compute beta for a given molecule using the electric field map
+void calc_beta_efield_map(t_Map *Map, real **Efield, real ***betamol, real ****betamol_addr);
 
+//compute the component of the second order dipole projected onto the polarization vectors pin and pout
 extern void induced_second_order_fluct_dipole( matrix cosdirmat,
                                        const rvec pout, const rvec pin,
                                        real ***betamol,
                                        real *mu_ind);
-void calc_beta_efield_map(t_Map *Map, real **Efield, real ***betamol, real ****betamol_addr);
 
 
-void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, gmx_bool bEWALD, gmx_bool bFADE, t_topology *top, t_block *mols, int  *molindex[],
-                 const int gind , const int isize0,
-                 rvec *x, rvec xcm_transl, const int imol,
-                 real electrostatic_cutoff, real kappa, real invkappa2, real core_term, real inv_width, real rmax2, real rmax,
-                 matrix cosdirmat, real ***betamol, real ****betamol_addr);
+// read input files for the calculation of beta using either a scalar kernel or krr
+void readKern(const char *fnCOEFF, const char *fnGRD, const char *fnINPKRR, int kern_order, real std_dev, real kappa, rvec *xref, gmx_bool bAtomCenter, real **betamean, t_Kern *Kern);
+//compute molecular beta using kernel ridge regression
+void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, t_topology *top, t_block *mols, int  *molindex[], const int gind , const int isize0, rvec *x, rvec xcm_transl, const int imol, real rmax2, real electrostatic_cutoff, real ****betamol);
 
+
+
+//compute molecular beta using a scalar kernel
+void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, int kern_order, real *betamean, real ****betamol);
+//switching function to bring a function smoothly from a given value to zero
 void switch_fn(real r_dist, real electrostatic_cutoff, real rmax, real inv_width, real *sw_coeff);
 
-
+//function to compute <beta(0)*beta(r)>, where beta is the projected beta component, resulting from pin and pout
 extern void  calc_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
                  const int gind , const int isize0, int nbin, const real rmax2,  real invhbinw,
                  rvec *x, real *mu_ind_mols, real **beta_corr);
+//compute direction cosine matrix
+void calc_cosdirmat(const char *fnREFMOL, t_topology *top, int molsize,  int ind0, rvec *xref, rvec *xmol, matrix *cosdirmat, matrix *invcosdirmat, rvec *xvec, rvec *yvec, rvec *zvec);
 
-void calc_cosdirmat(const char *fnREFMOL, t_pbc *pbc,t_topology *top, t_block *mols,  int  *molindex[],  int molsize, int ind0, rvec *xref, rvec *xmol, 
-                    matrix *cosdirmat, rvec *xvec, rvec *yvec, rvec *zvec);
 
+void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, int ePBC, matrix box, matrix cosdirmat, rvec xi);
+
+//build global grid in real space used for the calculation of the density and electrostatic potential
+//for the specific case of the scalar kernel
+void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir,  rvec *grid_spacing, rvec *grid_invspacing, gmx_bool bEFIELD, gmx_bool bALLOC, int **gridsize);
+//compute the density using the scalar kernel
+void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
+                       t_block *mols, int  *molindex[], int atom_id0, int nspecies ,int isize0, rvec *x,
+                       real std_dev_dens, real inv_std_dev_dens, rvec grid_invspacing, int *gridsize, rvec grid_spacing);
+
+//function to interpolate linearly the density from points in the global real space grid
+//to the points of the local grid centred on the molecule, whose position is xi
+void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec xi, rvec grid_invspacing, rvec grid_spacing);
+
+void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean);
+
+
+//read in the reference molecule, used to compute the direction cosine matrix
 void read_reference_mol(const char *fnREFMOL, rvec **xref);
 
-
-
+//check if there are ions in the configuration
 int check_ion(t_topology *top, char *name);
+//get their indexes, charge and atom names
 void identifyIon(t_topology *top,t_Ion *Ion, char *name);
+
+//the following functions are used to compute long range of electrostatic potentials with SPME
+
+//simple factorial function used in splines
+unsigned long factorial(unsigned long f);
+//simple spline function
+real Bspline(real x,int n);
+
+long long combi(int n,int k);
+
+void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_factor, int fwbck);
+void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2);
+void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,  
+                          matrix box, real invvol, t_block *mols, int  *molindex[],
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
+                         int interp_order, rvec *x, int isize0,
+                         t_complex ***FT_pair_pot, rvec *Emean);
+
+int index_wrap(int idx, int wrap);
 
 #ifdef __cplusplus
 }

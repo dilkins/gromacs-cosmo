@@ -67,11 +67,11 @@
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
 static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*/ const char *fnTRX,
-                   const char *fnSFACT, const char *fnTHETA, const char *method,
+                   const char *fnSFACT, const char *fnTHETA, const char *fnBETACORR, const char *method,
                    gmx_bool bPBC, gmx_bool bKleinmannsymm, gmx_bool bSpectrum , gmx_bool bRandbeta, gmx_bool bThetaswipe,
                    int qbin, int nbinq, real koutx, real kouty, real koutz,
                    real kinx, real kiny, real kinz, real  bmzxx, real  bmzyy, real bmzzz,
-                   int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
+                   int nbintheta, int nbingamma ,real pin_angle, real pout_angle , real angle_corr, real binwidth,
                    real fade, int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv)
 {
@@ -80,10 +80,10 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
-    int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces;
+    int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces, nbin;
     real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t ;
     real           qnorm, maxq, coh_temp = 0.0,  incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
-    real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, *cq, *sq , *c_square, *s_square, *cs_sc ,***beta_mol, ***beta_mol_const, ***beta_const_dev, *beta_mol_1d, *beta_lab_2_t, *beta_lab_1_t, beta_fact, mu_ind =0.0, mu_sq =0.0 ;
+    real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, *cq, *sq , *c_square, *s_square, *cs_sc ,***beta_mol, ***beta_mol_const, ***beta_const_dev, *beta_mol_1d, *beta_lab_2_t, *beta_lab_1_t, beta_fact, mu_ind =0.0, mu_sq =0.0, *mu_ind_mols, *beta_corr ;
     real           beta_lab_sq_2 = 0.0, beta_lab_sq_1 = 0.0, beta_lab_1_2 =0.0, beta_lab_2 = 0.0, beta_lab_1 = 0.0, b22 = 0.0, b21 = 0.0, b12 = 0.0, b11 = 0.0;
     int            max_i, isize0, ind0;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq, invhbinw, normfac, norm_x, norm_z, mod_f, inv_width;
@@ -121,15 +121,22 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     {
         rmax2   =  max_cutoff2(FALSE ? epbcXY : epbcXYZ, box_pbc);
         fprintf(stderr, "rmax2 = %f\n", rmax2);
-        
+        nbin     = (int)(sqrt(rmax2)/binwidth);
+        invhbinw = 1.0 / binwidth;
+        if (fnBETACORR)
+        {
+            fprintf(stderr, "number of bins for <beta(0)*beta(r)> = %d\n", nbin);
+            nfaces = 1;
+            if (nbingamma >1 || nbintheta >1  )
+            {
+                gmx_fatal(FARGS, "when computing <beta(0)*beta(r)> choose nplanes = 1 and nbintheta = 1");
+            }
+        }
+ 
     }
     else
     {
-        rmax2   = sqr(3*max(box[XX][XX], max(box[YY][YY], box[ZZ][ZZ])));
-    }
-    if (debug)
-    {
-        fprintf(debug, "rmax2 = %g\n", rmax2);
+        gmx_fatal(FARGS, "use PBC, haven't implemented code without PBC\n");
     }
     
     /*here find the normalization of the OH bond-length and of the dipole vector*/
@@ -149,6 +156,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     snew(s_method_t, ng);
     snew(s_method_coh_t, ng);
     snew(s_method_incoh_t, ng);
+    snew(mu_ind_mols,isize0);
     max_i = isize[0];
 
     /*allocate memory for beta in lab frame and initialize beta in mol frame*/
@@ -158,6 +166,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     snew(beta_mol_const, DIM);
     snew(beta_const_dev, DIM);
     snew(beta_mol_1d, 7);
+    snew(beta_corr,nbin+1);
     for (i = 0; i < DIM; i++)
     {
         snew(beta_mol[i], DIM);
@@ -386,6 +395,10 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                             // we get very close to ±90 degrees because kin and kout -> infinity at theta=±90 degrees
                             theta_vec[0] = 0.5*M_PI*(-1.0)*0.999;
                             theta_vec[nbintheta-1] = 0.5*M_PI*(-1.0 + 2.0/nbintheta + (nbintheta-1)*2.0/nbintheta)*0.999 ;
+                            if (fnBETACORR)
+                            {
+                               theta_vec[tt] = angle_corr*M_PI/(2.0*180.0);
+                            }
                             // this loop is to  rotate the scattering plane wrt the scattering wave-vector
                             for (c = 0; c < nbingamma; c++)
                             {
@@ -639,6 +652,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                             {
                                 induced_second_order_dipole(x01, x02, vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], beta_mol, &mu_ind);
                                 mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
+                                mu_ind_mols[i] = mu_ind;
                                 for (qq = 0; qq < nbinq; qq++)
                                 {
                                     q_xi = iprod(arr_qvec_faces[rr][qq],xi);
@@ -665,6 +679,10 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
                            }
                        }
                    }
+                }
+                if (fnBETACORR)
+                {
+                 calc_beta_corr( &pbc,  mols, molindex, g, isize0, nbin, rmax2, invhbinw, x, mu_ind_mols, &beta_corr);
                 }
             }
             for (rr = 0; rr < nfaces; rr++)
@@ -733,7 +751,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
        }
     }
 
-    if (bThetaswipe == TRUE )
+    if (bThetaswipe == TRUE && !fnBETACORR )
     {
        int      nplots = 1;
        sprintf(gtitle, "Non-linear optical scattering ");
@@ -878,7 +896,7 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
        }
        gmx_ffclose(fpn);
     }
-    else
+    else if (bThetaswipe == FALSE && !fnBETACORR)
     {
         sprintf(gtitle, "Non-linear optical scattering ");
         fp = xvgropen(fnSFACT, gtitle, "q(nm^-1)", "S(q)", oenv);
@@ -936,8 +954,21 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
             fprintf(fp, "\n");
         }
         gmx_ffclose(fp);
+        do_view(oenv, fnSFACT, NULL);
     }
-    do_view(oenv, fnSFACT, NULL);
+    else if (fnBETACORR)
+    {
+       sprintf(gtitle, "Non-linear optical scattering ");
+       fpn = xvgropen(fnBETACORR, "hyperpolarizability spatial correlation", "r [nm]", "beta(0) beta(r)", oenv);
+       sprintf(refgt, "%s", "");
+       fprintf(fpn, "@type xy\n");
+
+       for (i = 0; i < nbin+1; i++)
+       {
+           fprintf(fpn, "%10g %10g\n", i*binwidth, beta_corr[i]/nframes );
+       }
+       gmx_ffclose(fpn);
+    }
 
     for (g = 0; g < ng; g++)
     {
@@ -980,6 +1011,10 @@ static void do_nonlinearopticalscatteringtheta(t_topology *top, /*const char *fn
     sfree(beta_mol);
     sfree(beta_mol_const);
     sfree(beta_const_dev);
+
+    sfree(beta_corr);
+    sfree(mu_ind_mols);
+
 }
 
 
@@ -1151,7 +1186,6 @@ void induced_second_order_dipole(const rvec xv2, const rvec xv3, const rvec pout
     unitv(yvec,yvec);
     cprod(yvec,zvec,xvec);
 
-
     cosdirmat[0][0] = xvec[0]; cosdirmat[0][1] = yvec[0]; cosdirmat[0][2] = zvec[0];
     cosdirmat[1][0] = xvec[1]; cosdirmat[1][1] = yvec[1]; cosdirmat[1][2] = zvec[1];
     cosdirmat[2][0] = xvec[2]; cosdirmat[2][1] = yvec[2]; cosdirmat[2][2] = zvec[2];
@@ -1269,6 +1303,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
     static gmx_bool    bPBC = TRUE, bKleinmannsymm = TRUE, bSpectrum = TRUE, bThetaswipe = FALSE, bRandbeta = FALSE;
     static real        fade = 0.0;
     static real        koutx = 1.0, kouty = 0.0 , koutz = 0.0, kinx = 0.0, kiny = 0.0, kinz = 1.0, pout_angle = 0.0 , pin_angle = 0.0;
+    static real        binwidth = 0.002, angle_corr = 179.82 ;
     static real        bmzxx = 5.7 , bmzyy = 10.9 , bmzzz = 31.6 ;
     static int         ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
 
@@ -1292,8 +1327,10 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
         { "-kinx",         FALSE, etREAL, {&kinx}, "direction of kin in x direction " },
         { "-kiny",         FALSE, etREAL, {&kiny}, "direction of kin in y direction " },
         { "-kinz",         FALSE, etREAL, {&kinz}, "direction of kin in z direction " },
-        { "-pout",         FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
-        { "-pin",         FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
+        { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
+        { "-angle_corr",       FALSE, etREAL, {&angle_corr}, "angle at which to compute <beta(0)beta(r)> (use only with betacorr)" },
+        { "-pout",         FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees (use only with nospectrum). For P choose 0, for S choose 90" },
+        { "-pin",         FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees (use only with nospectrum). For P choose 0, for S choose 90" },
         { "-method",     FALSE, etENUM, {methodt},
           "I(q) using the different methods" },
         { "-pbc",      FALSE, etBOOL, {&bPBC},
@@ -1310,7 +1347,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
 
     };
 #define NPA asize(pa)
-    const char        *fnTPS, *fnNDX;
+    const char        *fnTPS, *fnNDX, *fnBETACORR=NULL;
     output_env_t       oenv;
     int           *gnx;
     int            nFF[2];
@@ -1324,6 +1361,7 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
         { efNDX, NULL,  NULL,     ffOPTRD },
         { efXVG, "-o",  "non_linear_sfact",    ffWRITE },
         { efXVG, "-otheta", "non_linear_sfact_vs_theta", ffOPTWR },
+        { efXVG, "-betacorr", "beta_correlation", ffOPTWR },
 
     };
 #define NFILE asize(fnm)
@@ -1343,6 +1381,8 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
 
     fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
+    fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
+
 
     if (!fnTPS && !fnNDX)
     {
@@ -1364,8 +1404,11 @@ int gmx_nonlinearopticalscatteringtheta(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
    
     do_nonlinearopticalscatteringtheta(top, ftp2fn(efTRX, NFILE, fnm),
-           opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), methodt[0],  bPBC, bKleinmannsymm, bSpectrum, bRandbeta, bThetaswipe, qbin, nbinq,
-           koutx, kouty, koutz, kinx, kiny, kinz  , bmzxx, bmzyy, bmzzz ,nbintheta, nbingamma, pin_angle, pout_angle, 
+           opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), fnBETACORR, methodt[0],
+           bPBC, bKleinmannsymm, bSpectrum, bRandbeta, bThetaswipe, qbin, nbinq,
+           koutx, kouty, koutz, kinx, kiny, kinz  , bmzxx, bmzyy, bmzzz ,nbintheta,
+           nbingamma, pin_angle, pout_angle,
+           angle_corr, binwidth,
            fade, gnx, grpindex, grpname, ngroups, oenv);
 
     return 0;
