@@ -81,7 +81,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    const char *fnVCOEFF, const char *fnVGRD, const char *fnVINP,
                    const char *fnRGRDO, const char *fnCOEFFO,
                    const char *fnRGRDH, const char *fnCOEFFH, const char *fnMAP,
-                   const char *fnBETACORR, const char *fnREFMOL,
+                   const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
                    int qbin, int nbinq, int kern_order, real std_dev_dens, real fspacing,
@@ -98,10 +98,10 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq,   mu_ind =0.0, mu_sq =0.0, mod_f ;
-    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr;
+    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
     int            max_i, isize0, ind0, indj;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
-    real           segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
+    real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
     rvec          *x, xcm, xcm_transl, dx,  *x_i1, xi, x01, x02, *arr_qvec, **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
     rvec           pol_perp, pol_par,vec_kout, vec_2kin, pol_in1, pol_in2, vec_kout_2kin ;
     rvec           xvec, yvec, zvec, *xmol, *xref, Emean;
@@ -378,6 +378,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     snew(mu_ind_mols, isize0);
     
     snew(beta_corr, nbin+1);
+    snew(ft_beta_corr,nbinq);
     for (i = 0; i < DIM; i++)
     {
         snew(beta_mol[i], DIM);
@@ -538,7 +539,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                          // we get very close to ±90 degrees because kin and kout -> infinity at theta=±90 degrees
                          theta_vec[0] = 0.5*M_PI*(-1.0)*0.999;
                          theta_vec[nbintheta-1] = 0.5*M_PI*(-1.0 + 2.0/nbintheta + (nbintheta-1)*2.0/nbintheta)*0.999 ;
-                         if (fnBETACORR)
+                         if (fnBETACORR || fnFTBETACORR)
                          {
                             theta_vec[tt] = angle_corr*M_PI/(2.0*180.0);
                          }
@@ -776,7 +777,11 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                 if (fnBETACORR)
                 {
                  calc_beta_corr( &pbc,  mols, molindex, g, isize0, nbin, rmax2, invhbinw, x, mu_ind_mols, &beta_corr);
-                }                
+                }
+                else if (fnFTBETACORR)
+                {
+                 calc_ft_beta_corr( &pbc,  mols, molindex, g, isize0,  nbinq, arr_qvec_faces, rmax2, invhbinw, x, mu_ind_mols, &ft_beta_corr);
+                }
             }
             for (rr = 0; rr < nfaces; rr++)
             {
@@ -1069,7 +1074,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     }
     gmx_ffclose(fp);
     
-    if (!fnBETACORR)
+    if (!fnBETACORR )
     {
     // print the nonlinear scattering intensity as a function of wave-vector only if you don't compute the <beta(0)*beta(r)>
     nplots = 1;
@@ -1167,6 +1172,20 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
     if (fnBETACORR)
     {
+       /* Calculate volume of sphere segments or length of circle segments */
+       snew(inv_segvol, (nbin+1));
+       prev_spherevol = 0;
+       inv_segvol[0] = 1.0;
+       normfac = 1.0/(nframes*invvol*isize0*(isize[0]-1));
+       for (i = 1; (i < (nbin+1)); i++)
+       {
+           r = i*binwidth;
+           spherevol = (4.0/3.0)*M_PI*r*r*r;
+           segvol         = spherevol-prev_spherevol;
+           inv_segvol[i]  = 1.0/segvol;
+           prev_spherevol = spherevol;
+       }
+      
        sprintf(gtitle, "Non-linear optical scattering ");
        fpn = xvgropen(fnBETACORR, "hyperpolarizability spatial correlation", "r [nm]", "beta(0) beta(r)", oenv);
        sprintf(refgt, "%s", "");
@@ -1174,7 +1193,19 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
        for (i = 0; i < nbin+1; i++)
        {
-           fprintf(fpn, "%10g %10g\n", i*binwidth, beta_corr[i]/nframes );
+           fprintf(fpn, "%10g %10g\n", i*binwidth, beta_corr[i]*normfac*inv_segvol[i] );
+       }
+       gmx_ffclose(fpn);
+    }
+    else if (fnFTBETACORR)
+    {
+       sprintf(gtitle, "FT of beta-beta correlation ");
+       fpn = xvgropen(fnFTBETACORR, "hyperpolarizability spatial correlation", "r [nm]", "beta(0) beta(r)", oenv);
+       sprintf(refgt, "%s", "");
+       fprintf(fpn, "@type xy\n");
+       for (qq = 0; qq < nbinq; qq++)
+       {   
+           fprintf(fpn, "%10g %10g\n", norm(arr_qvec_faces[0][qq]), ft_beta_corr[qq]/nframes );
        }
        gmx_ffclose(fpn);
     }
@@ -1998,12 +2029,54 @@ void calc_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
    {
        if (count[i] != 0)
        {
-          (*beta_corr)[i] += beta_t_corr[i]/(count[i]);
+          (*beta_corr)[i] += beta_t_corr[i];
        }
    }
    sfree(beta_t_corr);
    sfree(count);
 }
+
+void calc_ft_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
+                 const int gind , const int isize0,  int nbinq, rvec **arr_qvec_faces, real rmax2,  real invhbinw,
+                 rvec *x, real *mu_ind_mols, real **ft_beta_corr)
+{
+   rvec   dx;
+   real   d2, qr, dist, invdist;
+   int    i, j, qq,indj, imol;
+   real  *arr_qvec_norm, *invq;
+   
+   snew(arr_qvec_norm,nbinq);
+   snew(invq,nbinq);
+   for (qq = 0; qq < nbinq; qq ++)
+   {
+       arr_qvec_norm[qq] = norm(arr_qvec_faces[0][qq]);
+       invq[qq] = 1.0/arr_qvec_norm[qq] ;
+   }   
+
+   for (i = 0; i < isize0 -1; i ++)
+   {
+      imol = mols->index[molindex[gind][i]];
+      for (j = i+1 ; j < isize0 ; j++)
+      {
+          indj = mols->index[molindex[gind][j]];
+          pbc_dx(pbc, x[imol], x[indj] ,dx);
+          d2 = iprod(dx, dx);
+          if ( d2 < rmax2 )
+          {
+             dist = sqrt(d2);
+             invdist = 1.0/dist;
+             for (qq = 0; qq < nbinq; qq++)
+             {
+                qr = arr_qvec_norm[qq]*dist;
+                (*ft_beta_corr)[qq] += mu_ind_mols[i]*mu_ind_mols[j]*sin(qr)*invdist*invq[qq] ;
+             }
+          }
+      }
+   }
+   sfree(invq);
+   sfree(arr_qvec_norm);
+}
+
 
 
 void calc_efield_map(t_pbc *pbc,t_topology *top, t_block *mols, t_Ion *Cation, t_Ion *Anion, int  *molindex[], 
@@ -3530,7 +3603,7 @@ int gmx_eshs(int argc, char *argv[])
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
     };
 #define NPA asize(pa)
-    const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnREFMOL = NULL;
+    const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
     const char        *fnVCOEFF=NULL, *fnVGRD=NULL, *fnVINP=NULL;
     const char        *fnRGRDO=NULL, *fnRGRDH=NULL, *fnCOEFFO=NULL, *fnCOEFFH=NULL;
     const char        *fnMAP=NULL;
@@ -3558,6 +3631,8 @@ int gmx_eshs(int argc, char *argv[])
         { efXVG, "-o",  "non_linear_sfact",    ffWRITE },
         { efXVG, "-otheta", "non_linear_sfact_vs_theta", ffOPTWR },
         { efXVG, "-betacorr", "beta_correlation", ffOPTWR },
+        { efXVG, "-ftbetacorr", "FT_beta_correlation", ffOPTWR },
+
     };
 #define NFILE asize(fnm)
     int            npargs;
@@ -3585,6 +3660,7 @@ int gmx_eshs(int argc, char *argv[])
     fnCOEFFO = opt2fn_null("-rhocoeffO", NFILE,fnm);
     fnCOEFFH = opt2fn_null("-rhocoeffH", NFILE,fnm);
     fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
+    fnFTBETACORR = opt2fn_null("-ftbetacorr", NFILE,fnm);
     fnREFMOL = opt2fn_null("-refmol", NFILE, fnm);
 
 
@@ -3632,7 +3708,7 @@ int gmx_eshs(int argc, char *argv[])
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
-           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR,
+           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 

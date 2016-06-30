@@ -111,6 +111,7 @@ set(SYMLINK_NAMES
     g_nonlinearopticalscatteringtheta
     g_fitbeta
     g_eshs
+    g_shscorr
     g_rms
     g_rmsdist
     g_rmsf

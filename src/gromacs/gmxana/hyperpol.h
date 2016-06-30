@@ -167,6 +167,11 @@ void switch_fn(real r_dist, real electrostatic_cutoff, real rmax, real inv_width
 extern void  calc_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
                  const int gind , const int isize0, int nbin, const real rmax2,  real invhbinw,
                  rvec *x, real *mu_ind_mols, real **beta_corr);
+void calc_ft_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
+                 const int gind , const int isize0,  int nbinq, rvec **arr_qvec_faces,  real rmax2,  real invhbinw,
+                 rvec *x, real *mu_ind_mols, real **ft_beta_corr);
+
+
 //compute direction cosine matrix
 void calc_cosdirmat(const char *fnREFMOL, t_topology *top, int molsize,  int ind0, rvec *xref, rvec *xmol, matrix *cosdirmat, matrix *invcosdirmat, rvec *xvec, rvec *yvec, rvec *zvec);
 

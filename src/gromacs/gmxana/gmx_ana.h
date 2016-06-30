@@ -208,6 +208,9 @@ int
 gmx_eshs(int argc, char *argv[]);
 
 int
+gmx_shscorr(int argc, char *argv[]);
+
+int
 gmx_rotmat(int argc, char *argv[]);
 
 int
