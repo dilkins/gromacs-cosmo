@@ -88,7 +88,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, int nmax)
+                   const output_env_t oenv, int nmax, real intheta)
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
@@ -131,6 +131,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
     int		   nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2;
+    real	  **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -451,32 +452,145 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
-//           for (nx = 0; nx < nbinq; nx++)
-//           {
-//               qvec[XX] = qnorm*nx;
-//               for (ny = 1; ny < nbinq; ny++)
-//               {
-//                   qvec[YY] = qnorm*ny;
-//                   for (nz = 1; nz < nbinq; nz++)
-//                   {
-//                       qvec[ZZ] = qnorm*nz;
-//                       /* qvec is x`*/
-//                       vec_temp[XX] = qvec[XX]+ sqrt(17.0); vec_temp[YY] = qvec[YY]+ sqrt(23.0); vec_temp[ZZ] = qvec[ZZ]+ sqrt(31.0);
-//                       /* vec_scat is y`*/
-//                       unitv(qvec,xprime);
-//                       cprod(qvec, vec_temp, vec_pl);
-//                       unitv(vec_pl,yprime);
-//                       /*vec_perp is z`*/
-//                       cprod(qvec,vec_pl,vec_perp);
-//                       unitv(vec_perp,zprime);
-//                       /* now compute kout and kin in this orthogonal basis*/
-//                       cosdirmat[0][0] = xprime[0]; cosdirmat[0][1] = yprime[0]; cosdirmat[0][2] = zprime[0];
-//                       cosdirmat[1][0] = xprime[1]; cosdirmat[1][1] = yprime[1]; cosdirmat[1][2] = zprime[1];
-//                       cosdirmat[2][0] = xprime[2]; cosdirmat[2][1] = yprime[2]; cosdirmat[2][2] = zprime[2];
-//                       
-//                   }
-//               }
-//           }
+	snew(kvec,n_used);
+	for (i=0;i<n_used;i++)
+	{
+		snew(kvec[i],4);
+		for (j=0;j<4;j++)
+		{
+			kvec[i][0] = qnorm * narray[i][0];
+			kvec[i][1] = qnorm * narray[i][1];
+			kvec[i][2] = qnorm * narray[i][2];
+			kvec[i][3] = qnorm * sqrt(1.0*narray[i][3]);
+		}
+	}
+
+	// We now have a number of (nx,ny,nz) vectors; these will determine our scattering
+	// wavevectors. For each one, let's go through and work out the vectors u and v.
+	snew(u_vec,n_used);
+	snew(v_vec,n_used);
+//	snew(basis,n_used);
+	snew(basis,3);
+	for (i=0;i<3;i++)
+	{
+		snew(basis[i],3);
+	}
+	for (i=0;i<n_used;i++)
+	{
+		snew(u_vec[i],nbingamma);
+		snew(v_vec[i],nbingamma);
+		for (j=0;j<nbingamma;j++)
+		{
+			snew(u_vec[i][j],3);
+			snew(v_vec[i][j],3);
+		}
+	}
+
+	saout=sin(M_PI/180.0*pout_angle);
+	caout=cos(M_PI/180.0*pout_angle);
+	sain=sin(M_PI/180.0*pin_angle);
+	cain=cos(M_PI/180.0*pin_angle);
+
+	snew(coeff,3);
+	intheta = intheta * M_PI/180.0;
+	coeff[0] = sin(intheta * 0.5);
+
+	for (c=0;c<nbingamma;c++)
+	{
+		gamma = c*M_PI*invgamma;
+		coeff[1] = cos(intheta * 0.5) * sin(gamma);
+		coeff[2] = cos(intheta * 0.5) * cos(gamma);
+		for (i=0;i<n_used;i++)
+		{
+			// Given this gamma and this q vector, let's figure out the scattering plane.
+			// intheta gives us the scattering angle; that should be all we need!
+			// 1. Create an orthonormal basis. The first vector is this kvec element.
+			for (j=0;j<3;j++)
+			{
+				basis[0][j] = kvec[i][j];
+			}
+			// To find the second vector, we take another vector that's definitely different
+			// from the first one, and take the cross product.
+			basis[2][0] = basis[0][0] + 0.4;
+			basis[2][1] = basis[0][1] + 0.3;
+			basis[2][2] = basis[0][2] + 0.1;
+			cprod(basis[0],basis[2],basis[1]);
+			// The third vector is the cross product of the first with the second.
+			cprod(basis[0],basis[1],basis[2]);
+
+			unitv(basis[0],basis[0]);
+			unitv(basis[1],basis[1]);
+			unitv(basis[2],basis[2]);
+
+			// Now, given this 3-dimensional basis, find k_in and k_out. We take gamma to be the angle made with the third
+			// basis vector.
+			for (j=0;j<3;j++)
+			{
+				vec_2kin[j] = coeff[0]*basis[0][j] - coeff[1]*basis[1][j] - coeff[2]*basis[2][j];
+				vec_kout[j] = coeff[0]*basis[0][j] + coeff[1]*basis[1][j] + coeff[2]*basis[2][j];
+			}
+			unitv(vec_2kin,vec_2kin);
+			unitv(vec_kout,vec_kout);
+
+//			fprintf(stderr,"%f\n",(vec_2kin[0]*kvec[i][0] + vec_2kin[1]*kvec[i][1] + vec_2kin[2]*kvec[i][2])/(kvec[i][3]));
+//			fprintf(stderr,"%f\n",(vec_kout[0]*kvec[i][0] + vec_kout[1]*kvec[i][1] + vec_kout[2]*kvec[i][2])/(kvec[i][3]));
+//			fprintf(stderr,"\n%f %f %f\n",basis[0][0],basis[0][1],basis[0][2]);
+//			fprintf(stderr,"\n%f %f %f\n",basis[1][0],basis[1][1],basis[1][2]);
+//			fprintf(stderr,"\n%f %f %f\n",basis[2][0],basis[2][1],basis[2][2]);
+//			fprintf(stderr,"%f %f %f\n",kvec[i][0],kvec[i][1],kvec[i][2]);
+//			fprintf(stderr,"%f %f %f\n",vec_2kin[0],vec_2kin[1],vec_2kin[2]);
+//			fprintf(stderr,"%f %f %f\n",vec_kout[0],vec_kout[1],vec_kout[2]);
+//			fprintf(stderr,"%f %f %f\n",coeff[0],coeff[1],coeff[2]);
+//			fprintf(stderr,"%f %f %f %f\n",gamma,intheta,sin(intheta * 0.5),cos(intheta*0.5));
+//			exit(0);
+
+			// Polarization vectors for outgoing beam.
+			cprod(vec_kout,vec_2kin,pol_perp);
+			cprod(vec_kout,pol_perp,pol_par);
+			svmul(saout,pol_perp,pol_perp);
+			svmul(caout,pol_par,pol_par);
+			rvec_add(pol_perp,pol_par,vec_polout);
+
+			// Polarization vectors for incoming beam.
+			cprod(vec_kout,vec_2kin,pol_perp);
+			cprod(vec_2kin,pol_perp,pol_par);
+			svmul(sain,pol_perp,pol_perp);
+			svmul(cain,pol_par,pol_par);
+			rvec_add(pol_perp,pol_par,vec_polin);
+
+			// Normalize everything.
+			unitv(vec_polout,vec_polout);
+			unitv(vec_polin,vec_polin);
+
+			// Store the u and v vectors.
+			for (j=0;j<3;j++)
+			{
+				u_vec[i][c][j] = vec_polout[j];
+				v_vec[i][c][j] = vec_polin[j];
+			}
+
+		}
+	}
+
+	// DMW: EDITING FROM HERE
+
+
+	fprintf(stderr,"Using %i points in reciprocal space\n",n_used);
+
+	// We now have a certain number of q vectors, along with the U and V vectors corresponding to
+	// them, for a certain number of scattering planes each.
+
+	for (i =0;i<n_used;i++)
+	{
+		fprintf(stderr,"%i %i %i %i\n",narray[i][0],narray[i][1],narray[i][2],narray[i][3]);
+		fprintf(stderr,"%f %f %f %f\n",kvec[i][0],kvec[i][1],kvec[i][2],kvec[i][3]);
+		fprintf(stderr,"U1 %f %f %f\n",u_vec[i][0][0],u_vec[i][0][1],u_vec[i][0][2]);
+		fprintf(stderr,"U2 %f %f %f\n",u_vec[i][1][0],u_vec[i][1][1],u_vec[i][1][2]);
+		fprintf(stderr,"V1 %f %f %f\n",v_vec[i][0][0],v_vec[i][0][1],v_vec[i][0][2]);
+		fprintf(stderr,"V2 %f %f %f\n",v_vec[i][1][0],v_vec[i][1][1],v_vec[i][1][2]);
+	}
+
+	exit(0);
 
            /*initialize incoming and outcoming wave-vectors*/
            vec_kout[XX] = 1.0; 
@@ -1379,7 +1493,8 @@ int gmx_shscorr(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0 ;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
-    static int		     nmax = 10;
+    static int		     	 nmax = 10;
+	static real				 intheta = 90;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -1402,7 +1517,8 @@ int gmx_shscorr(int argc, char *argv[])
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
         { "-pout",          FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
-	{ "-nmax",	    FALSE, etINT, {&nmax}, "maximum square modulus of n vector"},
+		{ "-nmax",	    	FALSE, etINT, {&nmax}, "maximum square modulus of n vector"},
+		{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
         { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
         { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
@@ -1531,6 +1647,6 @@ int gmx_shscorr(int argc, char *argv[])
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, intheta);
     return 0;
 }
