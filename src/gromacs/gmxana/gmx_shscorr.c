@@ -131,9 +131,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
-    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff;
+    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count;
     real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,st,ct,zt;
 	rvec			***all_r;
+	real			**intens_total,**intens_cohrt,**intens_incoh;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -322,21 +323,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
         {
            ir=(t_inputrec *)calloc(1,sizeof(t_inputrec));
            ir->nkx = roundf(box[XX][XX]/fspacing); ir->nky = roundf(box[YY][YY]/fspacing); ir->nkz = roundf(box[ZZ][ZZ]/fspacing); ir->fourier_spacing = fspacing;
-//           fprintf(flog,"Compute the intensity using ewald sums\n"); 
-//           fprintf(flog, "screening kappa parameter used in ewald = %f\n", kappa);
-//           fprintf(flog, "hard core smoothening parameter = %f\n", core_term);
-//           if (ir->nkx > 0 && ir->nky > 0 && ir->nkz > 0)
-//           {
-              /* Mark fourier_spacing as not used */
-//              ir->fourier_spacing = 0;
-//           }
-//           else if (ir->nkx != 0 && ir->nky != 0 && ir->nkz != 0)
-//           {
-//               gmx_fatal(FARGS, "Some of the Fourier grid sizes are set, but all of them need to be set.");
-//           }
-//           printf("about to build grid\n");
-//           max_spacing = calc_grid(flog, box, ir->fourier_spacing,
-//                                &(ir->nkx), &(ir->nky), &(ir->nkz));
 
            fprintf(stderr,"f spacing %f\n",ir->fourier_spacing);
            fprintf(stderr,"make the grid\n");
@@ -648,10 +634,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		{
 			for (kk=0;kk<DIM;kk++)
 			{
-				beta_mol[ii][jj][kk] = Map->beta_gas[ii*9 + jj*3 + kk];
+//				beta_mol[ii][jj][kk] = Map->beta_gas[ii*9 + jj*3 + kk];
+				beta_mol[ii][jj][kk] = 0.0;
 			}
 		}
 	}
+
+	beta_mol[2][2][2] = 1.0;
+	// DMW: This should be changed later on!
 
 	for (ff=0;ff<nframes;ff++)
 	{
@@ -724,7 +714,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		// For each q vector, let's calculate the intensity.
 		for (qq=0;qq<n_used;qq++)
 		{
-			fprintf(stderr,"Doing q-point number %i\n",qq);
+			fprintf(stderr,"Doing q-point number %i of %i\n",qq,n_used);
 			// To recap (for my own sake: so that I don't forget!):
 			// For this group (of which there is only one), we are going
 			// to take every different q-vector that we have generated,
@@ -803,6 +793,81 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// 1. Output intensity.
 	// 2. Check that results are correct.
 	// 3. Improve sine and cosine calculation.
+
+	// Now, we have the intensity for many different wavevectors. What we really want is
+	// the intensity as a function of the magnitude |q|. The largest possible square
+	// magnitude is nmax2.
+	snew(intens_total,ng);
+	snew(intens_cohrt,ng);
+	snew(intens_incoh,ng);
+	for (g=0;g<ng;g++)
+	{
+		snew(intens_total[g],nmax2);
+		snew(intens_cohrt[g],nmax2);
+		snew(intens_incoh[g],nmax2);
+	}
+	snew(num_count,nmax2);
+
+	// num_count[qq] will be the number of n vectors with n^2 = i. This will
+	// help us to calculate the average.
+	for (g=0;g<ng;g++)
+	{
+		for (qq=0;qq<n_used;qq++)
+		{
+			n2 = narray[qq][3];
+			intens_total[g][n2] += s_method[g][qq][0];
+			intens_cohrt[g][n2] += s_method_coh[g][qq][0];
+			intens_incoh[g][n2] += s_method_incoh[g][qq][0];
+			num_count[n2] += 1;
+			fprintf(stderr,"%i %i %i %i %i\n",n2,qq,narray[qq][0],narray[qq][1],narray[qq][2]);
+		}
+		for (qq=0;qq<nmax2;qq++)
+		{
+			if (num_count[qq]>0)
+			{
+				intens_total[g][qq] /= num_count[qq];
+				intens_cohrt[g][qq] /= num_count[qq];
+				intens_incoh[g][qq] /= num_count[qq];
+			}
+		}
+	}
+
+	// Now we have the intensity for each type of scattering, averaged over frames and
+	// values of gamma; we have the average intensity for each possible modulus |q|.
+	// (Or rather, as it stands, nx^2 + ny^2 + nz^2).
+	// All that remains, I think, is to print it out!
+    fpn = xvgropen("total_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
+    fprintf(fpn, "@type xy\n");
+	for (qq=0;qq<nmax2;qq++)
+	{
+		if (num_count[qq]>0)
+		{
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]);
+		}
+	}
+	gmx_ffclose(fpn);
+
+    fpn = xvgropen("cohrt_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
+    fprintf(fpn, "@type xy\n");
+	for (qq=0;qq<nmax2;qq++)
+	{
+		if (num_count[qq]>0)
+		{
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]);
+		}
+	}
+	gmx_ffclose(fpn);
+
+    fpn = xvgropen("incoh_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
+    fprintf(fpn, "@type xy\n");
+	for (qq=0;qq<nmax2;qq++)
+	{
+		if (num_count[qq]>0)
+		{
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]);
+		}
+	}
+	gmx_ffclose(fpn);
 
 	exit(0);
     
@@ -1157,7 +1222,7 @@ int gmx_shscorr(int argc, char *argv[])
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
         { "-pout",          FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
-		{ "-nmax",	    	FALSE, etINT, {&nmax}, "maximum square modulus of n vector"},
+		{ "-nmax",	    	FALSE, etINT, {&nmax}, "maximum modulus of n vector"},
 		{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
         { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
         { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
