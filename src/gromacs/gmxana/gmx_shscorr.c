@@ -89,20 +89,21 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv, int nmax, real intheta)
+
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, nanions, ncations, i, j, k, qq, n, c, tt, rr, nframes, nfaces, gr_ind, nbin, aa, bb, cc;
-    real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
+    real         ***s_method, ***s_method_coh, ***s_method_incoh, **temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq,   mu_ind =0.0, mu_sq =0.0, mod_f ;
     real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
     int            max_i, isize0, ind0, indj;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
     real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
-    rvec          *x, xcm, xcm_transl, dx,  *x_i1, xi, x01, x02, qvec, *arr_qvec, **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
+    rvec          *x, xcm, xcm_transl, dx,  *x_i1, xi, x01, x02, qvec, **arr_qvec, **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
     rvec           pol_perp, pol_par,vec_kout, vec_2kin, pol_in1, pol_in2, vec_kout_2kin ;
     rvec           xvec, yvec, zvec, *xmol, *xref, Emean;
     real          *qref;
@@ -130,8 +131,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
-    int		   nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2;
-    real	  **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain;
+    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l;
+    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -377,6 +378,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     rmax     = sqrt(rmax2);
     //initialize beta tensor
     snew(beta_mol, DIM);
+	snew(beta_lab, DIM);
     snew(mu_ind_mols, isize0);
     
     snew(beta_corr, nbin+1);
@@ -384,41 +386,51 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     for (i = 0; i < DIM; i++)
     {
         snew(beta_mol[i], DIM);
+		snew(beta_lab[i], DIM);
     }
     for (i = 0; i < DIM; i++)
     {
         for (j = 0; j < DIM; j++)
         {
             snew(beta_mol[i][j], DIM);
+            snew(beta_lab[i][j], DIM);
         }
     }
-
-    snew(s_method, ng);
-    snew(s_method_coh, ng);
-    snew(s_method_incoh, ng);
-    snew(s_method_t, ng);
-    snew(s_method_coh_t, ng);
-    snew(s_method_incoh_t, ng);
-    max_i = isize[0];
+	for (i = 0;i < DIM; i++)
+	{
+		for (j = 0;j < DIM; j++)
+		{
+			for (k = 0;k < DIM; k++)
+			{
+				snew(beta_lab[i][j][k],isize0);
+			}
+		}
+	}
+	for (i = 0;i < DIM; i++)
+	{
+		for (j = 0;j < DIM; j++)
+		{
+			for (k = 0;k < DIM; k++)
+			{
+				for (l = 0;l < isize0;l++)
+				{
+					snew(beta_lab[i][j][k][l],isize0);
+				}
+			}
+		}
+	}//DMWHERE
 
     /*allocate memory for beta in lab frame and initialize beta in mol frame*/
 
-    for (g = 0; g < ng; g++)
+    if (method[0] == 's')
     {
-        /*allocate memory for s_method array */
-           snew(s_method[g], nbinq);
-           snew(s_method_coh[g], nbinq);
-           snew(s_method_incoh[g],nbinq);
-           snew(temp_method, nbinq);
-           snew(arr_qvec,nbinq);
-           if (method[0] == 's')
-           {
-              qnorm = M_PI*2.0/(rmax*2.0);
-           }
-           else
-           {
-              qnorm = M_PI*2.0/(rmax);
-           }
+       qnorm = M_PI*2.0/(rmax*2.0);
+    }
+    else
+    {
+      qnorm = M_PI*2.0/(rmax);
+    }
+
 
 	// We want to find all (nx,ny,nz) values such that nx^2 + ny^2 + nz^2 <= nmax^2.
 	// Firstly, allocate an array to hold all of these values.
@@ -430,7 +442,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		snew(narray[i],4);
 	}
-
+	
 	nmax2 = nmax*nmax;
 	n_used = 0;
 	for (nx = -nmax;nx <= nmax;nx++)
@@ -451,7 +463,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 		}
 	}
-
+	
 	snew(kvec,n_used);
 	for (i=0;i<n_used;i++)
 	{
@@ -464,12 +476,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			kvec[i][3] = qnorm * sqrt(1.0*narray[i][3]);
 		}
 	}
-
+	
 	// We now have a number of (nx,ny,nz) vectors; these will determine our scattering
 	// wavevectors. For each one, let's go through and work out the vectors u and v.
 	snew(u_vec,n_used);
 	snew(v_vec,n_used);
-//	snew(basis,n_used);
 	snew(basis,3);
 	for (i=0;i<3;i++)
 	{
@@ -485,16 +496,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			snew(v_vec[i][j],3);
 		}
 	}
-
+	
 	saout=sin(M_PI/180.0*pout_angle);
 	caout=cos(M_PI/180.0*pout_angle);
 	sain=sin(M_PI/180.0*pin_angle);
 	cain=cos(M_PI/180.0*pin_angle);
-
+	
 	snew(coeff,3);
 	intheta = intheta * M_PI/180.0;
 	coeff[0] = sin(intheta * 0.5);
-
+	
 	for (c=0;c<nbingamma;c++)
 	{
 		gamma = c*M_PI*invgamma;
@@ -532,25 +543,13 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			unitv(vec_2kin,vec_2kin);
 			unitv(vec_kout,vec_kout);
 
-//			fprintf(stderr,"%f\n",(vec_2kin[0]*kvec[i][0] + vec_2kin[1]*kvec[i][1] + vec_2kin[2]*kvec[i][2])/(kvec[i][3]));
-//			fprintf(stderr,"%f\n",(vec_kout[0]*kvec[i][0] + vec_kout[1]*kvec[i][1] + vec_kout[2]*kvec[i][2])/(kvec[i][3]));
-//			fprintf(stderr,"\n%f %f %f\n",basis[0][0],basis[0][1],basis[0][2]);
-//			fprintf(stderr,"\n%f %f %f\n",basis[1][0],basis[1][1],basis[1][2]);
-//			fprintf(stderr,"\n%f %f %f\n",basis[2][0],basis[2][1],basis[2][2]);
-//			fprintf(stderr,"%f %f %f\n",kvec[i][0],kvec[i][1],kvec[i][2]);
-//			fprintf(stderr,"%f %f %f\n",vec_2kin[0],vec_2kin[1],vec_2kin[2]);
-//			fprintf(stderr,"%f %f %f\n",vec_kout[0],vec_kout[1],vec_kout[2]);
-//			fprintf(stderr,"%f %f %f\n",coeff[0],coeff[1],coeff[2]);
-//			fprintf(stderr,"%f %f %f %f\n",gamma,intheta,sin(intheta * 0.5),cos(intheta*0.5));
-//			exit(0);
-
 			// Polarization vectors for outgoing beam.
 			cprod(vec_kout,vec_2kin,pol_perp);
 			cprod(vec_kout,pol_perp,pol_par);
 			svmul(saout,pol_perp,pol_perp);
 			svmul(caout,pol_par,pol_par);
 			rvec_add(pol_perp,pol_par,vec_polout);
-
+	
 			// Polarization vectors for incoming beam.
 			cprod(vec_kout,vec_2kin,pol_perp);
 			cprod(vec_2kin,pol_perp,pol_par);
@@ -571,10 +570,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 		}
 	}
-
-	// DMW: EDITING FROM HERE
-
-
+	
 	fprintf(stderr,"Using %i points in reciprocal space\n",n_used);
 
 	// We now have a certain number of q vectors, along with the U and V vectors corresponding to
@@ -590,7 +586,79 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		fprintf(stderr,"V2 %f %f %f\n",v_vec[i][1][0],v_vec[i][1][1],v_vec[i][1][2]);
 	}
 
-	exit(0);
+	// Next: for each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
+	// we will multiply by the elements of the polarization vectors).
+	for (ii=0;ii<DIM;ii++)
+	{
+		for (jj=0;jj<DIM;jj++)
+		{
+			for (kk=0;kk<DIM;kk++)
+			{
+				beta_mol[ii][jj][kk] = Map->beta_gas[ii*9 + jj*3 + kk];
+			}
+		}
+	}
+	
+	for (aa=0;aa<DIM;aa++)
+	{
+		for (bb=0;bb<DIM;bb++)
+		{
+			for (cc=0;cc<DIM;cc++)
+			{
+			}
+		}
+	}
+
+	if (kern[0] != 'n')
+	{
+		fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");
+	}
+
+    snew(s_method, ng);
+    snew(s_method_coh, ng);
+    snew(s_method_incoh, ng);
+    snew(s_method_t, ng);
+    snew(s_method_coh_t, ng);
+    snew(s_method_incoh_t, ng);
+    max_i = isize[0];
+
+    for (g = 0; g < ng; g++)
+    {
+   	    /*allocate memory for s_method array */
+   	       snew(s_method[g], n_used);
+   	       snew(s_method_coh[g], n_used);
+   	       snew(s_method_incoh[g],n_used);
+   	       snew(temp_method, n_used);
+   	       snew(arr_qvec,n_used);
+
+			for (i=0;i<n_used;i++)
+			{
+				snew(s_method[g][i],nbingamma);
+				snew(s_method_coh[g][i],nbingamma);
+				snew(s_method_incoh[g][i],nbingamma);
+				snew(temp_method[i],nbingamma);
+				snew(arr_qvec[i],nbingamma);
+			}
+
+		// For each q vector, let's calculate the intensity.
+		for (qq=0;qq<n_used;qq++)
+		{
+			// To recap (for my own sake: so that I don't forget!):
+			// For this group (of which there is only one), we are going
+			// to take every different q-vector that we have generated,
+			// of which there are n_used, and we will take each value of gamma
+			// for each q-vector. This will give us n_used*nbingamma different
+			// scattering planes, each with its own u and v vectors (i.e., n_used*nbingamma
+			// different experimental setups).
+			// For each of these experimental setups, we will calculate the intensity of
+			// ESHS light scattered. Each of these setups has a corresponding value of q.
+			fprintf(stderr,"%i\n",isize0);
+		}
+
+		// DMW: EDITING FROM HERE
+
+		exit(0);
+	
 
            /*initialize incoming and outcoming wave-vectors*/
            vec_kout[XX] = 1.0; 
@@ -656,14 +724,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
            for (qq = 0; qq< nbinq; qq++)
            {
               // the magnitude of the scattered wave-vector has to be sqrt(2)*2pi/L*n, so we multiply by sqrt(2) since vec_kout_2kin is normalized
-              arr_qvec[qq][XX] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[XX]) ;
+/*              arr_qvec[qq][XX] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[XX]) ;
               arr_qvec[qq][YY] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[YY]) ;
-              arr_qvec[qq][ZZ] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[ZZ]) ;
+              arr_qvec[qq][ZZ] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[ZZ]) ;*/
            }
-           if (arr_qvec[0][YY] != 0.0 && arr_qvec[0][XX] != sqrt(2.0)*(qnorm + qnorm*qq)*1.0 && arr_qvec[0][ZZ] != sqrt(2.0)*(qnorm + qnorm*qq)*(-1.0))
-           {
-              gmx_fatal(FARGS,"the direction of the scattered wave-vector is not x - z.\n It is sufficient to compute the intensity using this direction of the scattered wave-vector, choose directions of incoming and outcoming wave-vectors such that q = kout -2kin = (x - z)*2Pi/L*n, where n is an integer  \n");
-           }
+//           if (arr_qvec[0][YY] != 0.0 && arr_qvec[0][XX] != sqrt(2.0)*(qnorm + qnorm*qq)*1.0 && arr_qvec[0][ZZ] != sqrt(2.0)*(qnorm + qnorm*qq)*(-1.0))
+//           {
+//              gmx_fatal(FARGS,"the direction of the scattered wave-vector is not x - z.\n It is sufficient to compute the intensity using this direction of the scattered wave-vector, choose directions of incoming and outcoming wave-vectors such that q = kout -2kin = (x - z)*2Pi/L*n, where n is an integer  \n");
+//           }
   
            snew(s_method_t[g], nfaces);
            snew(s_method_coh_t[g], nfaces);
@@ -817,26 +885,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    }
                 }
                  
-                if (kern[0] == 's')
-                {
-                   fprintf(stderr,"put atoms in box\n");
-                   put_atoms_in_box(ePBC, box, natoms, x);
-                   fprintf(stderr,"about to compute density on a grid\n");
-                   calc_dens_on_grid(SKern_rho_O, ir, &pbc,  mols, molindex, 
-                                     atom_id_0, nspecies_0, isize0, x, std_dev_dens,
-                                     inv_std_dev_dens, grid_invspacing, gridsize,grid_spacing);
-                   fprintf(stderr,"computed O dens\n");
-                   calc_dens_on_grid(SKern_rho_H, ir, &pbc,
-                                     mols, molindex, atom_id_1, nspecies_1, isize0, x, std_dev_dens,
-                                     inv_std_dev_dens, grid_invspacing, gridsize, grid_spacing);
-                   fprintf(stderr,"computed H dens\n");
-                   
-                   calculate_spme_efield(SKern_E, ir, top, box, invvol, mols, molindex,
-                                       chged_atom_indexes,n_chged_atoms,
-                                       gridsize, grid_spacing, interp_order, x, isize0, FT_pair_pot, &Emean);
-                   fprintf(stderr,"computed electric field with spme\n");
-                   //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
-                }
                 for (i = 0; i < isize0; i++)
                 {
                     ind0  = mols->index[molindex[g][i]];
@@ -847,58 +895,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                        //printf("O %f %f %f\n",x[ind0+aa][XX]*10.0,x[ind0+aa][YY]*10.0,x[ind0+aa][ZZ]*10.0);
                     }
                     calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
-                    if (kern[0] == 'm')
-                    {
-                        calc_efield_map(&pbc, top, mols, Cation, Anion, molindex, g, isize0, ncations, nanions,
-                                x, ind0, xvec, yvec, zvec, electrostatic_cutoff2, &field_ad);
-                        calc_beta_efield_map(Map, field_ad, beta_mol, &beta_mol );
-                    }
-                    else if (kern[0] == 's' )
-                    {
 
-                        rotate_local_grid_points(SKern_rho_O, SKern_rho_H, SKern_E, ePBC, box, cosdirmat, xi );
-                        //fprintf(stderr,"finished rotating and translating grid\n");
-                        trilinear_interpolation_kern(SKern_rho_O, ir, &pbc, xi, grid_invspacing, grid_spacing);
-                        //fprintf(stderr,"finished interpolation O kern\n");
-                        trilinear_interpolation_kern(SKern_rho_H, ir, &pbc, xi, grid_invspacing, grid_spacing);
-                        //fprintf(stderr,"finished interpolation H kern\n");
-                        vec_trilinear_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
-                                                         grid_invspacing, grid_spacing, Emean);
-                        //fprintf(stderr,"finished interpolation E kern\n");
-
-                        calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, kern_order, betamean, &beta_mol);
-                        
-/*                        if (debug)
-                        {
-                           for (aa = 0; aa < DIM; aa++)
-                           {
-                               for (bb = 0; bb < DIM; bb++)
-                               {
-                                  for (cc = 0; cc < DIM ; cc++)
-                                  {
-                                     printf("beta %d %d %d %f\n",aa, bb, cc, beta_mol[aa][bb][cc]);
-                                  }
-                               }
-                           }
-                        }
-                        gmx_fatal(FARGS,"end\n");
-*/
-                    }
-                    else if (kern[0] == 'k')
-                    {
-                        for (gr_ind =0; gr_ind < Krr->gridpoints; gr_ind++)
-                        {
-                           mvmul(cosdirmat,Krr->grid[gr_ind],SKern_E->rotgrid[gr_ind]);
-                        }
-                       //copy_rvec(x[ind0],xcm_transl);
-                       //we use this only temporarily, because the centre water molecule has been centred
-                       //in the centre of core charge
-                       svmul(0.0117176,zvec,xcm);
-                       rvec_add(xcm,x[ind0],xcm_transl);
-                       calc_beta_krr(Krr, &pbc, top,  mols, molindex, g, isize0, x, xcm_transl, ind0, rmax2, electrostatic_cutoff,&beta_mol );
-                    }
-                    else if (kern[0] == 'n')
-                    {
                       for (aa = 0; aa < DIM; aa++)
                       {
                           for (bb = 0; bb < DIM; bb++)
@@ -909,7 +906,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                               }
                           }
                       }
-                    }
+
                     for (rr = 0; rr < nfaces; rr++)
                     {
                         for (tt = 0; tt < nbintheta; tt++ )
@@ -982,200 +979,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
         }
         while (read_next_x(oenv, status, &t, x, box));
     }
-
-    else if ( method[0] =='d')
-    {
-        fprintf(stderr,"do a double loop over atoms, more expensive but you can smoothen the intensity at low q values\n");
-        fprintf(stderr,"the intensity is smoothened using a switching function between %f nm and %f nm\n",electrostatic_cutoff, maxelcut);
-        fprintf(stderr, "switching parameter (PI/2)*1/(max_cutoff - electrostatic_cutoff) = %f\n", inv_width);
-
-        snew(mu_ind_t, isize0);
-        for (i = 0; i < isize0; i++)
-        {
-            snew(mu_ind_t[i],nfaces);
-            for (rr = 0; rr < nfaces; rr ++) 
-            {
-                snew(mu_ind_t[i][rr],nbintheta);
-                for (tt = 0; tt < nbintheta; tt++)
-                {
-                   snew(mu_ind_t[i][rr][tt],nbingamma);
-                }
-            }
-        }
-        do
-        {
-            // Must init pbc every step because of pressure coupling 
-            copy_mat(box, box_pbc);
-            if (top != NULL)
-            {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
-            invvol      = 1/det(box_pbc);
-            invvol_sum += invvol;
-
-            for (g = 0; g < ng; g++)
-            {
-                snew(mu_sq_t, nfaces);
-                snew(coh_temp,nfaces);
-                for (rr = 0; rr < nfaces; rr++)
-                {
-                   snew(mu_sq_t[rr], nbintheta);
-                   snew(coh_temp[rr],nbintheta);
-                   for ( tt = 0; tt < nbintheta; tt++)
-                   {
-                      snew(coh_temp[rr][tt],nbinq);
-                      snew(mu_sq_t[rr][tt],nbingamma);
-                   }
-                }
-                for (i = 0; i < isize0; i++)
-                {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    for (aa = 0; aa < molsize; aa++)
-                    {
-                       pbc_dx(&pbc,x[ind0+aa],x[ind0],xmol[aa]);
-                    }
-                    calc_cosdirmat( fnREFMOL,  top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
-                    if (kern[0] == 'm')
-                    {
-                        calc_efield_map(&pbc, top, mols, Cation, Anion, molindex, g, isize0, ncations, nanions,
-                                x, ind0, xvec, yvec, zvec, electrostatic_cutoff2, &field_ad);
-                        calc_beta_efield_map(Map, field_ad, beta_mol, &beta_mol );
-                    }
-                    else if (kern[0] == 'k')
-                    {
-                        for (gr_ind =0; gr_ind < Krr->gridpoints; gr_ind++)
-                        {
-                           mvmul(cosdirmat,Krr->grid[gr_ind],Krr->rotgrid[gr_ind]);
-                        }
-                        //copy_rvec(x[ind0],xcm_transl);
-                        //we use this only temporarily, because the centre water molecule has been centred in the centre of core charge
-                        svmul(0.0117176,zvec,xcm);
-                        rvec_add(xcm,x[ind0],xcm_transl);
-                        calc_beta_krr(Krr, &pbc, top,  mols, molindex, g, isize0, x, xcm_transl, ind0, rmax2, electrostatic_cutoff,&beta_mol );
-
-                    }
-                    else if (kern[0] == 'n')
-                    {
-                      for (aa = 0; aa < DIM; aa++)
-                      {
-                          for (bb = 0; bb < DIM; bb++)
-                          {
-                              for (cc = 0; cc < DIM; cc++)
-                              {
-                                 beta_mol[aa][bb][cc] = Map->beta_gas[aa*9+ bb*3+ cc];
-                              }
-                          }
-                      }
-                    }
-                    for (rr = 0; rr < nfaces; rr++)
-                    {
-                        for (tt = 0; tt < nbintheta; tt++ )
-                        {
-                            for (c = 0 ; c < nbingamma; c++)
-                            {
-                            induced_second_order_fluct_dipole(cosdirmat,
-                                                              vec_pout_theta_gamma[rr][tt][c],
-                                                              vec_pin_theta_gamma[rr][tt][c],
-                                                              beta_mol, &mu_ind);
-                            mu_ind_t[i][rr][tt][c] = mu_ind;
-                            mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
-                            //printf("mu_ind_t %f \n", mu_ind_t[i][rr][tt][c]);
-                            }
-                        }
-                    }
-                }
-                for (i = 0; i < isize0 -1; i++)
-                {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    //printf("xi %f %f %f\n",xi[XX],xi[YY],xi[ZZ]);
-                    for (j = i + 1; j < isize0 ; j++)
-                    {
-                        ind0 = mols->index[molindex[g][j]];
-                        pbc_dx(&pbc, xi, x[ind0], dx);
-                        r2 = iprod(dx, dx);
-                        if (r2 <= maxelcut2 )
-                        {
-                           r_dist = sqrt(r2);
-                           if ( r_dist <= electrostatic_cutoff)
-                           {
-                              for (rr = 0; rr < nfaces; rr++)
-                              {
-                                  for (tt = 0; tt < nbintheta; tt++)
-                                  {
-                                      for (c = 0; c < nbingamma; c++)
-                                      {  mod_f = (mu_ind_t[i][rr][tt][c] * mu_ind_t[j][rr][tt][c]);
-                                         //mod_f = (mu_ind_t[i][rr][tt][c] + mu_ind_t[j][rr][tt][c]);
-                                         //mod_f *= mod_f;
-                                         //fprintf(stderr,"mod_f %f i %d rr %d tt %d c %d \n",mod_f,i,rr,tt,c);
-                                         for (qq = 0; qq < nbinq; qq++)
-                                         {
-                                             coh_temp[rr][tt][qq] += mod_f*cos(iprod(arr_qvec_faces[rr][qq],dx));
-                                         }
-                                      }
-                                  }
-                              }
-                           }
-                           else
-                           {
-                              for (rr = 0; rr < nfaces; rr++)
-                              {
-                                  for (tt = 0; tt < nbintheta; tt++)
-                                  {
-                                      for (c = 0; c < nbingamma; c++)
-                                      {
-                                          mod_f = (mu_ind_t[i][rr][tt][c] * mu_ind_t[j][rr][tt][c])*sqr(cos((r_dist-electrostatic_cutoff)*inv_width)) ;
-                                          //mod_f = (mu_ind_t[i][rr][tt][c] + mu_ind_t[j][rr][tt][c])*cos((r_dist-electrostatic_cutoff)*inv_width) ;
-                                          //mod_f *= mod_f;
-                                          //fprintf(stderr,"mod_f2 %f i %d rr %d tt %d c %d \n",mod_f,i,rr,tt,c);
-                                          for (qq = 0; qq < nbinq; qq++)
-                                          {
-                                             coh_temp[rr][tt][qq] += mod_f*cos(iprod(arr_qvec_faces[rr][qq],dx));
-                                          //   fprintf(stderr,"coh_temp %f rr %d tt %d qq %d\n",coh_temp[rr][tt][qq],rr,tt,qq);
-                                          }
-                                      }
-                                  }
-                              }
-                           }
-                        }
-                    }
-                }
-                for (rr = 0; rr < nfaces; rr++)
-                {
-                   for (tt = 0; tt < nbintheta; tt++)
-                   {
-                      for (c = 0; c < nbingamma; c++)
-                      {
-                         incoh_temp = mu_sq_t[rr][tt][c]*invsize0;
-                         for (qq = 0; qq < nbinq; qq++)
-                         {
-                            s_method_t[g][rr][tt][qq] +=  2.0*coh_temp[rr][tt][qq]*invsize0 + incoh_temp  ;
-                            s_method_coh_t[g][rr][tt][qq] += 2.0*coh_temp[rr][tt][qq]*invsize0 ;
-                            s_method_incoh_t[g][rr][tt][qq] += incoh_temp ;
-                            //printf("incoh_temp %f\n",s_method_incoh_t[g][rr][tt][qq]);
-                         }
-                      }
-                   }
-                }
-            }
-            for (rr = 0; rr < nfaces; rr++)
-            {
-               for (tt  = 0; tt < nbintheta; tt++)
-               {
-                   sfree(mu_sq_t[rr][tt]);
-                   sfree(coh_temp[rr][tt]);
-               }
-               sfree(mu_sq_t[rr]);
-               sfree(coh_temp[rr]);
-            }
-            sfree(mu_sq_t);
-            sfree(coh_temp);
-            nframes++;
-        }
-        while (read_next_x(oenv, status, &t, x, box));
-    }
     
     fprintf(stderr, "\n");
     if (bPBC && (NULL != top))
@@ -1193,9 +996,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     {
         for (qq = 0; qq < nbinq ; qq++)
         {
-           s_method[g][qq] = s_method[g][qq]/(nframes)  ;
+/*           s_method[g][qq] = s_method[g][qq]/(nframes)  ;
            s_method_coh[g][qq] = s_method_coh[g][qq]/(nframes)  ;
-           s_method_incoh[g][qq] = s_method_incoh[g][qq]/(nframes) ;
+           s_method_incoh[g][qq] = s_method_incoh[g][qq]/(nframes) ;*/
+	// DMW: HAD TO COMMENT OUT.
         }
     }
 
