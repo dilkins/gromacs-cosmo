@@ -131,8 +131,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
-    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l;
-    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab;
+    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff;
+    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,st,ct,zt;
+	rvec			***all_r;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -376,7 +377,62 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
     set_pbc(&pbc, ePBCrdf, box_pbc);
     rmax     = sqrt(rmax2);
+
+	// Read in all frames.
+	nframes = 0;
+	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
+	read_first_x(oenv, &status, fnTRX, &t, &x, box);
+
+	snew(all_r,nframes);
+	for (i=0;i<nframes;i++)
+	{
+		snew(all_r[i],isize0);
+	}
+	for (i=0;i<nframes;i++)
+	{
+		for (j=0;j<isize0;j++)
+		{
+			snew(all_r[i][j],molsize);
+		}
+	}
+
+	// We already have the first frame.
+	for (ii=0;ii<isize0;ii++)
+	{
+		ind0 = mols->index[molindex[0][ii]];
+		for (j=0;j<molsize;j++)
+		{
+			copy_rvec(x[ind0+j],all_r[0][ii][j]);
+		}
+	}
+
+	for (i=1;i<nframes;i++)
+	{
+		read_next_x(oenv,status,&t,x,box);
+		for (ii=0;ii<isize0;ii++)
+		{
+			ind0 = mols->index[molindex[0][ii]];
+			for (j=0;j<molsize;j++)
+			{
+				copy_rvec(x[ind0+j],all_r[i][ii][j]);
+			}
+		}
+		
+	}
+//	// DO SOME QUICK TESTING.
+//	fprintf(stderr,"%i\n",nframes);
+//	fprintf(stderr,"%f %f %f\n",all_r[0][0][0][0],all_r[0][0][0][1],all_r[0][0][0][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[0][0][1][0],all_r[0][0][1][1],all_r[0][0][1][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[0][0][2][0],all_r[0][0][2][1],all_r[0][0][2][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[0][0][3][0],all_r[0][0][3][1],all_r[0][0][3][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[99][0][0][0],all_r[99][0][0][1],all_r[99][0][0][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[99][0][1][0],all_r[99][0][1][1],all_r[99][0][1][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[99][0][2][0],all_r[99][0][2][1],all_r[99][0][2][2]);
+//	fprintf(stderr,"%f %f %f\n",all_r[99][0][3][0],all_r[99][0][3][1],all_r[99][0][3][2]);
+//	exit(0);
+
     //initialize beta tensor
+
     snew(beta_mol, DIM);
 	snew(beta_lab, DIM);
     snew(mu_ind_mols, isize0);
@@ -414,13 +470,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			{
 				for (l = 0;l < isize0;l++)
 				{
-					snew(beta_lab[i][j][k][l],isize0);
+					snew(beta_lab[i][j][k][l],nframes);
 				}
 			}
 		}
-	}//DMWHERE
-
-    /*allocate memory for beta in lab frame and initialize beta in mol frame*/
+	}
 
     if (method[0] == 's')
     {
@@ -598,13 +652,40 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 		}
 	}
-	
-	for (aa=0;aa<DIM;aa++)
+
+	for (ff=0;ff<nframes;ff++)
 	{
-		for (bb=0;bb<DIM;bb++)
+		for (i = 0;i<isize0;i++)
 		{
-			for (cc=0;cc<DIM;cc++)
+			// For this frame and this molecule, calculate the direction cosines. This is the only time
+			// we'll need them.
+
+			for (ii=0;ii<molsize;ii++)
 			{
+				pbc_dx(&pbc,all_r[ff][i][ii],all_r[ff][i][0],xmol[ii]);
+			}
+
+			calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
+
+			for (aa=0;aa<DIM;aa++)
+			{
+				for (bb=0;bb<DIM;bb++)
+				{
+					for (cc=0;cc<DIM;cc++)
+					{
+						beta_lab[aa][bb][cc][i][ff] = 0.0;
+						for (ii=0;ii<DIM;ii++)
+						{
+							for (jj=0;jj<DIM;jj++)
+							{
+								for (kk=0;kk<DIM;kk++)
+								{
+									beta_lab[aa][bb][cc][i][ff] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -643,6 +724,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		// For each q vector, let's calculate the intensity.
 		for (qq=0;qq<n_used;qq++)
 		{
+			fprintf(stderr,"Doing q-point number %i\n",qq);
 			// To recap (for my own sake: so that I don't forget!):
 			// For this group (of which there is only one), we are going
 			// to take every different q-vector that we have generated,
@@ -652,190 +734,77 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			// different experimental setups).
 			// For each of these experimental setups, we will calculate the intensity of
 			// ESHS light scattered. Each of these setups has a corresponding value of q.
-			fprintf(stderr,"%i\n",isize0);
+
+			for (c=0;c<nbingamma;c++)
+			{
+				s_method[g][qq][c] = 0.0;
+				s_method_coh[g][qq][c] = 0.0;
+				s_method_incoh[g][qq][c] = 0.0;
+
+				// For this given group,
+				// q-vector,
+				// and value of gamma,
+				// we are going to calculate the intensity.
+				for (ff=0;ff<nframes;ff++)
+				{
+					st = 0.0;
+					ct = 0.0;
+					for (i=0;i<isize0;i++)
+					{
+						mu_ind = 0.0;
+						for (aa=0;aa<DIM;aa++)
+						{
+							for (bb=0;bb<DIM;bb++)
+							{
+								for (cc=0;cc<DIM;cc++)
+								{
+									mu_ind += beta_lab[aa][bb][cc][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
+								}
+							}
+						}
+						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
+						q_xi = kvec[qq][0]*all_r[ff][i][0][0] + kvec[qq][1]*all_r[ff][i][0][1] + kvec[qq][2]*all_r[ff][i][0][2];
+						st += mu_ind*sin(q_xi);
+						ct += mu_ind*cos(q_xi);
+						zt += mu_ind*mu_ind;
+					}
+					// Add to the average the intensity for a single frame.
+					s_method[g][qq][c] += st*st + ct*ct;
+					s_method_incoh[g][qq][c] += zt;
+				}
+				s_method[g][qq][c] /= nframes;
+				s_method_incoh[g][qq][c] /= nframes;
+				s_method_coh[g][qq][c] = s_method[g][qq][c] - s_method_incoh[g][qq][c];
+			}
+
 		}
 
-		// DMW: EDITING FROM HERE
+		// For each q-value, average over all values of gamma.
+		for (g=0;g<ng;g++)
+		{
+			for (qq=0;qq<n_used;qq++)
+			{
+				for (c=1;c<nbingamma;c++)
+				{
+					s_method[g][qq][0] += s_method[g][qq][c];
+					s_method_coh[g][qq][0] += s_method_coh[g][qq][c];
+					s_method_incoh[g][qq][0] += s_method_incoh[g][qq][c];
+				}
+				s_method[g][qq][0] /= nbingamma;
+				s_method_coh[g][qq][0] /= nbingamma;
+				s_method_incoh[g][qq][0] /= nbingamma;
+			}
+		}
 
-		exit(0);
-	
-
-           /*initialize incoming and outcoming wave-vectors*/
-           vec_kout[XX] = 1.0; 
-           vec_kout[YY] = 0.0;
-           vec_kout[ZZ] = 0.0;
-           vec_2kin[XX] = 0.0;
-           vec_2kin[YY] = 0.0;
-           vec_2kin[ZZ] = 1.0;
-           /* compute the polarization vectors for outcoming beam*/     
-           cprod(vec_kout, vec_2kin, pol_perp);
-           cprod(vec_kout, pol_perp, pol_par);
-           //fprintf(stderr,"polarization vector perpendicular to outcoming beam %f %f %f\n",pol_perp[XX], pol_perp[YY], pol_perp[ZZ]);
-           //fprintf(stderr,"polarization vector parallel to Outcoming beam %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
-           svmul(sin(M_PI/180.0*pout_angle), pol_perp, pol_perp);
-           svmul(cos(M_PI/180.0*pout_angle), pol_par,  pol_par);
-           rvec_add(pol_perp, pol_par, vec_polout);
-           /* compute the polarization vectors for incoming beam*/                  
-           cprod(vec_kout, vec_2kin, pol_perp);
-           cprod(vec_2kin, pol_perp, pol_par);
-           //fprintf(stderr,"polarization vector perpendicular to incoming beam %f %f %f\n",pol_perp[XX], pol_perp[YY], pol_perp[ZZ]);
-           //fprintf(stderr,"polarization vector parallel to incoming %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
-           svmul(sin(M_PI/180.0*pin_angle), pol_perp, pol_perp);
-           svmul(cos(M_PI/180.0*pin_angle), pol_par , pol_par);
-           rvec_add(pol_perp, pol_par, vec_polin);
-           /*normalize kout, kin, vec_polout, vec_polin */
-           unitv(vec_kout, vec_kout);
-           unitv(vec_2kin, vec_2kin);
-           rvec_sub(vec_kout, vec_2kin, vec_kout_2kin);
-           unitv(vec_kout_2kin, vec_kout_2kin);
-           unitv(vec_polin, vec_polin);
-           unitv(vec_polout, vec_polout);
-           /*----------------------------------------------------------------------*/         
- 
-           snew(cos_t, nbinq);
-           snew(sin_t, nbinq);
-           theta0  = theta0*M_PI/180.0 ;
-           if (method[0] == 's')
-           {
-              qnorm = M_PI*2.0/(rmax*2.0)*qbin;
-           }
-           else
-           {
-              qnorm = M_PI*2.0/(rmax);
-           }
-           printf("----INITIALIZE DIRECTION OF INCOMING AND OUTCOMING WAVE-VECTORS-------------\n");
-           printf("direction of incoming wave-vector is %f %f %f\n", vec_2kin[XX], vec_2kin[YY], vec_2kin[ZZ]);
-           printf("direction of outcoming wave-vector is %f %f %f\n", vec_kout[XX], vec_kout[YY], vec_kout[ZZ]);
-           printf("----INITIALIZE DIRECTION OF INCOMING AND OUTCOMING POLARIZATION VECTORS-----\n");
-           printf("polarization of incoming wave-vector is %f %f %f\n", vec_polin[XX], vec_polin[YY], vec_polin[ZZ]);
-           printf("polarization of outcoming wave-vector is %f %f %f\n", vec_polout[XX], vec_polout[YY], vec_polout[ZZ]);
-           printf("----INITIALIZE DIRECTION OF SCATTERED WAVE VECTOR: q=kout-2kin -------------\n");
-           printf("direction of scattered wave-vector is %f %f %f\n", vec_kout[XX]-vec_2kin[XX], vec_kout[YY]-vec_2kin[YY], vec_kout[ZZ]-vec_2kin[ZZ]);
-           if (method[0] == 's')
-           { 
-              printf("minimum wave-vector is (2pi/L)*qbin = %f\n", qnorm);
-              printf("maximum wave-vector is (2pi/L)*qbin*nbinq = %f\n", qnorm*nbinq);
-           }
-           else
-           {
-              printf("minimum wave-vector is (2pi/(L/2)) = %f\n", qnorm);
-              printf("maximum wave-vector is (2pi/(L/2)) +(2pi/(L/2))/qbin * nbinq = %f\n", qnorm + qnorm/qbin*nbinq);
-           }
-           for (qq = 0; qq< nbinq; qq++)
-           {
-              // the magnitude of the scattered wave-vector has to be sqrt(2)*2pi/L*n, so we multiply by sqrt(2) since vec_kout_2kin is normalized
-/*              arr_qvec[qq][XX] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[XX]) ;
-              arr_qvec[qq][YY] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[YY]) ;
-              arr_qvec[qq][ZZ] = sqrt(2.0)*(qnorm + qnorm*qq)*(vec_kout_2kin[ZZ]) ;*/
-           }
-//           if (arr_qvec[0][YY] != 0.0 && arr_qvec[0][XX] != sqrt(2.0)*(qnorm + qnorm*qq)*1.0 && arr_qvec[0][ZZ] != sqrt(2.0)*(qnorm + qnorm*qq)*(-1.0))
-//           {
-//              gmx_fatal(FARGS,"the direction of the scattered wave-vector is not x - z.\n It is sufficient to compute the intensity using this direction of the scattered wave-vector, choose directions of incoming and outcoming wave-vectors such that q = kout -2kin = (x - z)*2Pi/L*n, where n is an integer  \n");
-//           }
-  
-           snew(s_method_t[g], nfaces);
-           snew(s_method_coh_t[g], nfaces);
-           snew(s_method_incoh_t[g], nfaces);
-           snew(arr_qvec_faces,nfaces);
-           snew(vec_pout_theta_gamma,nfaces);
-           snew(vec_pin_theta_gamma, nfaces);
-           snew(theta_vec, nbintheta);
-           // this loop is to get the scattering wave-vector and polarization vectors for different faces of the cube
-           printf("\n----COMPUTE THE POLARIZATION VECTORS AT DIFFERENT SCATTERING ANGLES THETA.---------------------\n");
-           printf("----THETA IS DEFINED AS THE ANGLE BETWEEN THE INCOMING AND OUTCOMING WAVE-VECTORS.---------------\n");  
-           printf("----THE POLARIZATION VECTORS ARE ALSO COMPUTED AT DIFFERENT ANGLES GAMMA.------------------------\n");
-           printf("----GAMMA IS THE ANGLE DEFINED BY A PLANE THAT GOES THROUGH THE SCATTERING WAVE-VECTOR AND-------\n");
-           printf("----THE PLANE PARALLEL TO THE CHOSEN FACE OF THE SIMULATION BOX----------------------------------\n \n");
-           for (rr = 0; rr< nfaces; rr++)
-           {
-              snew(s_method_t[g][rr], nbinq);
-              snew(s_method_coh_t[g][rr], nbinq);
-              snew(s_method_incoh_t[g][rr], nbinq);
-              snew(arr_qvec_faces[rr],nbinq);
-              for (qq = 0; qq< nbinq; qq++)
-              {
-                 //now the magnitude of the wave-vector is indeed sqrt(2)*2pi/L*n so we don't need to multiply by sqrt(2).
-                 arr_qvec_faces[rr][qq][XX] = (qnorm + qnorm*qq/qbin)*(1.0) ;
-                 arr_qvec_faces[rr][qq][YY] = 0.0 ;
-                 arr_qvec_faces[rr][qq][ZZ] = (qnorm + qnorm*qq/qbin)*(-1.0) ;
-                 rotate_wave_vec(arr_qvec_faces[rr][qq], rr, arr_qvec_faces[rr][qq]);
-                 snew(s_method_t[g][rr], nbintheta);
-                 snew(s_method_coh_t[g][rr], nbintheta);
-                 snew(s_method_incoh_t[g][rr], nbintheta);          
-                 snew(vec_pout_theta_gamma[rr], nbintheta);
-                 snew(vec_pin_theta_gamma[rr], nbintheta);
- 
-                 for(tt = 0 ; tt < nbintheta; tt++)
-                 {
-                     snew(s_method_t[g][rr][tt],nbinq);
-                     snew(s_method_coh_t[g][rr][tt],nbinq);
-                     snew(s_method_incoh_t[g][rr][tt],nbinq);
-                     snew(vec_pout_theta_gamma[rr][tt], nbingamma);
-                     snew(vec_pin_theta_gamma[rr][tt], nbingamma);
-                 }
-                 for (tt = 0; tt < nbintheta; tt++)
-                 {
-                         //theta is the angle between the outcoming wave-vector and the scattered wave-vector
-                         //the experimental_theta is the angle between the incoming and outcoming wave-vectors and it is twice this value
-                         theta_vec[tt] = ( tt< nbintheta*0.5 ) ? /*5.0/(6.0*2.0)*/ 0.5*M_PI*(-1.0 + tt*2.0/nbintheta) : /*5.0/(6.0*2.0)**/ 0.5*M_PI*(-1.0 + 2.0/nbintheta + tt*2.0/nbintheta) ;
-                         // we get very close to ±90 degrees because kin and kout -> infinity at theta=±90 degrees
-                         theta_vec[0] = 0.5*M_PI*(-1.0)*0.999;
-                         theta_vec[nbintheta-1] = 0.5*M_PI*(-1.0 + 2.0/nbintheta + (nbintheta-1)*2.0/nbintheta)*0.999 ;
-                         if (fnBETACORR || fnFTBETACORR)
-                         {
-                            theta_vec[tt] = angle_corr*M_PI/(2.0*180.0);
-                         }
-                         // this loop is to  rotate the scattering plane wrt the scattering wave-vector
-                         for (c = 0; c < nbingamma; c++)
-                         {
-                             gamma = c*M_PI*invgamma;
-                             // compute the outcoming wave-vector as a function of the angles gamma and theta, and the corresponding polarization vector                       
-                             vec_kout[XX] = 0.5*(1.0 + tan(theta_vec[tt])*cos(gamma));
-                             vec_kout[YY] = 0.5*(sqrt(2)*tan(theta_vec[tt])*sin(gamma));
-                             vec_kout[ZZ] = 0.5*(-1.0 + tan(theta_vec[tt])*cos(gamma));
-                             rotate_wave_vec(vec_kout, rr, vec_kout);
-                             cprod(vec_kout, arr_qvec_faces[rr][0], pol_perp);
-                             cprod(pol_perp, vec_kout, pol_par);
-                             svmul(sin(M_PI/180.0*pout_angle), pol_perp, pol_perp);
-                             //fprintf(stderr,"polarization vector perpendicolar to outcoming beam  %f %f %f\n",pol_perp[XX], pol_perp[YY], pol_perp[ZZ]);
-                             svmul(cos(M_PI/180.0*pout_angle), pol_par,  pol_par);
-                             //fprintf(stderr,"polarization vector parallel to outcoming beam %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
-                             rvec_add(pol_perp, pol_par, vec_pout_theta_gamma[rr][tt][c]);
-                             unitv( vec_pout_theta_gamma[rr][tt][c], vec_pout_theta_gamma[rr][tt][c]);
-         
-                             // compute the incoming wave-vector as a function of the angles gamma and theta, and the corresponding polarization vector
-                             vec_2kin[XX] = -0.5*(1.0 - tan(theta_vec[tt])*cos(gamma));
-                             vec_2kin[YY] = -0.5*(-sqrt(2)*tan(theta_vec[tt])*sin(gamma));
-                             vec_2kin[ZZ] = -0.5*(-1.0 - tan(theta_vec[tt])*cos(gamma));
-                             rotate_wave_vec(vec_2kin, rr, vec_2kin);         
-                             cprod(vec_2kin, arr_qvec_faces[rr][0], pol_perp);
-                             cprod(pol_perp, vec_2kin, pol_par);
-                             svmul(sin(M_PI/180.0*pin_angle), pol_perp, pol_perp);
-                             //fprintf(stderr,"polarization vector perpdicular to incoming beam %f %f %f\n",pol_perp[XX], pol_perp[YY], pol_perp[ZZ]);
-                             svmul(cos(M_PI/180.0*pin_angle), pol_par , pol_par);
-                             //fprintf(stderr,"polarization vector parallel to incoming %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
-                             rvec_add(pol_perp, pol_par, vec_pin_theta_gamma[rr][tt][c]);
-                             unitv(vec_pin_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c]);
-                             printf("polarization vectors at angles theta_expt = %f gamma = %f and face index %d \n",2.0*theta_vec[tt]*180.0/M_PI, gamma*180.0/M_PI, rr);
-                             printf("incoming polarization vector = %f %f %f \n",vec_pin_theta_gamma[rr][tt][c][XX], vec_pin_theta_gamma[rr][tt][c][YY], vec_pin_theta_gamma[rr][tt][c][ZZ]);
-                             printf("outcoming polarization vector = %f %f %f \n",vec_pout_theta_gamma[rr][tt][c][XX], vec_pout_theta_gamma[rr][tt][c][YY], vec_pout_theta_gamma[rr][tt][c][ZZ]);
-                             printf("direction of scattered wave-vector = %f %f %f \n", vec_kout[XX] -vec_2kin[XX], vec_kout[YY] - vec_2kin[YY], vec_kout[ZZ] -vec_2kin[ZZ]);
-                             check_pol = iprod(vec_pin_theta_gamma[rr][tt][c],vec_pout_theta_gamma[rr][tt][c]);
-                             printf("(incoming polarization vec) dot (outcoming polarization vec) = %.17g\n",check_pol);
-                         }
-                 }
-              }
-              if ((rr == 0) || (rr == 2) || (rr == 4))
-              {
-                 printf("smallest scattering wavevector along one of the diagonals of the faces of the simulation box at |q| = %f nm^-1\n",norm(arr_qvec_faces[rr][0]));
-              }
-              else if ((rr == 1) || (rr == 3) || (rr == 5))
-              {
-                 printf("smallest scattering wavevector along one of the diagonals of sides of the simulation box at |q| = %f nm^-1\n",norm(arr_qvec_faces[rr][0]));
-              }
-              printf("q = %f %f %f\n", arr_qvec_faces[rr][0][XX], arr_qvec_faces[rr][0][YY], arr_qvec_faces[rr][0][ZZ]);
-           }
     }
+
+	// DMW: EDITING FROM HERE
+	// Still to do:
+	// 1. Output intensity.
+	// 2. Check that results are correct.
+	// 3. Improve sine and cosine calculation.
+
+	exit(0);
     
     snew(x_i1, max_i);
     nframes    = 0;
@@ -846,139 +815,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     }
 
     rng=gmx_rng_init(gmx_rng_make_seed());
-
-    if (method[0] == 's' )
-    {
-        fprintf(stderr,"using a single sum to compute intensity\n");
-        do
-        {
-            copy_mat(box, box_pbc);
-            if (top != NULL)
-            {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
-            invvol      = 1/det(box_pbc);
-            invvol_sum += invvol;
-            
-            for (g = 0; g < ng; g++)
-            {
-                snew(cos_tq, nfaces);
-                snew(sin_tq, nfaces);
-                snew(mu_sq_t, nfaces); 
-
-                for (rr = 0; rr < nfaces; rr++)
-                {
-                   snew(cos_tq[rr], nbintheta);
-                   snew(sin_tq[rr], nbintheta);
-                   snew(mu_sq_t[rr], nbintheta);
-                   for (tt = 0; tt < nbintheta; tt++)
-                   {
-                       snew(cos_tq[rr][tt],nbingamma);
-                       snew(sin_tq[rr][tt],nbingamma);
-                       snew(mu_sq_t[rr][tt], nbingamma);
-                       for (c = 0; c <nbingamma; c++)
-                       {
-                           snew(cos_tq[rr][tt][c],nbinq);
-                           snew(sin_tq[rr][tt][c],nbinq);
-                       }
-                   }
-                }
-                 
-                for (i = 0; i < isize0; i++)
-                {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    for (aa = 0; aa < molsize; aa++)
-                    {
-                       pbc_dx(&pbc,x[ind0+aa],x[ind0],xmol[aa]);
-                       //printf("O %f %f %f\n",x[ind0+aa][XX]*10.0,x[ind0+aa][YY]*10.0,x[ind0+aa][ZZ]*10.0);
-                    }
-                    calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
-
-                      for (aa = 0; aa < DIM; aa++)
-                      {
-                          for (bb = 0; bb < DIM; bb++)
-                          {
-                              for (cc = 0; cc < DIM; cc++)
-                              {
-                                 beta_mol[aa][bb][cc] = Map->beta_gas[aa*9+ bb*3+ cc];
-                              }
-                          }
-                      }
-
-                    for (rr = 0; rr < nfaces; rr++)
-                    {
-                        for (tt = 0; tt < nbintheta; tt++ )
-                        {
-                            for (c  = 0; c < nbingamma; c++)
-                            {
-                                /* computes the products between rotation matrix and polarizaton vectors and returns mu_ind*/
-                                induced_second_order_fluct_dipole(cosdirmat, 
-                                                                  vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], 
-                                                                  beta_mol, &mu_ind);
-                                mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
-                                mu_ind_mols[i] = mu_ind;
-                                for (qq = 0; qq < nbinq; qq++)
-                                {
-                                    q_xi = iprod(arr_qvec_faces[rr][qq],xi);
-                                    cos_tq[rr][tt][c][qq] += mu_ind*cos(q_xi);
-                                    sin_tq[rr][tt][c][qq] += mu_ind*sin(q_xi);
-                                }
-                            }
-                        }
-                     }
-                }
-                for (rr = 0; rr < nfaces; rr++)
-                {
-                   for (tt = 0; tt < nbintheta; tt++)
-                   {
-                       for (c = 0; c < nbingamma; c++)
-                       {
-                           incoh_temp = mu_sq_t[rr][tt][c]*invsize0;
-                           for (qq = 0; qq < nbinq; qq++)
-                           {
-                              tot_temp = (cos_tq[rr][tt][c][qq]*cos_tq[rr][tt][c][qq] + sin_tq[rr][tt][c][qq]*sin_tq[rr][tt][c][qq])*invsize0;
-                              s_method_t[g][rr][tt][qq] +=  tot_temp  ;
-                              s_method_coh_t[g][rr][tt][qq] += tot_temp - incoh_temp;
-                              s_method_incoh_t[g][rr][tt][qq] += incoh_temp ;
-                           }
-                       }
-                   }
-                }
-                if (fnBETACORR)
-                {
-                 calc_beta_corr( &pbc,  mols, molindex, g, isize0, nbin, rmax2, invhbinw, x, mu_ind_mols, &beta_corr);
-                }
-                else if (fnFTBETACORR)
-                {
-                 calc_ft_beta_corr( &pbc,  mols, molindex, g, isize0,  nbinq, arr_qvec_faces, rmax2, invhbinw, x, mu_ind_mols, &ft_beta_corr);
-                }
-            }
-            for (rr = 0; rr < nfaces; rr++)
-            {
-               for (tt  = 0; tt < nbintheta; tt++)
-               {
-                   for (c = 0; c < nbingamma; c++)
-                   {
-                      sfree(cos_tq[rr][tt][c]);
-                      sfree(sin_tq[rr][tt][c]);
-                   }
-                   sfree(cos_tq[rr][tt]);
-                   sfree(sin_tq[rr][tt]);
-                   sfree(mu_sq_t[rr][tt]);
-               }
-               sfree(cos_tq[rr]);
-               sfree(sin_tq[rr]);
-               sfree(mu_sq_t[rr]);
-            }
-            sfree(cos_tq);
-            sfree(sin_tq);
-            sfree(mu_sq_t);
-            nframes++;
-        }
-        while (read_next_x(oenv, status, &t, x, box));
-    }
     
     fprintf(stderr, "\n");
     if (bPBC && (NULL != top))
