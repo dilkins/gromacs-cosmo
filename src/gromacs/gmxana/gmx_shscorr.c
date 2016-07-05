@@ -559,16 +559,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	}
 	
 	snew(kvec,n_used);
-	for (i=0;i<n_used;i++)
+	for (qq=0;qq<n_used;qq++)
 	{
-		snew(kvec[i],4);
-		for (j=0;j<4;j++)
-		{
-			kvec[i][0] = qnorm * narray[i][0];
-			kvec[i][1] = qnorm * narray[i][1];
-			kvec[i][2] = qnorm * narray[i][2];
-			kvec[i][3] = qnorm * sqrt(1.0*narray[i][3]);
-		}
+		snew(kvec[qq],4);
+//		for (j=0;j<4;j++)
+//		{
+		kvec[qq][0] = qnorm * narray[qq][0];
+		kvec[qq][1] = qnorm * narray[qq][1];
+		kvec[qq][2] = qnorm * narray[qq][2];
+		kvec[qq][3] = qnorm * sqrt(1.0*narray[qq][3]);
+//		}
 	}
 	
 	// We now have a number of (nx,ny,nz) vectors; these will determine our scattering
@@ -698,7 +698,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
-	beta_mol[2][2][2] = 1.0;
+	beta_mol[2][2][2] = 2.28499883794;
 	// DMW: This should be changed later on!
 
 	for (ff=0;ff<nframes;ff++)
@@ -732,7 +732,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 								}
 							}
 						}
-//						beta_lab[aa][bb][cc][i][ff] = beta_mol[2][2][2]*cosdirmat[aa][2]*cosdirmat[bb][2]*cosdirmat[cc][2];
 					}
 				}
 			}
@@ -834,17 +833,33 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 						{
 							for (bb=0;bb<DIM;bb++)
 							{
-								for (cc=0;cc<DIM;cc++)
+								mu_ind += beta_lab[aa][bb][bb][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][bb];
+								for (cc=bb+1;cc<DIM;cc++)
 								{
-									mu_ind += beta_lab[aa][bb][cc][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
+									mu_ind += 2.0*beta_lab[aa][bb][cc][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
 								}
 							}
 						}
-						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
 
+/*						mu_ind =beta_lab[0][0][0][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][0]*v_vec[qq][c][0] + beta_lab[0][0][1][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][0]*v_vec[qq][c][1] +
+								beta_lab[0][0][2][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][0]*v_vec[qq][c][2] + beta_lab[0][1][0][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][1]*v_vec[qq][c][0] +
+								beta_lab[0][1][1][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][1]*v_vec[qq][c][1] + beta_lab[0][1][2][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][1]*v_vec[qq][c][2] +
+								beta_lab[0][2][0][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][2]*v_vec[qq][c][0] + beta_lab[0][2][1][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][2]*v_vec[qq][c][1] + 
+								beta_lab[0][2][2][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][2]*v_vec[qq][c][2] +
+								beta_lab[1][0][0][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][0]*v_vec[qq][c][0] + beta_lab[1][0][1][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][0]*v_vec[qq][c][1] +
+								beta_lab[1][0][2][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][0]*v_vec[qq][c][2] + beta_lab[1][1][0][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][1]*v_vec[qq][c][0] +
+								beta_lab[1][1][1][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][1]*v_vec[qq][c][1] + beta_lab[1][1][2][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][1]*v_vec[qq][c][2] +
+								beta_lab[1][2][0][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][2]*v_vec[qq][c][0] + beta_lab[1][2][1][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][2]*v_vec[qq][c][1] + 
+								beta_lab[1][2][2][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][2]*v_vec[qq][c][2] +
+								beta_lab[2][0][0][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][0]*v_vec[qq][c][0] + beta_lab[2][0][1][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][0]*v_vec[qq][c][1] +
+								beta_lab[2][0][2][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][0]*v_vec[qq][c][2] + beta_lab[2][1][0][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][1]*v_vec[qq][c][0] +
+								beta_lab[2][1][1][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][1]*v_vec[qq][c][1] + beta_lab[2][1][2][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][1]*v_vec[qq][c][2] +
+								beta_lab[2][2][0][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][2]*v_vec[qq][c][0] + beta_lab[2][2][1][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][2]*v_vec[qq][c][1] + 
+								beta_lab[2][2][2][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][2]*v_vec[qq][c][2];*/
+
+						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
 						ct += mu_ind*cst[ff][i];
 						st += mu_ind*snt[ff][i];
-
 						zt += mu_ind*mu_ind;
 					}
 					// Add to the average the intensity for a single frame.
@@ -876,7 +891,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// Still to do:
 	// 1. Output intensity.
 	// 2. Check that results are correct.
-	// 3. Improve sine and cosine calculation.
 
 	// Now, we have the intensity for many different wavevectors. What we really want is
 	// the intensity as a function of the magnitude |q|. The largest possible square
@@ -903,7 +917,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			intens_cohrt[g][n2] += s_method_coh[g][qq][0];
 			intens_incoh[g][n2] += s_method_incoh[g][qq][0];
 			num_count[n2] += 1;
-//			fprintf(stderr,"%i %i %i %i %i\n",n2,qq,narray[qq][0],narray[qq][1],narray[qq][2]);
 		}
 		for (qq=0;qq<nmax2+1;qq++)
 		{
@@ -916,12 +929,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
-//	for (qq=0;qq<nmax2;qq++)
-//	{
-//		fprintf(stderr,"%i %i\n",qq,num_count[qq]);
-//	}
-//	exit(0);
-
 	// Now we have the intensity for each type of scattering, averaged over frames and
 	// values of gamma; we have the average intensity for each possible modulus |q|.
 	// (Or rather, as it stands, nx^2 + ny^2 + nz^2).
@@ -932,7 +939,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]*invsize0/(nbingamma*nframes));
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]*invsize0*invgamma/(nframes));
 		}
 	}
 	gmx_ffclose(fpn);
@@ -943,7 +950,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]*invsize0/(nbingamma*nframes));
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]*invsize0*invgamma/(nframes));
 		}
 	}
 	gmx_ffclose(fpn);
@@ -954,7 +961,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]*invsize0/(nbingamma*nframes));
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]*invsize0*invgamma/(nframes));
 		}
 	}
 	gmx_ffclose(fpn);
