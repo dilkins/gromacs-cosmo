@@ -131,10 +131,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
-    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn;
+    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb;
     real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,st,ct,zt;
 	rvec			***all_r;
-	real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval;
+	real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval,**snt,**cst;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -455,10 +455,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				rval = all_r[ff][i][0][j];
 				s_array[ff][i][j][0] = 0.0;
 				c_array[ff][i][j][0] = 1.0;
-				q_xi = 2.0 * M_PI * rval * box[j][j];
+				q_xi = 2.0 * M_PI * rval / box[j][j];
 				// CHECK THIS. AND TAKE OUTSIDE OF LOOPS.
 				s_array[ff][i][j][1] = sin(q_xi);
 				c_array[ff][i][j][1] = cos(q_xi);
+//				fprintf(stderr,"HERE %i %i %i %f %f %f %f\n",ff,i,j,rval,q_xi,sin(q_xi),cos(q_xi));
 				for (nn=2;nn<nmax+1;nn++)
 				{
 					s_array[ff][i][j][nn] = s_array[ff][i][j][nn-1]*c_array[ff][i][j][1] + c_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
@@ -467,6 +468,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 		}
 	}
+
+//	exit(0);
 
     //initialize beta tensor
 
@@ -741,6 +744,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");
 	}
 
+	snew(snt,nframes);
+	snew(cst,nframes);
+	for (ff=0;ff<nframes;ff++)
+	{
+		snew(snt[ff],isize0);
+		snew(cst[ff],isize0);
+	}
+
     snew(s_method, ng);
     snew(s_method_coh, ng);
     snew(s_method_incoh, ng);
@@ -781,6 +792,26 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			// For each of these experimental setups, we will calculate the intensity of
 			// ESHS light scattered. Each of these setups has a corresponding value of q.
 
+			nx = narray[qq][0];
+			ny = narray[qq][1];
+			nz = narray[qq][2];
+			nxa = abs(nx);
+			nya = abs(ny);
+			nza = abs(nz);
+			// The sine matrices are odd in their arguments; we must take this into account.
+			nxb = 2*(nx>0) - 1;
+			nyb = 2*(ny>0) - 1;
+			nzb = 2*(nz>0) - 1;
+
+			for (ff=0;ff<nframes;ff++)
+			{
+				for (i=0;i<isize0;i++)
+				{
+					cst[ff][i] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+					snt[ff][i] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+				}
+			}
+
 			for (c=0;c<nbingamma;c++)
 			{
 				s_method[g][qq][c] = 0.0;
@@ -795,6 +826,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				{
 					st = 0.0;
 					ct = 0.0;
+					zt = 0.0;
 					for (i=0;i<isize0;i++)
 					{
 						mu_ind = 0.0;
@@ -809,26 +841,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 							}
 						}
 						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
-//						q_xi = kvec[qq][0]*all_r[ff][i][0][0] + kvec[qq][1]*all_r[ff][i][0][1] + kvec[qq][2]*all_r[ff][i][0][2];
-						q_xi = narray[qq][0]*all_r[ff][i][0][0] + narray[qq][1]*all_r[ff][i][0][1] + narray[qq][2]*all_r[ff][i][0][2];
-						q_xi *= 2.0 * M_PI / box[1][1];
 
-//						mu_ind = 1.0;
+						ct += mu_ind*cst[ff][i];
+						st += mu_ind*snt[ff][i];
 
-						st += mu_ind*sin(q_xi);
-						ct += mu_ind*cos(q_xi);
 						zt += mu_ind*mu_ind;
-//						fprintf(stderr,"%f %f %f B\n",q_xi,sin(q_xi),cos(q_xi));
-//						fprintf(stderr,"mu_ind=%f\n",mu_ind);
 					}
 					// Add to the average the intensity for a single frame.
 					s_method[g][qq][c] += st*st + ct*ct;
 					s_method_incoh[g][qq][c] += zt;
-
-//					fprintf(stderr,"%f %f %f %f %f A\n",s_method[g][qq][c],s_method_incoh[g][qq][c],st,ct,zt);
 				}
-//				s_method[g][qq][c] /= nframes;
-//				s_method_incoh[g][qq][c] /= nframes;
 				s_method_coh[g][qq][c] = s_method[g][qq][c] - s_method_incoh[g][qq][c];
 			}
 
@@ -845,9 +867,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 					s_method_coh[g][qq][0] += s_method_coh[g][qq][c];
 					s_method_incoh[g][qq][0] += s_method_incoh[g][qq][c];
 				}
-//				s_method[g][qq][0] /= nbingamma;
-//				s_method_coh[g][qq][0] /= nbingamma;
-//				s_method_incoh[g][qq][0] /= nbingamma;
 			}
 		}
 
