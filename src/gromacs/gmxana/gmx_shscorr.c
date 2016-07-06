@@ -98,7 +98,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            g, natoms, nanions, ncations, i, j, k, qq, n, c, tt, rr, nframes, nfaces, gr_ind, nbin, aa, bb, cc;
     real         ***s_method, ***s_method_coh, ***s_method_incoh, **temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
-    real          *cos_t, *sin_t, ****cos_tq, ****sin_tq,   mu_ind =0.0, mu_sq =0.0, mod_f ;
+    real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, mu_sq =0.0, mod_f ;
     real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
     int            max_i, isize0, ind0, indj;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
@@ -131,10 +131,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
-    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb;
-    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,st,ct,zt;
-	rvec			***all_r;
-	real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval,**snt,**cst;
+    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss;
+    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,*st,*ct,*zt;
+    rvec			***all_r;
+    real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval,***snt,***cst,dotp,mu_ind = 0.0,*induced_mu;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -557,7 +557,57 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 		}
 	}
-	
+
+	// If there are any duplicates, we can save some time later on in our calculations.
+	// Go through and check all pairs for duplicates.
+	snew(repeat_list,n_used);
+	snew(num_repeats,n_used);
+	snew(to_repeat,n_used);
+	for (qq=0;qq<n_used;qq++)
+	{
+		snew(to_repeat[qq],n_used);
+	}
+	for (qq=0;qq<n_used;qq++)
+	{
+		repeat_list[qq] = 0;
+		num_repeats[qq] = 0;
+		for (rr=0;rr<n_used;rr++)
+		{
+			to_repeat[qq][rr] = 0;
+		}
+	}
+
+	for (qq=0;qq<n_used;qq++)
+	{
+		for (rr=qq+1;rr<n_used;rr++)
+		{
+			n2 = narray[qq][0]*narray[rr][0] + narray[qq][1]*narray[rr][1] + narray[qq][2]*narray[rr][2];
+			dotp = (double)(n2)/(sqrt(narray[qq][3])*sqrt(narray[rr][3]));
+			if (((dotp == 1.0) || (dotp == -1.0)) && (repeat_list[rr]==0))
+			{
+				repeat_list[rr] = qq;
+				to_repeat[qq][num_repeats[qq]] = rr;
+				num_repeats[qq] += 1;
+			}
+		}
+	}
+	nmx = 0;
+	for (qq=0;qq<n_used;qq++)
+	{
+		nmx = max(nmx,num_repeats[qq]);
+	}
+
+//	for (qq=0;qq<n_used;qq++)
+//	{
+//		fprintf(stderr,"A %i %i\n",qq,repeat_list[qq]);
+//	}
+
+//	exit(0);
+
+	// If repeat_list[qq] = 0, then this wavevector is unique and we must deal with it by itself.
+	// But, if repeat_list[qq] = rr, then this wavevector is proportional to that of rr, and we can use
+	// the same induced dipole moment.
+
 	snew(kvec,n_used);
 	for (qq=0;qq<n_used;qq++)
 	{
@@ -665,7 +715,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 	
-	fprintf(stderr,"Using %i points in reciprocal space\n",n_used);
+	fprintf(stderr,"\nUsing %i points in reciprocal space\n",n_used);
 
 	// We now have a certain number of q vectors, along with the U and V vectors corresponding to
 	// them, for a certain number of scattering planes each.
@@ -698,6 +748,12 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
+//	beta_mol[0][0][2] = -2.32259290575;
+//	beta_mol[0][2][0] = -2.32259290575;
+//	beta_mol[1][1][2] = 1.6012986999;
+//	beta_mol[1][2][1] = 1.6012986999;
+//	beta_mol[2][0][0] = -2.32259290575;
+//	beta_mol[2][1][1] = 1.6012986999;
 	beta_mol[2][2][2] = 2.28499883794;
 	// DMW: This should be changed later on!
 
@@ -750,6 +806,17 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		snew(snt[ff],isize0);
 		snew(cst[ff],isize0);
 	}
+	for (ff=0;ff<nframes;ff++)
+	{
+		for (i=0;i<isize0;i++)
+		{
+			snew(snt[ff][i],nmx+1);
+			snew(cst[ff][i],nmx+1);
+		}
+	}
+	snew(ct,nmx+1);
+	snew(st,nmx+1);
+	snew(zt,nmx+1);
 
     snew(s_method, ng);
     snew(s_method_coh, ng);
@@ -781,6 +848,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		for (qq=0;qq<n_used;qq++)
 		{
 			fprintf(stderr,"Doing q-point number %i of %i\n",qq+1,n_used);
+		if (repeat_list[qq]==0){
 			// To recap (for my own sake: so that I don't forget!):
 			// For this group (of which there is only one), we are going
 			// to take every different q-vector that we have generated,
@@ -806,8 +874,36 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			{
 				for (i=0;i<isize0;i++)
 				{
-					cst[ff][i] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
-					snt[ff][i] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+					cst[ff][i][0] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+					snt[ff][i][0] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+				}
+			}
+
+			if (num_repeats[qq]>0)
+			{
+				// This q-vector is in the same direction as some other q-vectors; we can use its induced dipole to
+				// give us the dipoles of other vectors.
+				for (rr=0;rr<num_repeats[qq];rr++)
+				{
+					ss = to_repeat[qq][rr];
+					fprintf(stderr,"Repeat for %i\n",ss);
+					nx = narray[ss][0];ny=narray[ss][1];nz=narray[ss][2];
+					nxa=abs(nx);nya=abs(ny);nza=abs(nz);
+					nxb=2*(nx>0)-1;nyb=2*(ny>0)-1;nzb=2*(nz>0)-1;
+					for (ff=0;ff<nframes;ff++)
+					{
+						for (i=0;i<isize0;i++)
+						{
+							cst[ff][i][rr+1] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - 
+								nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - 
+								nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - 
+								nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+							snt[ff][i][rr+1] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + 
+								nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + 
+								nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - 
+								nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+						}
+					}
 				}
 			}
 
@@ -816,6 +912,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				s_method[g][qq][c] = 0.0;
 				s_method_coh[g][qq][c] = 0.0;
 				s_method_incoh[g][qq][c] = 0.0;
+				if (num_repeats[qq]>0)
+				{
+					for (rr=0;rr<num_repeats[qq];rr++)
+					{
+						ss = to_repeat[qq][rr];
+						s_method[g][ss][c] = 0.0;
+						s_method_coh[g][ss][c] = 0.0;
+						s_method_incoh[g][ss][c] = 0.0;
+					}
+				}
 
 				// For this given group,
 				// q-vector,
@@ -823,17 +929,29 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				// we are going to calculate the intensity.
 				for (ff=0;ff<nframes;ff++)
 				{
-					st = 0.0;
-					ct = 0.0;
-					zt = 0.0;
+					st[0] = 0.0;
+					ct[0] = 0.0;
+					zt[0] = 0.0;
+					if (num_repeats[qq]>0)
+					{
+						for (rr=0;rr<num_repeats[qq];rr++)
+						{
+							st[rr+1] = 0.0;
+							ct[rr+1] = 0.0;
+							zt[rr+1] = 0.0;
+						}
+					}
 					for (i=0;i<isize0;i++)
 					{
 						mu_ind = 0.0;
+
 						for (aa=0;aa<DIM;aa++)
 						{
+							mu_ind += beta_lab[aa][0][0][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][0]*v_vec[qq][c][0] +
+									  beta_lab[aa][1][1][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][1]*v_vec[qq][c][1] +
+									  beta_lab[aa][2][2][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][2]*v_vec[qq][c][2];
 							for (bb=0;bb<DIM;bb++)
 							{
-								mu_ind += beta_lab[aa][bb][bb][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][bb];
 								for (cc=bb+1;cc<DIM;cc++)
 								{
 									mu_ind += 2.0*beta_lab[aa][bb][cc][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
@@ -841,34 +959,46 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 							}
 						}
 
-/*						mu_ind =beta_lab[0][0][0][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][0]*v_vec[qq][c][0] + beta_lab[0][0][1][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][0]*v_vec[qq][c][1] +
-								beta_lab[0][0][2][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][0]*v_vec[qq][c][2] + beta_lab[0][1][0][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][1]*v_vec[qq][c][0] +
-								beta_lab[0][1][1][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][1]*v_vec[qq][c][1] + beta_lab[0][1][2][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][1]*v_vec[qq][c][2] +
-								beta_lab[0][2][0][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][2]*v_vec[qq][c][0] + beta_lab[0][2][1][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][2]*v_vec[qq][c][1] + 
-								beta_lab[0][2][2][i][ff]*u_vec[qq][c][0]*v_vec[qq][c][2]*v_vec[qq][c][2] +
-								beta_lab[1][0][0][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][0]*v_vec[qq][c][0] + beta_lab[1][0][1][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][0]*v_vec[qq][c][1] +
-								beta_lab[1][0][2][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][0]*v_vec[qq][c][2] + beta_lab[1][1][0][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][1]*v_vec[qq][c][0] +
-								beta_lab[1][1][1][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][1]*v_vec[qq][c][1] + beta_lab[1][1][2][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][1]*v_vec[qq][c][2] +
-								beta_lab[1][2][0][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][2]*v_vec[qq][c][0] + beta_lab[1][2][1][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][2]*v_vec[qq][c][1] + 
-								beta_lab[1][2][2][i][ff]*u_vec[qq][c][1]*v_vec[qq][c][2]*v_vec[qq][c][2] +
-								beta_lab[2][0][0][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][0]*v_vec[qq][c][0] + beta_lab[2][0][1][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][0]*v_vec[qq][c][1] +
-								beta_lab[2][0][2][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][0]*v_vec[qq][c][2] + beta_lab[2][1][0][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][1]*v_vec[qq][c][0] +
-								beta_lab[2][1][1][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][1]*v_vec[qq][c][1] + beta_lab[2][1][2][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][1]*v_vec[qq][c][2] +
-								beta_lab[2][2][0][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][2]*v_vec[qq][c][0] + beta_lab[2][2][1][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][2]*v_vec[qq][c][1] + 
-								beta_lab[2][2][2][i][ff]*u_vec[qq][c][2]*v_vec[qq][c][2]*v_vec[qq][c][2];*/
-
 						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
-						ct += mu_ind*cst[ff][i];
-						st += mu_ind*snt[ff][i];
-						zt += mu_ind*mu_ind;
+						ct[0] += mu_ind*cst[ff][i][0];
+						st[0] += mu_ind*snt[ff][i][0];
+						zt[0] += mu_ind*mu_ind;
+						if (num_repeats[qq]>0)
+						{
+							for (rr=0;rr<num_repeats[qq];rr++)
+							{
+								ct[rr+1] += mu_ind*cst[ff][i][rr+1];
+								st[rr+1] += mu_ind*snt[ff][i][rr+1];
+								zt[rr+1] += mu_ind*mu_ind;
+							}
+						}
 					}
 					// Add to the average the intensity for a single frame.
-					s_method[g][qq][c] += st*st + ct*ct;
-					s_method_incoh[g][qq][c] += zt;
+					s_method[g][qq][c] += st[0]*st[0] + ct[0]*ct[0];
+					s_method_incoh[g][qq][c] += zt[0];
+					if (num_repeats[qq]>0)
+					{
+						for (rr=0;rr<num_repeats[qq];rr++)
+						{
+							ss = to_repeat[qq][rr];
+							s_method[g][ss][c] += st[rr+1]*st[rr+1] + ct[rr+1]*ct[rr+1];
+							s_method_incoh[g][ss][c] += zt[rr+1];
+						}
+					}
 				}
 				s_method_coh[g][qq][c] = s_method[g][qq][c] - s_method_incoh[g][qq][c];
+				if (num_repeats[qq]>0)
+				{
+					for (rr=0;rr<num_repeats[qq];rr++)
+					{
+						ss = to_repeat[qq][rr];
+						s_method_coh[g][ss][c] = s_method[g][ss][c] - s_method_incoh[g][ss][c];
+					}
+				}
+				
 			}
 
+		}
 		}
 
 		// For each q-value, average over all values of gamma.
