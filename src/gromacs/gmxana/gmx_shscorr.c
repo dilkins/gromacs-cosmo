@@ -131,7 +131,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms,nrp;
-    int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss;
+    int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n_used,n2,n2_2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss;
     real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,*st,*ct,*zt;
     rvec			***all_r;
     real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval,***snt,***cst,dotp,mu_ind = 0.0,*induced_mu;
@@ -876,13 +876,13 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		for (i=0;i<isize0;i++)
 		{
-			snew(snt[ff][i],nmx+1);
-			snew(cst[ff][i],nmx+1);
+			snew(snt[ff][i],nmax2+1);
+			snew(cst[ff][i],nmax2+1);
 		}
 	}
-	snew(ct,nmx+1);
-	snew(st,nmx+1);
-	snew(zt,nmx+1);
+	snew(ct,nmax2+1);
+	snew(st,nmax2+1);
+	snew(zt,nmax2+1);
 
     snew(s_method, ng);
     snew(s_method_coh, ng);
@@ -939,10 +939,53 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			{
 				for (i=0;i<isize0;i++)
 				{
-					cst[ff][i][0] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
-					snt[ff][i][0] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+					cst[ff][i][0] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - 
+						nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - 
+						nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - 
+						nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
+					snt[ff][i][0] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + 
+						nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + 
+						nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - 
+						nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
 				}
 			}
+
+
+			n2 = narray[qq][3];
+			// Check to see whether we can use this q-vector to give us the results for any other q-vector.
+			if ((int)sqrt((float)nmax2/n2) > 1)
+			{
+				fprintf(stderr,"n2 = %i, out of %i, we can use this for %i %i\n",n2,nmax2,nmax2/n2,(int)sqrt((float)nmax2/n2));
+				// We can use this q-vector to give results for some of the other vectors within our range.
+				for (j=1;j<(int)sqrt((float)nmax2/n2);j++)
+				{
+//					fprintf(stderr,"We are doing %i\n",n2*(i+1));
+//					n2_2 = n2 * (j+1);
+					nx = nxa * (j+1);
+					ny = nya * (j+1);
+					nz = nza * (j+1);
+
+
+					for (ff=0;ff<nframes;ff++)
+					{
+						for (i=0;i<isize0;i++)
+						{
+							cst[ff][i][j] = ( c_array[ff][i][0][nx]*c_array[ff][i][1][ny]*c_array[ff][i][2][nz] - 
+								nxb*nyb*s_array[ff][i][0][nx]*s_array[ff][i][1][ny]*c_array[ff][i][2][nz] - 
+								nxb*nzb*s_array[ff][i][0][nx]*c_array[ff][i][1][ny]*s_array[ff][i][2][nz] - 
+								nyb*nzb*c_array[ff][i][0][nx]*s_array[ff][i][1][ny]*s_array[ff][i][2][nz]);
+							snt[ff][i][j] = ( nxb*s_array[ff][i][0][nx]*c_array[ff][i][1][ny]*c_array[ff][i][2][nz] + 
+								nyb*c_array[ff][i][0][nx]*s_array[ff][i][1][ny]*c_array[ff][i][2][nz] + 
+								nzb*c_array[ff][i][0][nx]*c_array[ff][i][1][ny]*s_array[ff][i][2][nz] - 
+								nxb*nyb*nzb*s_array[ff][i][0][nx]*s_array[ff][i][1][ny]*s_array[ff][i][2][nz]);
+						}
+					}
+
+				}
+			}
+
+
+
 
 			for (c=0;c<nbingamma;c++)
 			{
@@ -959,6 +1002,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 					st[0] = 0.0;
 					ct[0] = 0.0;
 					zt[0] = 0.0;
+					if ((int)sqrt((float)nmax2/n2)>1){for (j=1;j<(int)sqrt((float)nmax2/n2);j++){ st[j]=0.0;ct[j]=0.0;zt[j]=0.0; }}
 					for (i=0;i<isize0;i++)
 					{
 						mu_ind = 0.0;
@@ -983,18 +1027,39 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 						ct[0] += mu_ind*cst[ff][i][0];
 						st[0] += mu_ind*snt[ff][i][0];
 						zt[0] += mu_ind*mu_ind;
+
+						// If we are using this q-vector for another one with a higher magnitude, then we'd better do so now!
+						if ((int)sqrt((float)nmax2/n2) > 1)
+						{
+							for (j=1;j<(int)sqrt((float)nmax2/n2);j++)
+							{
+								ct[j] += mu_ind*cst[ff][i][j];
+								st[j] += mu_ind*snt[ff][i][j];
+								zt[j] += mu_ind*mu_ind;
+							}
+						}
 						
 					}
 					// Add to the average the intensity for a single frame.
-					n2 = narray[qq][3];
 					intens_total[g][n2] += st[0]*st[0] + ct[0]*ct[0];
 					intens_incoh[g][n2] += zt[0];
 					intens_cohrt[g][n2] += intens_total[g][n2] - intens_incoh[g][n2];
 					num_count[n2] += 1;
-//					s_method[g][qq][c] += st[0]*st[0] + ct[0]*ct[0];
-//					s_method_incoh[g][qq][c] += zt[0];
+
+					if ((int)sqrt((float)nmax2/n2)>1)
+					{
+						// This is the good bit: we are using the same mu_ind (i.e., the same u and v vectors), with a different
+						// magnitude of the same q-vector. This will allow us to increment another of the intensities at higher |q|. Great!
+						for (j=1;j<(int)sqrt((float)nmax2/n2);j++)
+						{
+							n2_2 = n2*(j+1)*(j+1);
+							intens_total[g][n2_2] += st[j]*st[j] + ct[j]*ct[j];
+							intens_incoh[g][n2_2] += zt[j];
+							intens_cohrt[g][n2_2] += intens_total[g][n2_2] - intens_incoh[g][n2_2];
+							num_count[n2_2] += 1;
+						}
+					}
 				}
-//				s_method_coh[g][qq][c] = s_method[g][qq][c] - s_method_incoh[g][qq][c];
 			}
 
 		}
