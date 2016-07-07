@@ -130,8 +130,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     gmx_rng_t      rng = NULL;
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
-    int           *chged_atom_indexes, n_chged_atoms;
-    int		       nx,ny,nz,maxnpoint,**narray,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss;
+    int           *chged_atom_indexes, n_chged_atoms,nrp;
+    int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n_used,n2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss;
     real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,*st,*ct,*zt;
     rvec			***all_r;
     real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval,***snt,***cst,dotp,mu_ind = 0.0,*induced_mu;
@@ -364,10 +364,64 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     set_pbc(&pbc, ePBCrdf, box_pbc);
     rmax     = sqrt(rmax2);
 
-	// Read in all frames.
+	// Find number of frames.
 	nframes = 0;
 	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
 	read_first_x(oenv, &status, fnTRX, &t, &x, box);
+
+//	fprintf(stderr,"HERE 1\n");
+//	sleep(20);
+
+
+    //initialize beta tensor
+
+    snew(beta_mol, DIM);
+	snew(beta_lab, DIM);
+    snew(mu_ind_mols, isize0);
+    
+    snew(beta_corr, nbin+1);
+    snew(ft_beta_corr,nbinq);
+    for (i = 0; i < DIM; i++)
+    {
+        snew(beta_mol[i], DIM);
+		snew(beta_lab[i], DIM);
+    }
+    for (i = 0; i < DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+            snew(beta_mol[i][j], DIM);
+            snew(beta_lab[i][j], DIM);
+        }
+    }
+	for (i = 0;i < DIM; i++)
+	{
+		for (j = 0;j < DIM; j++)
+		{
+			for (k = 0;k < DIM; k++)
+			{
+				snew(beta_lab[i][j][k],isize0);
+			}
+		}
+	}
+	for (i = 0;i < DIM; i++)
+	{
+		for (j = 0;j < DIM; j++)
+		{
+			for (k = 0;k < DIM; k++)
+			{
+				for (l = 0;l < isize0;l++)
+				{
+					snew(beta_lab[i][j][k][l],nframes);
+				}
+			}
+		}
+	}
+
+//	fprintf(stderr,"HERE 2\n");
+//	sleep(20);
+
+	// Read in frames.
 
 	snew(all_r,nframes);
 	for (i=0;i<nframes;i++)
@@ -418,13 +472,19 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 //	exit(0);
 
 	// Initialize sine and cosine arrays.
+//	fprintf(stderr,"HERE 3\n");
+//	sleep(20);
 	snew(s_array,nframes);
 	snew(c_array,nframes);
+//	fprintf(stderr,"HERE 3a\n");
+//	sleep(20);
 	for (ff=0;ff<nframes;ff++)
 	{
 		snew(s_array[ff],isize0);
 		snew(c_array[ff],isize0);
 	}
+//	fprintf(stderr,"HERE 3b\n");
+//	sleep(20);
 	for (ff=0;ff<nframes;ff++)
 	{
 		for (i=0;i<isize0;i++)
@@ -433,6 +493,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			snew(c_array[ff][i],3);
 		}
 	}
+//	fprintf(stderr,"HERE 3c %i\n",nmax+1);
+//	sleep(20);
 	for (ff=0;ff<nframes;ff++)
 	{
 		for (i=0;i<isize0;i++)
@@ -444,6 +506,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 		}
 	}
+
+//	fprintf(stderr,"HERE 4\n");
+//	sleep(20);
 
 	// Now, fill these arrays.
 	for (ff=0;ff<nframes;ff++)
@@ -471,51 +536,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 //	exit(0);
 
-    //initialize beta tensor
-
-    snew(beta_mol, DIM);
-	snew(beta_lab, DIM);
-    snew(mu_ind_mols, isize0);
-    
-    snew(beta_corr, nbin+1);
-    snew(ft_beta_corr,nbinq);
-    for (i = 0; i < DIM; i++)
-    {
-        snew(beta_mol[i], DIM);
-		snew(beta_lab[i], DIM);
-    }
-    for (i = 0; i < DIM; i++)
-    {
-        for (j = 0; j < DIM; j++)
-        {
-            snew(beta_mol[i][j], DIM);
-            snew(beta_lab[i][j], DIM);
-        }
-    }
-	for (i = 0;i < DIM; i++)
-	{
-		for (j = 0;j < DIM; j++)
-		{
-			for (k = 0;k < DIM; k++)
-			{
-				snew(beta_lab[i][j][k],isize0);
-			}
-		}
-	}
-	for (i = 0;i < DIM; i++)
-	{
-		for (j = 0;j < DIM; j++)
-		{
-			for (k = 0;k < DIM; k++)
-			{
-				for (l = 0;l < isize0;l++)
-				{
-					snew(beta_lab[i][j][k][l],nframes);
-				}
-			}
-		}
-	}
-
     if (method[0] == 's')
     {
        qnorm = M_PI*2.0/(rmax*2.0);
@@ -524,7 +544,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     {
       qnorm = M_PI*2.0/(rmax);
     }
-
 
 	// We want to find all (nx,ny,nz) values such that nx^2 + ny^2 + nz^2 <= nmax^2.
 	// Firstly, allocate an array to hold all of these values.
@@ -536,7 +555,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		snew(narray[i],4);
 	}
-	
+
 	nmax2 = nmax*nmax;
 	n_used = 0;
 	for (nx = -nmax;nx <= nmax;nx++)
@@ -558,69 +577,116 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
-	// If there are any duplicates, we can save some time later on in our calculations.
-	// Go through and check all pairs for duplicates.
-	snew(repeat_list,n_used);
-	snew(num_repeats,n_used);
-	snew(to_repeat,n_used);
-	for (qq=0;qq<n_used;qq++)
+	snew(narray2,n_used);
+	for (i=0;i<n_used;i++)
 	{
-		snew(to_repeat[qq],n_used);
+		snew(narray2[i],4);
 	}
+	for (i=0;i<n_used;i++)
+	{
+		for (j=0;j<4;j++)
+		{
+			narray2[i][j] = narray[i][j];
+		}
+	}
+	sfree(narray);
+
+	// OK, let's go through and see how many q values we don't have to do because their q-vectors are multiples
+	// of existing ones.
+	snew(repeat_list,n_used);
 	for (qq=0;qq<n_used;qq++)
 	{
 		repeat_list[qq] = 0;
-		num_repeats[qq] = 0;
-		for (rr=0;rr<n_used;rr++)
-		{
-			to_repeat[qq][rr] = 0;
-		}
 	}
-
 	for (qq=0;qq<n_used;qq++)
 	{
 		for (rr=qq+1;rr<n_used;rr++)
 		{
-			n2 = narray[qq][0]*narray[rr][0] + narray[qq][1]*narray[rr][1] + narray[qq][2]*narray[rr][2];
-			dotp = (double)(n2)/(sqrt(narray[qq][3])*sqrt(narray[rr][3]));
+			n2 = narray2[qq][0]*narray2[rr][0] + narray2[qq][1]*narray2[rr][1] + narray2[qq][2]*narray2[rr][2];
+			dotp = (double)(n2)/(sqrt(narray2[qq][3])*sqrt(narray2[rr][3]));
 			if (((dotp == 1.0) || (dotp == -1.0)) && (repeat_list[rr]==0))
 			{
+				// These two vectors are related to each other by a scale factor.
 				repeat_list[rr] = qq;
-				to_repeat[qq][num_repeats[qq]] = rr;
-				num_repeats[qq] += 1;
 			}
 		}
 	}
-	nmx = 0;
+
+	// Now for each of the groups that are related by scale factors, find the shortest vector.
+	snew(num_repeats,n_used);
+	for (qq=0;qq<n_used;qq++){num_repeats[qq]=0;}
 	for (qq=0;qq<n_used;qq++)
 	{
-		nmx = max(nmx,num_repeats[qq]);
+		// We only want to look at the vectors that are "originals".
+		if (repeat_list[qq]==0)
+		{
+			rr = qq;
+			for (ss=qq+1;ss<n_used;ss++)
+			{
+				if (repeat_list[ss] == qq)
+				{
+					if (narray2[ss][3] < narray2[rr][3]){rr = ss;}
+				}
+			}
+			// Now, rr is the vector in the same direction as qq with the smallest magnitude. This is the one we want to keep.
+			num_repeats[rr] = 1;
+		}
 	}
 
-//	for (qq=0;qq<n_used;qq++)
-//	{
-//		fprintf(stderr,"A %i %i\n",qq,repeat_list[qq]);
-//	}
 
-//	exit(0);
-
-	// If repeat_list[qq] = 0, then this wavevector is unique and we must deal with it by itself.
-	// But, if repeat_list[qq] = rr, then this wavevector is proportional to that of rr, and we can use
-	// the same induced dipole moment.
+	nrp = 0;
+	for (rr=0;rr<n_used;rr++)
+	{
+//		if (repeat_list[rr]==0){nrp++;}
+		if (num_repeats[rr]==1){nrp++;}
+	}
+	snew(narray,nrp);
+	for (i=0;i<nrp;i++)
+	{
+		snew(narray[i],4);
+	}
+	nmx = 0;
+	for (rr=0;rr<n_used;rr++)
+	{
+//		if (repeat_list[rr]==0)
+		if (num_repeats[rr]==1)
+		{
+			for (j=0;j<4;j++)
+			{
+				narray[nmx][j] = narray2[rr][j];
+			}
+			nmx++;
+		}
+	}
+	sfree(narray2);
+	n_used = nrp;
 
 	snew(kvec,n_used);
 	for (qq=0;qq<n_used;qq++)
 	{
 		snew(kvec[qq],4);
-//		for (j=0;j<4;j++)
-//		{
 		kvec[qq][0] = qnorm * narray[qq][0];
 		kvec[qq][1] = qnorm * narray[qq][1];
 		kvec[qq][2] = qnorm * narray[qq][2];
 		kvec[qq][3] = qnorm * sqrt(1.0*narray[qq][3]);
-//		}
 	}
-	
+
+	sfree(num_repeats);
+	sfree(repeat_list);
+
+	// We will be calculating the intensity as a function of the magnitude |q|. The largest
+	// possible square magnitude is nmax2.
+	snew(intens_total,ng);
+	snew(intens_cohrt,ng);
+	snew(intens_incoh,ng);
+	for (g=0;g<ng;g++)
+	{
+		snew(intens_total[g],nmax2+1);
+		snew(intens_cohrt[g],nmax2+1);
+		snew(intens_incoh[g],nmax2+1);
+	}
+	snew(num_count,nmax2+1);
+
 	// We now have a number of (nx,ny,nz) vectors; these will determine our scattering
 	// wavevectors. For each one, let's go through and work out the vectors u and v.
 	snew(u_vec,n_used);
@@ -640,6 +706,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			snew(v_vec[i][j],3);
 		}
 	}
+
+//	fprintf(stderr,"HERE 5\n");
+//	sleep(20);
 	
 	saout=sin(M_PI/180.0*pout_angle);
 	caout=cos(M_PI/180.0*pout_angle);
@@ -748,13 +817,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
-//	beta_mol[0][0][2] = -2.32259290575;
-//	beta_mol[0][2][0] = -2.32259290575;
-//	beta_mol[1][1][2] = 1.6012986999;
-//	beta_mol[1][2][1] = 1.6012986999;
-//	beta_mol[2][0][0] = -2.32259290575;
-//	beta_mol[2][1][1] = 1.6012986999;
-	beta_mol[2][2][2] = 2.28499883794;
+	beta_mol[2][2][2] = 1.0;
 	// DMW: This should be changed later on!
 
 	for (ff=0;ff<nframes;ff++)
@@ -794,11 +857,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
+	// We no longer need our r array, so let's free it up now.
+	sfree(all_r);
+
 	if (kern[0] != 'n')
 	{
 		fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");
 	}
-
+	nmx = 0;
 	snew(snt,nframes);
 	snew(cst,nframes);
 	for (ff=0;ff<nframes;ff++)
@@ -848,7 +914,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		for (qq=0;qq<n_used;qq++)
 		{
 			fprintf(stderr,"Doing q-point number %i of %i\n",qq+1,n_used);
-		if (repeat_list[qq]==0){
 			// To recap (for my own sake: so that I don't forget!):
 			// For this group (of which there is only one), we are going
 			// to take every different q-vector that we have generated,
@@ -879,49 +944,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				}
 			}
 
-			if (num_repeats[qq]>0)
-			{
-				// This q-vector is in the same direction as some other q-vectors; we can use its induced dipole to
-				// give us the dipoles of other vectors.
-				for (rr=0;rr<num_repeats[qq];rr++)
-				{
-					ss = to_repeat[qq][rr];
-					fprintf(stderr,"Repeat for %i\n",ss);
-					nx = narray[ss][0];ny=narray[ss][1];nz=narray[ss][2];
-					nxa=abs(nx);nya=abs(ny);nza=abs(nz);
-					nxb=2*(nx>0)-1;nyb=2*(ny>0)-1;nzb=2*(nz>0)-1;
-					for (ff=0;ff<nframes;ff++)
-					{
-						for (i=0;i<isize0;i++)
-						{
-							cst[ff][i][rr+1] = ( c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] - 
-								nxb*nyb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] - 
-								nxb*nzb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - 
-								nyb*nzb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
-							snt[ff][i][rr+1] = ( nxb*s_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*c_array[ff][i][2][nza] + 
-								nyb*c_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*c_array[ff][i][2][nza] + 
-								nzb*c_array[ff][i][0][nxa]*c_array[ff][i][1][nya]*s_array[ff][i][2][nza] - 
-								nxb*nyb*nzb*s_array[ff][i][0][nxa]*s_array[ff][i][1][nya]*s_array[ff][i][2][nza]);
-						}
-					}
-				}
-			}
-
 			for (c=0;c<nbingamma;c++)
 			{
 				s_method[g][qq][c] = 0.0;
 				s_method_coh[g][qq][c] = 0.0;
 				s_method_incoh[g][qq][c] = 0.0;
-				if (num_repeats[qq]>0)
-				{
-					for (rr=0;rr<num_repeats[qq];rr++)
-					{
-						ss = to_repeat[qq][rr];
-						s_method[g][ss][c] = 0.0;
-						s_method_coh[g][ss][c] = 0.0;
-						s_method_incoh[g][ss][c] = 0.0;
-					}
-				}
 
 				// For this given group,
 				// q-vector,
@@ -932,15 +959,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 					st[0] = 0.0;
 					ct[0] = 0.0;
 					zt[0] = 0.0;
-					if (num_repeats[qq]>0)
-					{
-						for (rr=0;rr<num_repeats[qq];rr++)
-						{
-							st[rr+1] = 0.0;
-							ct[rr+1] = 0.0;
-							zt[rr+1] = 0.0;
-						}
-					}
 					for (i=0;i<isize0;i++)
 					{
 						mu_ind = 0.0;
@@ -960,85 +978,48 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 						}
 
 						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
+//						q_xi = kvec[qq][0]*all_r[ff][i][0][0] + kvec[qq][1]*all_r[ff][i][0][1] + kvec[qq][2]*all_r[ff][i][0][2];
+
 						ct[0] += mu_ind*cst[ff][i][0];
 						st[0] += mu_ind*snt[ff][i][0];
 						zt[0] += mu_ind*mu_ind;
-						if (num_repeats[qq]>0)
-						{
-							for (rr=0;rr<num_repeats[qq];rr++)
-							{
-								ct[rr+1] += mu_ind*cst[ff][i][rr+1];
-								st[rr+1] += mu_ind*snt[ff][i][rr+1];
-								zt[rr+1] += mu_ind*mu_ind;
-							}
-						}
+						
 					}
 					// Add to the average the intensity for a single frame.
-					s_method[g][qq][c] += st[0]*st[0] + ct[0]*ct[0];
-					s_method_incoh[g][qq][c] += zt[0];
-					if (num_repeats[qq]>0)
-					{
-						for (rr=0;rr<num_repeats[qq];rr++)
-						{
-							ss = to_repeat[qq][rr];
-							s_method[g][ss][c] += st[rr+1]*st[rr+1] + ct[rr+1]*ct[rr+1];
-							s_method_incoh[g][ss][c] += zt[rr+1];
-						}
-					}
+					n2 = narray[qq][3];
+					intens_total[g][n2] += st[0]*st[0] + ct[0]*ct[0];
+					intens_incoh[g][n2] += zt[0];
+					intens_cohrt[g][n2] += intens_total[g][n2] - intens_incoh[g][n2];
+					num_count[n2] += 1;
+//					s_method[g][qq][c] += st[0]*st[0] + ct[0]*ct[0];
+//					s_method_incoh[g][qq][c] += zt[0];
 				}
-				s_method_coh[g][qq][c] = s_method[g][qq][c] - s_method_incoh[g][qq][c];
-				if (num_repeats[qq]>0)
-				{
-					for (rr=0;rr<num_repeats[qq];rr++)
-					{
-						ss = to_repeat[qq][rr];
-						s_method_coh[g][ss][c] = s_method[g][ss][c] - s_method_incoh[g][ss][c];
-					}
-				}
-				
+//				s_method_coh[g][qq][c] = s_method[g][qq][c] - s_method_incoh[g][qq][c];
 			}
 
-		}
 		}
 
 		// For each q-value, average over all values of gamma.
-		for (g=0;g<ng;g++)
-		{
-			for (qq=0;qq<n_used;qq++)
-			{
-				for (c=1;c<nbingamma;c++)
-				{
-					s_method[g][qq][0] += s_method[g][qq][c];
-					s_method_coh[g][qq][0] += s_method_coh[g][qq][c];
-					s_method_incoh[g][qq][0] += s_method_incoh[g][qq][c];
-				}
-			}
-		}
+//		for (g=0;g<ng;g++)
+//		{
+//			for (qq=0;qq<n_used;qq++)
+//			{
+//				for (c=1;c<nbingamma;c++)
+//				{
+//					s_method[g][qq][0] += s_method[g][qq][c];
+//					s_method_coh[g][qq][0] += s_method_coh[g][qq][c];
+//					s_method_incoh[g][qq][0] += s_method_incoh[g][qq][c];
+//				}
+//			}
+//		}
 
     }
 
 	// DMW: EDITING FROM HERE
-	// Still to do:
-	// 1. Output intensity.
-	// 2. Check that results are correct.
-
-	// Now, we have the intensity for many different wavevectors. What we really want is
-	// the intensity as a function of the magnitude |q|. The largest possible square
-	// magnitude is nmax2.
-	snew(intens_total,ng);
-	snew(intens_cohrt,ng);
-	snew(intens_incoh,ng);
-	for (g=0;g<ng;g++)
-	{
-		snew(intens_total[g],nmax2+1);
-		snew(intens_cohrt[g],nmax2+1);
-		snew(intens_incoh[g],nmax2+1);
-	}
-	snew(num_count,nmax2);
 
 	// num_count[qq] will be the number of n vectors with n^2 = qq. This will
 	// help us to calculate the average.
-	for (g=0;g<ng;g++)
+/*	for (g=0;g<ng;g++)
 	{
 		for (qq=0;qq<n_used;qq++)
 		{
@@ -1057,6 +1038,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				intens_incoh[g][qq] /= num_count[qq];
 			}
 		}
+	}*/
+
+	for (qq=0;qq<nmax2+1;qq++)
+	{
+		fprintf(stderr,"count %i %i\n",qq,num_count[qq]);
 	}
 
 	// Now we have the intensity for each type of scattering, averaged over frames and
@@ -1069,7 +1055,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]*invsize0*invgamma/(nframes));
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
@@ -1080,7 +1066,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]*invsize0*invgamma/(nframes));
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
@@ -1091,319 +1077,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]*invsize0*invgamma/(nframes));
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
-
-	exit(0);
-    
-    snew(x_i1, max_i);
-    nframes    = 0;
-    invvol_sum = 0;
-    if (bPBC && (NULL != top))
-    {
-        gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
-    }
-
-    rng=gmx_rng_init(gmx_rng_make_seed());
-    
-    fprintf(stderr, "\n");
-    if (bPBC && (NULL != top))
-    {
-        gmx_rmpbc_done(gpbc);
-    }
-    
-    close_trj(status);
-
-    sfree(x);
-
-    /* Average volume */
-    invvol = invvol_sum/nframes;
-    for (g = 0; g < ng; g++)
-    {
-        for (qq = 0; qq < nbinq ; qq++)
-        {
-/*           s_method[g][qq] = s_method[g][qq]/(nframes)  ;
-           s_method_coh[g][qq] = s_method_coh[g][qq]/(nframes)  ;
-           s_method_incoh[g][qq] = s_method_incoh[g][qq]/(nframes) ;*/
-	// DMW: HAD TO COMMENT OUT.
-        }
-    }
-
-    sprintf(gtitle, "Non-linear optical scattering ");
-    fp = xvgropen(fnTHETA, "S(theta)", "theta", "S(theta)", oenv);
-    sprintf(refgt, "%s", "");
-    fprintf(fp, "@    s%d legend \"incoherent\"\n",nplots);
-    fprintf(fp, "@target G0.S%d\n",nplots);
-    fprintf(fp, "@type xy\n");
-    nplots++ ;
-    for (tt = 0; tt < nbintheta ; tt++)
-    {
-       theta = 2.0*theta_vec[tt]*180.0/M_PI;
-       for (rr = 0; rr< nfaces; rr++)
-       {
-           fprintf(fp, "%10g", theta);
-           fprintf(fp, " %10g", s_method_incoh_t[0][rr][tt][0]/nframes*invgamma);
-           fprintf(fp, "\n");
-       }
-    }
-    fprintf(fp,"&\n");
-    for (qq = 0; qq < nbinq ; qq++)
-    {
-       for  (rr = 0; rr < nfaces; rr++)
-       {
-          fprintf(fp, "@    s%d legend \" coherent q=%g\" \n",nplots,norm(arr_qvec_faces[rr][qq]));
-          fprintf(fp, "@target G0.S%d\n",nplots);
-          fprintf(fp, "@type xy\n");
-          nplots++ ;
-          for (tt = 0; tt < nbintheta ; tt++)
-          {
-             theta = 2.0*theta_vec[tt]*180.0/M_PI;
-             fprintf(fp, "%10g", theta);
-             fprintf(fp, " %10g", s_method_coh_t[0][rr][tt][qq]/nframes*invgamma);
-             fprintf(fp, "\n");
-          }
-          fprintf(fp,"&\n");
-          fprintf(fp, "@    s%d legend \"total q=%g\"\n",nplots,norm(arr_qvec_faces[rr][qq]));
-          fprintf(fp, "@target G0.S%d\n",nplots);
-          nplots++ ;
-          fprintf(fp, "@type xy\n");
-          for (tt = 0; tt < nbintheta  ; tt++) 
-          { 
-             theta = 2.0*theta_vec[tt]*180.0/M_PI;
-             fprintf(fp, "%10g", theta);
-             fprintf(fp, " %10g", s_method_t[0][rr][tt][qq]/nframes*invgamma);
-             fprintf(fp, "\n");
-          }
-          fprintf(fp,"&\n");
-       }
-    }
-    gmx_ffclose(fp);
-    
-    if (!fnBETACORR )
-    {
-    // print the nonlinear scattering intensity as a function of wave-vector only if you don't compute the <beta(0)*beta(r)>
-    nplots = 1;
-    sprintf(gtitle, "Non-linear optical scattering ");
-    fpn = xvgropen(fnSFACT, "S(q)", "q (nm^-1)", "S(q)", oenv);
-    sprintf(refgt, "%s", "");
-    for (tt = 0; tt < nbintheta ; tt++)
-    {
-       theta = 2.0*theta_vec[tt]*180.0/M_PI;
-       if ((round(theta) == -45.0) || (round(theta) == -30.0 ) || (round(theta) == -60.0 ) || (round(theta) == -90.0)
-          || (round(theta) == -150.0)  || (round(theta) == -120.0) || (tt ==  0) || (tt == nbintheta/2))
-       {
-           fprintf(fpn, "@    s%d legend \"incoherent theta=%g all faces\"\n",nplots,theta);
-           fprintf(fpn, "@target G0.S%d\n",nplots);
-           fprintf(fpn, "@type xy\n");
-           for (qq = 0; qq< nbinq; qq++)
-           {
-               fprintf(fpn, "%10g", norm(arr_qvec_faces[1][qq]) );
-               fprintf(fpn, " %10g", (s_method_incoh_t[0][1][tt][qq]+ s_method_incoh_t[0][3][tt][qq] + s_method_incoh_t[0][5][tt][qq])/nframes*invgamma/3.0);
-               fprintf(fpn, "\n");
-               fprintf(fpn, "%10g", norm(arr_qvec_faces[0][qq]) );
-               fprintf(fpn, " %10g", (s_method_incoh_t[0][0][tt][qq]+ s_method_incoh_t[0][2][tt][qq] + s_method_incoh_t[0][4][tt][qq])/nframes*invgamma/3.0);
-               fprintf(fpn, "\n");
-           }
-           fprintf(fpn,"&\n");
-           nplots++;
-           fprintf(fpn, "@    s%d legend \"coherent theta=%g all faces\"\n",nplots,theta);
-           fprintf(fpn, "@target G0.S%d\n",nplots);
-           fprintf(fpn, "@type xy\n");
-           for (qq = 0; qq< nbinq; qq++)
-           {
-               fprintf(fpn, "%10g", norm(arr_qvec_faces[1][qq]) );
-               fprintf(fpn, " %10g", (s_method_coh_t[0][1][tt][qq]+ s_method_coh_t[0][3][tt][qq] + s_method_coh_t[0][5][tt][qq])/nframes*invgamma/3.0);
-               fprintf(fpn, "\n");
-               fprintf(fpn, "%10g", norm(arr_qvec_faces[0][qq]) );
-               fprintf(fpn, " %10g", (s_method_coh_t[0][0][tt][qq]+ s_method_coh_t[0][2][tt][qq] + s_method_coh_t[0][4][tt][qq])/nframes*invgamma/3.0);
-               fprintf(fpn, "\n");
-           }
-           fprintf(fpn,"&\n");
-           nplots++;
-           fprintf(fpn, "@    s%d legend \"total theta=%g all faces\"\n",nplots,theta);
-           fprintf(fpn, "@target G0.S%d\n",nplots);
-           fprintf(fpn, "@type xy\n");
-           for (qq = 0; qq< nbinq; qq++)
-           {
-               fprintf(fpn, "%10g", norm(arr_qvec_faces[1][qq]) );
-               fprintf(fpn, " %10g", (s_method_t[0][1][tt][qq]+ s_method_t[0][3][tt][qq] + s_method_t[0][5][tt][qq])/nframes*invgamma/3.0);
-               fprintf(fpn, "\n");
-               fprintf(fpn, "%10g", norm(arr_qvec_faces[0][qq]) );
-               fprintf(fpn, " %10g", (s_method_t[0][0][tt][qq]+ s_method_t[0][2][tt][qq] + s_method_t[0][4][tt][qq])/nframes*invgamma/3.0);
-               fprintf(fpn, "\n");
-           }
-           fprintf(fpn,"&\n");
-           nplots++;
-           for (rr = 0; rr< nfaces; rr++)
-           {
-               fprintf(fpn, "@    s%d legend \"incoherent theta=%4g face index=%d \"\n",nplots,theta,rr);
-               fprintf(fpn, "@target G0.S%d\n",nplots);
-               fprintf(fpn, "@type xy\n");
-               for (qq = 0; qq< nbinq; qq++)
-               {
-                   fprintf(fpn, "%10g", norm(arr_qvec_faces[rr][qq]) );
-                   fprintf(fpn, " %10g", s_method_incoh_t[0][rr][tt][qq]/nframes*invgamma);
-                   fprintf(fpn, "\n");
-               }
-               fprintf(fpn,"&\n");
-               nplots++;
-               fprintf(fpn, "@    s%d legend \"coherent theta=%4g face index=%d \"\n",nplots,theta,rr);
-               fprintf(fpn, "@target G0.S%d\n",nplots);
-               fprintf(fpn, "@type xy\n");
-               for (qq = 0; qq< nbinq; qq++)
-               {
-                   fprintf(fpn, "%10g", norm(arr_qvec_faces[rr][qq]) );
-                   fprintf(fpn, " %10g", s_method_coh_t[0][rr][tt][qq]/nframes*invgamma);
-                   fprintf(fpn, "\n");
-               }
-               fprintf(fpn,"&\n");
-               nplots++;
-               fprintf(fpn, "@    s%d legend \"total theta=%4g face index=%d \"\n",nplots,theta,rr);
-               fprintf(fpn, "@target G0.S%d\n",nplots);
-               fprintf(fpn, "@type xy\n");
-               for (qq = 0; qq< nbinq; qq++)
-               {
-                   fprintf(fpn, "%10g", norm(arr_qvec_faces[rr][qq]) );
-                   fprintf(fpn, " %10g", s_method_t[0][rr][tt][qq]/nframes*invgamma);
-                   fprintf(fpn, "\n");
-               }
-               fprintf(fpn,"&\n");
-               nplots++;
-           }
-       }
-    }
-    do_view(oenv, fnSFACT, NULL);
-    }
-
-    if (fnBETACORR)
-    {
-       /* Calculate volume of sphere segments or length of circle segments */
-       snew(inv_segvol, (nbin+1));
-       prev_spherevol = 0;
-       inv_segvol[0] = 1.0;
-       normfac = 1.0/(nframes*invvol*isize0*(isize[0]-1));
-       for (i = 1; (i < (nbin+1)); i++)
-       {
-           r = i*binwidth;
-           spherevol = (4.0/3.0)*M_PI*r*r*r;
-           segvol         = spherevol-prev_spherevol;
-           inv_segvol[i]  = 1.0/segvol;
-           prev_spherevol = spherevol;
-       }
-      
-       sprintf(gtitle, "Non-linear optical scattering ");
-       fpn = xvgropen(fnBETACORR, "hyperpolarizability spatial correlation", "r [nm]", "beta(0) beta(r)", oenv);
-       sprintf(refgt, "%s", "");
-       fprintf(fpn, "@type xy\n");
-
-       for (i = 0; i < nbin+1; i++)
-       {
-           fprintf(fpn, "%10g %10g\n", i*binwidth, beta_corr[i]*normfac*inv_segvol[i] );
-       }
-       gmx_ffclose(fpn);
-    }
-    else if (fnFTBETACORR)
-    {
-       sprintf(gtitle, "FT of beta-beta correlation ");
-       fpn = xvgropen(fnFTBETACORR, "hyperpolarizability spatial correlation", "r [nm]", "beta(0) beta(r)", oenv);
-       sprintf(refgt, "%s", "");
-       fprintf(fpn, "@type xy\n");
-       for (qq = 0; qq < nbinq; qq++)
-       {   
-           fprintf(fpn, "%10g %10g\n", norm(arr_qvec_faces[0][qq]), ft_beta_corr[qq]/nframes );
-       }
-       gmx_ffclose(fpn);
-    }
-
-    for (g = 0; g < ng; g++)
-    {
-       sfree(s_method[g]);
-       sfree(s_method_coh[g]);
-       sfree(s_method_incoh[g]);
-    }
-    if(method[0] == 'm')
-    {
-        for (i = 0; rr < isize0; rr++)
-        {
-           for (rr = 0; rr < nfaces; rr++)
-           {
-               for (tt = 0; tt < nbintheta; tt++)
-               {
-                   sfree(mu_ind_t[i][rr][tt]);
-               }
-               sfree(mu_ind_t[i][rr]);
-           }
-           sfree(mu_ind_t[i]);
-        }
-        sfree(mu_ind_t);
-    }
-
-    sfree(s_method);
-    sfree(s_method_coh);
-    sfree(arr_qvec);
-    sfree(cos_t);
-    sfree(sin_t);
-    sfree(temp_method);
-
-    for (i = 0; i < DIM; i++)
-    {
-        for (j = 0; j < DIM; j++)
-        {
-            sfree(beta_mol[i][j]);
-        }
-        sfree(beta_mol[i]);
-    }
-    sfree(beta_mol);
-    sfree(beta_corr);
-    sfree(mu_ind_mols);
-    if (kern[0] == 's')
-    {
-        initialize_free_quantities_on_grid(SKern_rho_O, ir, &grid_spacing,&grid_invspacing, FALSE, FALSE, &gridsize);
-        initialize_free_quantities_on_grid(SKern_rho_H, ir, &grid_spacing,&grid_invspacing, FALSE, FALSE, &gridsize);
-        initialize_free_quantities_on_grid(SKern_E, ir, &grid_spacing, &grid_invspacing, TRUE, FALSE, &gridsize);
-        sfree(gridsize);
-        fprintf(stderr,"quantities computed on global grid freed\n");
-        for ( i = 0; i< SKern_E->ndataset; i++)
-        {
-           for ( aa = 0; aa < DIM; aa++)
-           {
-               for( bb = 0; bb < DIM; bb++)
-               {
-                   sfree(SKern_E->coeff[i][aa][bb]);
-               }
-               sfree(SKern_E->coeff[i][aa]);
-           }
-           sfree(SKern_E->coeff[i]);
-        }
-        sfree(SKern_E->coeff);
-        for ( i = 0; i< SKern_rho_O->ndataset; i++)
-        {
-           for ( aa = 0; aa < DIM; aa++)
-           {
-               for( bb = 0; bb < DIM; bb++)
-               {
-                   sfree(SKern_rho_O->coeff[i][aa][bb]);
-                   sfree(SKern_rho_H->coeff[i][aa][bb]);
-               }
-               sfree(SKern_rho_O->coeff[i][aa]);
-               sfree(SKern_rho_H->coeff[i][aa]);
-           }
-           sfree(SKern_rho_O->coeff[i]);
-           sfree(SKern_rho_H->coeff[i]);
-        }
-        sfree(SKern_rho_O->coeff);
-        sfree(SKern_rho_H->coeff);
-
-        sfree(SKern_E->grid);                 sfree(SKern_rho_O->grid);          sfree(SKern_rho_H->grid);       
-        sfree(SKern_E->rotgrid);              sfree(SKern_rho_O->rotgrid);       sfree(SKern_rho_H->rotgrid);
-        sfree(SKern_E->translgrid);           sfree(SKern_rho_O->translgrid);    sfree(SKern_rho_H->translgrid);
-        sfree(SKern_E->meanquant);            sfree(SKern_rho_O->meanquant);     sfree(SKern_rho_H->meanquant);
-        sfree(SKern_E->weights);              sfree(SKern_rho_O->weights);       sfree(SKern_rho_H->weights);     
-        sfree(SKern_E->selfterm);              sfree(SKern_rho_O->selfterm);     sfree(SKern_rho_H->selfterm);            
-        
-   } 
 }
  
 int gmx_shscorr(int argc, char *argv[])
