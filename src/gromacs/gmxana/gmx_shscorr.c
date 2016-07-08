@@ -132,9 +132,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms,nrp;
     int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n2max2,n_used,n2,n2_2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss,n2a;
-    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,*st,*ct,*zt;
+    real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,****beta_lab,*st,*ct,*zt;
     rvec			**all_r;
-    real			***intens_total,***intens_cohrt,***intens_incoh,****s_array,****c_array,rval,dotp,mu_ind = 0.0,*induced_mu,xx,yy,zz;
+    real			**intens_total,**intens_cohrt,**intens_incoh,***s_array,***c_array,rval,dotp,mu_ind = 0.0,*induced_mu,xx,yy,zz;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -628,17 +628,17 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// Find number of frames.
 	nframes = 0;
 	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
+	fprintf(stderr,"\n\nTotal number of frames: %i\n\n",nframes);
 
 	// Initialize coordinate array.
 	snew(all_r,isize0);
 	for (i=0;i<isize0;i++){snew(all_r[i],molsize);}
 
 	// Initialize sine and cosine arrays.
-	snew(s_array,nframes);
-	snew(c_array,nframes);
-	for (ff=0;ff<nframes;ff++){snew(s_array[ff],isize0);snew(c_array[ff],isize0);}
-	for (ff=0;ff<nframes;ff++){for (i=0;i<isize0;i++){snew(s_array[ff][i],3);snew(c_array[ff][i],3);}}
-	for (ff=0;ff<nframes;ff++){for (i=0;i<isize0;i++){for (j=0;j<3;j++){snew(s_array[ff][i][j],nmax+1);snew(c_array[ff][i][j],nmax+1);}}}
+	snew(s_array,isize0);
+	snew(c_array,isize0);
+	for (i=0;i<isize0;i++){snew(s_array[i],3);snew(c_array[i],3);}
+	for (i=0;i<isize0;i++){for (j=0;j<3;j++){snew(s_array[i][j],n2max+1);snew(c_array[i][j],n2max+1);}}
 
     //initialize beta tensor
 
@@ -646,13 +646,12 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     for (i = 0; i < DIM; i++){snew(beta_lab[i], DIM);}
     for (i = 0; i < DIM; i++){for (j = 0; j < DIM; j++){snew(beta_lab[i][j], DIM);}}
 	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){snew(beta_lab[i][j][k],isize0);}}}
-	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){for (ii = 0;ii < isize0;ii++){snew(beta_lab[i][j][k][ii],nframes);}}}}
 
 /**************************INITIALIZE ARRAYS USED TO CALCULATE INTENSITIES**************************************************************************************/
 
-	snew(ct,nmax2+1);
-	snew(st,nmax2+1);
-	snew(zt,nmax2+1);
+	snew(ct,n2max2+1);
+	snew(st,n2max2+1);
+	snew(zt,n2max2+1);
 
 	// We will be calculating the intensity as a function of the magnitude |q|. The largest
 	// possible square magnitude is n2max2.
@@ -661,22 +660,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	snew(intens_incoh,ng);
 	for (g=0;g<ng;g++)
 	{
-		snew(intens_total[g],nframes);
-		snew(intens_cohrt[g],nframes);
-		snew(intens_incoh[g],nframes);
-	}
-	for (g=0;g<ng;g++)
-	{
-		for (ff=0;ff<nframes;ff++)
-		{
-			snew(intens_total[g][ff],n2max2+1);
-			snew(intens_cohrt[g][ff],n2max2+1);
-			snew(intens_incoh[g][ff],n2max2+1);
-		}
+		snew(intens_total[g],n2max2+1);
+		snew(intens_cohrt[g],n2max2+1);
+		snew(intens_incoh[g],n2max2+1);
 	}
 	snew(num_count,n2max2+1);
 
 /**************************READ FRAMES IN AND FILL ARRAYS*******************************************************************************************************/
+/**************************CALCULATE INTENSITY******************************************************************************************************************/
 
 	// Coefficients for sine and cosine arrays.
 	for (j=0;j<3;j++)
@@ -705,15 +696,15 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			for (j=0;j<3;j++)
 			{
 				rval = all_r[i][0][j];
-				s_array[ff][i][j][0] = 0.0;
-				c_array[ff][i][j][0] = 1.0;
+				s_array[i][j][0] = 0.0;
+				c_array[i][j][0] = 1.0;
 				q_xi = rval * coeff[j];
-				s_array[ff][i][j][1] = sin(q_xi);
-				c_array[ff][i][j][1] = cos(q_xi);
-				for (nn=2;nn<nmax+1;nn++)
+				s_array[i][j][1] = sin(q_xi);
+				c_array[i][j][1] = cos(q_xi);
+				for (nn=2;nn<n2max+1;nn++)
 				{
-					s_array[ff][i][j][nn] = s_array[ff][i][j][nn-1]*c_array[ff][i][j][1] + c_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
-					c_array[ff][i][j][nn] = c_array[ff][i][j][nn-1]*c_array[ff][i][j][1] - s_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
+					s_array[i][j][nn] = s_array[i][j][nn-1]*c_array[i][j][1] + c_array[i][j][nn-1]*s_array[i][j][1];
+					c_array[i][j][nn] = c_array[i][j][nn-1]*c_array[i][j][1] - s_array[i][j][nn-1]*s_array[i][j][1];
 				}
 			}
 		}
@@ -736,14 +727,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				{
 					for (cc=0;cc<DIM;cc++)
 					{
-						beta_lab[aa][bb][cc][i][ff] = 0.0;
+						beta_lab[aa][bb][cc][i] = 0.0;
 						for (ii=0;ii<DIM;ii++)
 						{
 							for (jj=0;jj<DIM;jj++)
 							{
 								for (kk=0;kk<DIM;kk++)
 								{
-									beta_lab[aa][bb][cc][i][ff] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
+									beta_lab[aa][bb][cc][i] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
 								}
 							}
 						}
@@ -751,32 +742,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				}
 			}
 		}
-	}
 
-	// We no longer need our r array, so let's free it up now.
-	sfree(all_r);
+		// For this frame we now take each different q-vector generated, and each value of gamma
+		// for each q-vector. This will give us several different scattering planes, each with
+		// their own u and v vectors, i.e. n_used*nbingamma different experimental setups.
+		// For each setup, we calculate the intensity of ESHS light scattered.
 
-/*************************CALCULATE INTENSITY*******************************************************************************************************************/
-
-	fprintf(stderr,"\n");
-
-	// For each group we take every frame, and for each frame we take each different q-vector generated,
-	// and each value of gamma for each q-vector. This will give us several different scattering planes,
-	// each with their own u and v vectors, i.e. n_used*nbingamma diffrent experimental setups.
-	// For each setup, we calculate the intensity of ESHS light scattered.
-
-//    for (g = 0; g < ng; g++)
-	for (ff=0;ff<nframes;ff++)
-    {
-		// For each q vector, let's calculate the intensity.
-//		for (qq=0;qq<n_used;qq++)
-//		for (ff=0;ff<nframes;ff++)
 		for (g = 0;g<ng;g++)
 		{
-//			for (ff=0;ff<nframes;ff++)
 			for (qq=0;qq<n_used;qq++)
 			{
-//				fprintf(stderr,"Doing q-point number %i of %i\n",qq+1,n_used);
 				nx = narray[qq][0];
 				ny = narray[qq][1];
 				nz = narray[qq][2];
@@ -791,7 +766,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				n2 = narray[qq][3];
 				// If n2a is greater than 1, then this means that we can use this k-vector to get the intensities for higher k-vectors.
 				// (and the number of these vectors we can get is equal to n2a).
-				n2a = (int)sqrt((float)nmax2/n2);
+				n2a = (int)sqrt((float)n2max2/n2);
 
 				for (c=0;c<nbingamma;c++)
 				{
@@ -811,34 +786,33 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 						for (aa=0;aa<DIM;aa++)
 						{
-							mu_ind += beta_lab[aa][0][0][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][0]*v_vec[qq][c][0] +
-									  beta_lab[aa][1][1][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][1]*v_vec[qq][c][1] +
-									  beta_lab[aa][2][2][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][2]*v_vec[qq][c][2];
+							mu_ind += beta_lab[aa][0][0][i]*u_vec[qq][c][aa]*v_vec[qq][c][0]*v_vec[qq][c][0] +
+									  beta_lab[aa][1][1][i]*u_vec[qq][c][aa]*v_vec[qq][c][1]*v_vec[qq][c][1] +
+									  beta_lab[aa][2][2][i]*u_vec[qq][c][aa]*v_vec[qq][c][2]*v_vec[qq][c][2];
 							for (bb=0;bb<DIM;bb++)
 							{
 								for (cc=bb+1;cc<DIM;cc++)
 								{
-									mu_ind += 2.0*beta_lab[aa][bb][cc][i][ff]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
+									mu_ind += 2.0*beta_lab[aa][bb][cc][i]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
 								}
 							}
 						}
 
 						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
-//						q_xi = kvec[qq][0]*all_r[ff][i][0][0] + kvec[qq][1]*all_r[ff][i][0][1] + kvec[qq][2]*all_r[ff][i][0][2];
 
 						for (j=0;j<n2a;j++)
 						{
 							nx = nxa*(j+1);
 							ny = nya*(j+1);
 							nz = nza*(j+1);
-							ct[j] += mu_ind*( c_array[ff][i][0][nx]*c_array[ff][i][1][ny]*c_array[ff][i][2][nz] - 
-								nxb*nyb*s_array[ff][i][0][nx]*s_array[ff][i][1][ny]*c_array[ff][i][2][nz] - 
-								nxb*nzb*s_array[ff][i][0][nx]*c_array[ff][i][1][ny]*s_array[ff][i][2][nz] - 
-								nyb*nzb*c_array[ff][i][0][nx]*s_array[ff][i][1][ny]*s_array[ff][i][2][nz]);
-							st[j] += mu_ind*( nxb*s_array[ff][i][0][nx]*c_array[ff][i][1][ny]*c_array[ff][i][2][nz] + 
-								nyb*c_array[ff][i][0][nx]*s_array[ff][i][1][ny]*c_array[ff][i][2][nz] + 
-								nzb*c_array[ff][i][0][nx]*c_array[ff][i][1][ny]*s_array[ff][i][2][nz] - 
-								nxb*nyb*nzb*s_array[ff][i][0][nx]*s_array[ff][i][1][ny]*s_array[ff][i][2][nz]);
+							ct[j] += mu_ind*( c_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] - 
+								nxb*nyb*s_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] - 
+								nxb*nzb*s_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
+								nyb*nzb*c_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
+							st[j] += mu_ind*( nxb*s_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] + 
+								nyb*c_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] + 
+								nzb*c_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
+								nxb*nyb*nzb*s_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
 							zt[j] += mu_ind*mu_ind;
 						}
 						
@@ -847,9 +821,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 					for (j=0;j<n2a;j++)
 					{
 						n2_2 = n2*(j+1)*(j+1);
-						intens_total[g][0][n2_2] += st[j]*st[j] + ct[j]*ct[j];
-						intens_incoh[g][0][n2_2] += zt[j];
-						intens_cohrt[g][0][n2_2] += intens_total[g][0][n2_2] - intens_incoh[g][0][n2_2];
+						intens_total[g][n2_2] += st[j]*st[j] + ct[j]*ct[j];
+						intens_incoh[g][n2_2] += zt[j];
+						intens_cohrt[g][n2_2] += intens_total[g][n2_2] - intens_incoh[g][n2_2];
 						num_count[n2_2] += 1;
 					}
 				}
@@ -859,6 +833,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
     }
 
+	// We no longer need our r array, so let's free it up now.
+	sfree(all_r);
+
 /****************************************************************** PRINT OUT ********************************************************************************************/
 
 	// Now we have the intensity for each type of scattering, averaged over frames and
@@ -867,33 +844,33 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// All that remains, I think, is to print it out!
     fpn = xvgropen("total_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
     fprintf(fpn, "@type xy\n");
-	for (qq=0;qq<nmax2+1;qq++)
+	for (qq=0;qq<n2max2+1;qq++)
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][0][qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
 
     fpn = xvgropen("cohrt_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
     fprintf(fpn, "@type xy\n");
-	for (qq=0;qq<nmax2+1;qq++)
+	for (qq=0;qq<n2max2+1;qq++)
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][0][qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
 
     fpn = xvgropen("incoh_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
     fprintf(fpn, "@type xy\n");
-	for (qq=0;qq<nmax2+1;qq++)
+	for (qq=0;qq<n2max2+1;qq++)
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][0][qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
@@ -1065,6 +1042,8 @@ int gmx_shscorr(int argc, char *argv[])
 
     fprintf(stderr,"Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
+
+	if (n2max < nmax){n2max=nmax;}
 
     do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
