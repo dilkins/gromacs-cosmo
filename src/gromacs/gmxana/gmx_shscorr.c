@@ -99,7 +99,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     real         ***s_method, ***s_method_coh, ***s_method_incoh, **temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, mu_sq =0.0, mod_f ;
-    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
+    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean, ****mu_ind_t;
     int            max_i, isize0, ind0, indj;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
     real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
@@ -363,187 +363,33 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
     set_pbc(&pbc, ePBCrdf, box_pbc);
     rmax     = sqrt(rmax2);
+    qnorm = M_PI*2.0/(rmax*2.0);
 
-	// Find number of frames.
-	nframes = 0;
-	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
-	read_first_x(oenv, &status, fnTRX, &t, &x, box);
+	if (kern[0] != 'n'){fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");}
 
-//	fprintf(stderr,"HERE 1\n");
-//	sleep(20);
+/*******************************MOLECULAR-FRAME BETA************************************************************************************************************/
 
+	// Initialize molecular-frame beta tensor
+	snew(beta_mol,DIM);
+	for (i=0;i<DIM;i++){snew(beta_mol[i],DIM);}
+	for (i=0;i<DIM;i++){for (j=0;j<DIM;j++){snew(beta_mol[i][j],DIM);}}
 
-    //initialize beta tensor
-
-    snew(beta_mol, DIM);
-	snew(beta_lab, DIM);
-    snew(mu_ind_mols, isize0);
-    
-    snew(beta_corr, nbin+1);
-    snew(ft_beta_corr,nbinq);
-    for (i = 0; i < DIM; i++)
-    {
-        snew(beta_mol[i], DIM);
-		snew(beta_lab[i], DIM);
-    }
-    for (i = 0; i < DIM; i++)
-    {
-        for (j = 0; j < DIM; j++)
-        {
-            snew(beta_mol[i][j], DIM);
-            snew(beta_lab[i][j], DIM);
-        }
-    }
-	for (i = 0;i < DIM; i++)
+	for (ii=0;ii<DIM;ii++)
 	{
-		for (j = 0;j < DIM; j++)
+		for (jj=0;jj<DIM;jj++)
 		{
-			for (k = 0;k < DIM; k++)
+			for (kk=0;kk<DIM;kk++)
 			{
-				snew(beta_lab[i][j][k],isize0);
-			}
-		}
-	}
-	for (i = 0;i < DIM; i++)
-	{
-		for (j = 0;j < DIM; j++)
-		{
-			for (k = 0;k < DIM; k++)
-			{
-				for (l = 0;l < isize0;l++)
-				{
-					snew(beta_lab[i][j][k][l],nframes);
-				}
+//				beta_mol[ii][jj][kk] = Map->beta_gas[ii*9 + jj*3 + kk];
+				beta_mol[ii][jj][kk] = 0.0;
 			}
 		}
 	}
 
-//	fprintf(stderr,"HERE 2\n");
-//	sleep(20);
+	beta_mol[2][2][2] = 1.0;
+	// DMW: This should be changed later on!
 
-	// Read in frames.
-
-	snew(all_r,nframes);
-	for (i=0;i<nframes;i++)
-	{
-		snew(all_r[i],isize0);
-	}
-	for (i=0;i<nframes;i++)
-	{
-		for (j=0;j<isize0;j++)
-		{
-			snew(all_r[i][j],molsize);
-		}
-	}
-
-	// We already have the first frame.
-	for (ii=0;ii<isize0;ii++)
-	{
-		ind0 = mols->index[molindex[0][ii]];
-		for (j=0;j<molsize;j++)
-		{
-			copy_rvec(x[ind0+j],all_r[0][ii][j]);
-		}
-	}
-
-	for (i=1;i<nframes;i++)
-	{
-		read_next_x(oenv,status,&t,x,box);
-		for (ii=0;ii<isize0;ii++)
-		{
-			ind0 = mols->index[molindex[0][ii]];
-			for (j=0;j<molsize;j++)
-			{
-				copy_rvec(x[ind0+j],all_r[i][ii][j]);
-			}
-		}
-		
-	}
-//	// DO SOME QUICK TESTING.
-//	fprintf(stderr,"%i\n",nframes);
-//	fprintf(stderr,"%f %f %f\n",all_r[0][0][0][0],all_r[0][0][0][1],all_r[0][0][0][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[0][0][1][0],all_r[0][0][1][1],all_r[0][0][1][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[0][0][2][0],all_r[0][0][2][1],all_r[0][0][2][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[0][0][3][0],all_r[0][0][3][1],all_r[0][0][3][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[99][0][0][0],all_r[99][0][0][1],all_r[99][0][0][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[99][0][1][0],all_r[99][0][1][1],all_r[99][0][1][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[99][0][2][0],all_r[99][0][2][1],all_r[99][0][2][2]);
-//	fprintf(stderr,"%f %f %f\n",all_r[99][0][3][0],all_r[99][0][3][1],all_r[99][0][3][2]);
-//	exit(0);
-
-	// Initialize sine and cosine arrays.
-//	fprintf(stderr,"HERE 3\n");
-//	sleep(20);
-	snew(s_array,nframes);
-	snew(c_array,nframes);
-//	fprintf(stderr,"HERE 3a\n");
-//	sleep(20);
-	for (ff=0;ff<nframes;ff++)
-	{
-		snew(s_array[ff],isize0);
-		snew(c_array[ff],isize0);
-	}
-//	fprintf(stderr,"HERE 3b\n");
-//	sleep(20);
-	for (ff=0;ff<nframes;ff++)
-	{
-		for (i=0;i<isize0;i++)
-		{
-			snew(s_array[ff][i],3);
-			snew(c_array[ff][i],3);
-		}
-	}
-//	fprintf(stderr,"HERE 3c %i\n",nmax+1);
-//	sleep(20);
-	for (ff=0;ff<nframes;ff++)
-	{
-		for (i=0;i<isize0;i++)
-		{
-			for (j=0;j<3;j++)
-			{
-				snew(s_array[ff][i][j],nmax+1);
-				snew(c_array[ff][i][j],nmax+1);
-			}
-		}
-	}
-
-//	fprintf(stderr,"HERE 4\n");
-//	sleep(20);
-
-	// Now, fill these arrays.
-	for (ff=0;ff<nframes;ff++)
-	{
-		for (i=0;i<isize0;i++)
-		{
-			for (j=0;j<3;j++)
-			{
-				rval = all_r[ff][i][0][j];
-				s_array[ff][i][j][0] = 0.0;
-				c_array[ff][i][j][0] = 1.0;
-				q_xi = 2.0 * M_PI * rval / box[j][j];
-				// CHECK THIS. AND TAKE OUTSIDE OF LOOPS.
-				s_array[ff][i][j][1] = sin(q_xi);
-				c_array[ff][i][j][1] = cos(q_xi);
-//				fprintf(stderr,"HERE %i %i %i %f %f %f %f\n",ff,i,j,rval,q_xi,sin(q_xi),cos(q_xi));
-				for (nn=2;nn<nmax+1;nn++)
-				{
-					s_array[ff][i][j][nn] = s_array[ff][i][j][nn-1]*c_array[ff][i][j][1] + c_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
-					c_array[ff][i][j][nn] = c_array[ff][i][j][nn-1]*c_array[ff][i][j][1] - s_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
-				}
-			}
-		}
-	}
-
-//	exit(0);
-
-    if (method[0] == 's')
-    {
-       qnorm = M_PI*2.0/(rmax*2.0);
-    }
-    else
-    {
-      qnorm = M_PI*2.0/(rmax);
-    }
+/*******************************K-VECTORS***********************************************************************************************************************/
 
 	// We want to find all (nx,ny,nz) values such that nx^2 + ny^2 + nz^2 <= nmax^2.
 	// Firstly, allocate an array to hold all of these values.
@@ -638,7 +484,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	nrp = 0;
 	for (rr=0;rr<n_used;rr++)
 	{
-//		if (repeat_list[rr]==0){nrp++;}
 		if (num_repeats[rr]==1){nrp++;}
 	}
 	snew(narray,nrp);
@@ -649,7 +494,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	nmx = 0;
 	for (rr=0;rr<n_used;rr++)
 	{
-//		if (repeat_list[rr]==0)
 		if (num_repeats[rr]==1)
 		{
 			for (j=0;j<4;j++)
@@ -695,9 +539,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
-//	fprintf(stderr,"HERE 5\n");
-//	sleep(20);
-	
 	saout=sin(M_PI/180.0*pout_angle);
 	caout=cos(M_PI/180.0*pout_angle);
 	sain=sin(M_PI/180.0*pin_angle);
@@ -777,36 +618,83 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// We now have a certain number of q vectors, along with the U and V vectors corresponding to
 	// them, for a certain number of scattering planes each.
 
-/* USE THESE LINES TO CHECK:
+/**************************INITIALIZE ARRAYS DEPENDING ON NUMBER OF FRAMES**************************************************************************************/
 
-	for (i =0;i<n_used;i++)
+	// Find number of frames.
+	nframes = 0;
+	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
+
+	// Initialize coordinate array.
+	snew(all_r,nframes);
+	for (i=0;i<nframes;i++){snew(all_r[i],isize0);}
+	for (i=0;i<nframes;i++){for (j=0;j<isize0;j++){snew(all_r[i][j],molsize);}}
+
+	// Initialize sine and cosine arrays.
+	snew(s_array,nframes);
+	snew(c_array,nframes);
+	for (ff=0;ff<nframes;ff++){snew(s_array[ff],isize0);snew(c_array[ff],isize0);}
+	for (ff=0;ff<nframes;ff++){for (i=0;i<isize0;i++){snew(s_array[ff][i],3);snew(c_array[ff][i],3);}}
+	for (ff=0;ff<nframes;ff++){for (i=0;i<isize0;i++){for (j=0;j<3;j++){snew(s_array[ff][i][j],nmax+1);snew(c_array[ff][i][j],nmax+1);}}}
+
+    //initialize beta tensor
+
+	snew(beta_lab, DIM);
+    for (i = 0; i < DIM; i++){snew(beta_lab[i], DIM);}
+    for (i = 0; i < DIM; i++){for (j = 0; j < DIM; j++){snew(beta_lab[i][j], DIM);}}
+	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){snew(beta_lab[i][j][k],isize0);}}}
+	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){for (ii = 0;ii < isize0;ii++){snew(beta_lab[i][j][k][ii],nframes);}}}}
+
+/**************************READ FRAMES IN***********************************************************************************************************************/
+
+	// Coefficients for sine and cosine arrays.
+	for (j=0;j<3;j++)
 	{
-		fprintf(stderr,"%i %i %i %i\n",narray[i][0],narray[i][1],narray[i][2],narray[i][3]);
-		fprintf(stderr,"%f %f %f %f\n",kvec[i][0],kvec[i][1],kvec[i][2],kvec[i][3]);
-		fprintf(stderr,"U1 %f %f %f\n",u_vec[i][0][0],u_vec[i][0][1],u_vec[i][0][2]);
-		fprintf(stderr,"U2 %f %f %f\n",u_vec[i][1][0],u_vec[i][1][1],u_vec[i][1][2]);
-		fprintf(stderr,"V1 %f %f %f\n",v_vec[i][0][0],v_vec[i][0][1],v_vec[i][0][2]);
-		fprintf(stderr,"V2 %f %f %f\n",v_vec[i][1][0],v_vec[i][1][1],v_vec[i][1][2]);
+		coeff[j] = 2.0 * M_PI / box[j][j];
 	}
 
-*/
+	// Read in frames.
 
-	// Next: for each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
-	// we will multiply by the elements of the polarization vectors).
-	for (ii=0;ii<DIM;ii++)
+	for (ff=0;ff<nframes;ff++)
 	{
-		for (jj=0;jj<DIM;jj++)
+		if (ff==0){read_first_x(oenv, &status, fnTRX, &t, &x, box);}
+		else{read_next_x(oenv,status,&t,x,box);}
+		for (ii=0;ii<isize0;ii++)
 		{
-			for (kk=0;kk<DIM;kk++)
+			ind0 = mols->index[molindex[0][ii]];
+			for (j=0;j<molsize;j++)
 			{
-//				beta_mol[ii][jj][kk] = Map->beta_gas[ii*9 + jj*3 + kk];
-				beta_mol[ii][jj][kk] = 0.0;
+				copy_rvec(x[ind0+j],all_r[ff][ii][j]);
 			}
 		}
 	}
 
-	beta_mol[2][2][2] = 1.0;
-	// DMW: This should be changed later on!
+	// Fill sine and cosine arrays.
+
+	for (ff=0;ff<nframes;ff++)
+	{
+		for (i=0;i<isize0;i++)
+		{
+			for (j=0;j<3;j++)
+			{
+				rval = all_r[ff][i][0][j];
+				s_array[ff][i][j][0] = 0.0;
+				c_array[ff][i][j][0] = 1.0;
+				q_xi = rval * coeff[j];
+				s_array[ff][i][j][1] = sin(q_xi);
+				c_array[ff][i][j][1] = cos(q_xi);
+				for (nn=2;nn<nmax+1;nn++)
+				{
+					s_array[ff][i][j][nn] = s_array[ff][i][j][nn-1]*c_array[ff][i][j][1] + c_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
+					c_array[ff][i][j][nn] = c_array[ff][i][j][nn-1]*c_array[ff][i][j][1] - s_array[ff][i][j][nn-1]*s_array[ff][i][j][1];
+				}
+			}
+		}
+	}
+
+/*******************************LAB-FRAME BETA******************************************************************************************************************/
+
+	// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
+	// we will multiply by the elements of the polarization vectors).
 
 	for (ff=0;ff<nframes;ff++)
 	{
@@ -848,10 +736,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// We no longer need our r array, so let's free it up now.
 	sfree(all_r);
 
-	if (kern[0] != 'n')
-	{
-		fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");
-	}
+/*************************CALCULATE INTENSITY*******************************************************************************************************************/
 
 	snew(ct,nmax2+1);
 	snew(st,nmax2+1);
@@ -870,6 +755,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	}
 	snew(num_count,n2max2+1);
 
+	fprintf(stderr,"\n");
     for (g = 0; g < ng; g++)
     {
 		// For each q vector, let's calculate the intensity.
@@ -903,9 +789,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			{
 				fprintf(stderr,"n2 = %i, out of %i, we can use this for %i\n",n2,nmax2,(int)sqrt((float)nmax2/n2));
 			}
-
-
-
 
 			for (c=0;c<nbingamma;c++)
 			{
@@ -979,6 +862,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		fprintf(stderr,"count %i %i\n",qq,num_count[qq]);
 	}
+
+/****************************************************************** PRINT OUT ********************************************************************************************/
 
 	// Now we have the intensity for each type of scattering, averaged over frames and
 	// values of gamma; we have the average intensity for each possible modulus |q|.
