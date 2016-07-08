@@ -133,8 +133,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int           *chged_atom_indexes, n_chged_atoms,nrp;
     int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n2max2,n_used,n2,n2_2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss,n2a;
     real	      **kvec,***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,*****beta_lab,*st,*ct,*zt;
-    rvec			***all_r;
-    real			**intens_total,**intens_cohrt,**intens_incoh,****s_array,****c_array,rval,dotp,mu_ind = 0.0,*induced_mu;
+    rvec			**all_r;
+    real			***intens_total,***intens_cohrt,***intens_incoh,****s_array,****c_array,rval,dotp,mu_ind = 0.0,*induced_mu,xx,yy,zz;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -449,12 +449,18 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		for (rr=qq+1;rr<n_used;rr++)
 		{
-			n2 = narray2[qq][0]*narray2[rr][0] + narray2[qq][1]*narray2[rr][1] + narray2[qq][2]*narray2[rr][2];
-			dotp = (double)(n2)/(sqrt(narray2[qq][3])*sqrt(narray2[rr][3]));
-			if (((dotp == 1.0) || (dotp == -1.0)) && (repeat_list[rr]==0))
+			if (repeat_list[rr]==0)
 			{
-				// These two vectors are related to each other by a scale factor.
-				repeat_list[rr] = qq;
+				if ( (narray2[qq][1]*narray2[rr][2]) == (narray2[qq][2]*narray2[rr][1]))
+				{
+					if ( (narray2[qq][0]*narray2[rr][2]) == (narray2[qq][2]*narray2[rr][0]))
+					{
+						if ( (narray2[qq][0]*narray2[rr][1]) == (narray2[qq][1]*narray2[rr][0]))
+						{
+							repeat_list[rr]=qq;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -479,7 +485,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			num_repeats[rr] = 1;
 		}
 	}
-
 
 	nrp = 0;
 	for (rr=0;rr<n_used;rr++)
@@ -625,9 +630,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
 
 	// Initialize coordinate array.
-	snew(all_r,nframes);
-	for (i=0;i<nframes;i++){snew(all_r[i],isize0);}
-	for (i=0;i<nframes;i++){for (j=0;j<isize0;j++){snew(all_r[i][j],molsize);}}
+	snew(all_r,isize0);
+	for (i=0;i<isize0;i++){snew(all_r[i],molsize);}
 
 	// Initialize sine and cosine arrays.
 	snew(s_array,nframes);
@@ -644,7 +648,35 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){snew(beta_lab[i][j][k],isize0);}}}
 	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){for (ii = 0;ii < isize0;ii++){snew(beta_lab[i][j][k][ii],nframes);}}}}
 
-/**************************READ FRAMES IN***********************************************************************************************************************/
+/**************************INITIALIZE ARRAYS USED TO CALCULATE INTENSITIES**************************************************************************************/
+
+	snew(ct,nmax2+1);
+	snew(st,nmax2+1);
+	snew(zt,nmax2+1);
+
+	// We will be calculating the intensity as a function of the magnitude |q|. The largest
+	// possible square magnitude is n2max2.
+	snew(intens_total,ng);
+	snew(intens_cohrt,ng);
+	snew(intens_incoh,ng);
+	for (g=0;g<ng;g++)
+	{
+		snew(intens_total[g],nframes);
+		snew(intens_cohrt[g],nframes);
+		snew(intens_incoh[g],nframes);
+	}
+	for (g=0;g<ng;g++)
+	{
+		for (ff=0;ff<nframes;ff++)
+		{
+			snew(intens_total[g][ff],n2max2+1);
+			snew(intens_cohrt[g][ff],n2max2+1);
+			snew(intens_incoh[g][ff],n2max2+1);
+		}
+	}
+	snew(num_count,n2max2+1);
+
+/**************************READ FRAMES IN AND FILL ARRAYS*******************************************************************************************************/
 
 	// Coefficients for sine and cosine arrays.
 	for (j=0;j<3;j++)
@@ -663,20 +695,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			ind0 = mols->index[molindex[0][ii]];
 			for (j=0;j<molsize;j++)
 			{
-				copy_rvec(x[ind0+j],all_r[ff][ii][j]);
+				copy_rvec(x[ind0+j],all_r[ii][j]);
 			}
 		}
-	}
 
-	// Fill sine and cosine arrays.
-
-	for (ff=0;ff<nframes;ff++)
-	{
+		// Fill sine and cosine arrays.
 		for (i=0;i<isize0;i++)
 		{
 			for (j=0;j<3;j++)
 			{
-				rval = all_r[ff][i][0][j];
+				rval = all_r[i][0][j];
 				s_array[ff][i][j][0] = 0.0;
 				c_array[ff][i][j][0] = 1.0;
 				q_xi = rval * coeff[j];
@@ -689,23 +717,15 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				}
 			}
 		}
-	}
 
-/*******************************LAB-FRAME BETA******************************************************************************************************************/
-
-	// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
-	// we will multiply by the elements of the polarization vectors).
-
-	for (ff=0;ff<nframes;ff++)
-	{
+		// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
+		// we will multiply by the elements of the polarization vectors).
 		for (i = 0;i<isize0;i++)
 		{
-			// For this frame and this molecule, calculate the direction cosines. This is the only time
-			// we'll need them.
-
+			// For this frame and this molecule, calculate the direction cosines.
 			for (ii=0;ii<molsize;ii++)
 			{
-				pbc_dx(&pbc,all_r[ff][i][ii],all_r[ff][i][0],xmol[ii]);
+				pbc_dx(&pbc,all_r[i][ii],all_r[i][0],xmol[ii]);
 			}
 
 			calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
@@ -738,66 +758,47 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 /*************************CALCULATE INTENSITY*******************************************************************************************************************/
 
-	snew(ct,nmax2+1);
-	snew(st,nmax2+1);
-	snew(zt,nmax2+1);
-
-	// We will be calculating the intensity as a function of the magnitude |q|. The largest
-	// possible square magnitude is n2max2.
-	snew(intens_total,ng);
-	snew(intens_cohrt,ng);
-	snew(intens_incoh,ng);
-	for (g=0;g<ng;g++)
-	{
-		snew(intens_total[g],n2max2+1);
-		snew(intens_cohrt[g],n2max2+1);
-		snew(intens_incoh[g],n2max2+1);
-	}
-	snew(num_count,n2max2+1);
-
 	fprintf(stderr,"\n");
-    for (g = 0; g < ng; g++)
+
+	// For each group we take every frame, and for each frame we take each different q-vector generated,
+	// and each value of gamma for each q-vector. This will give us several different scattering planes,
+	// each with their own u and v vectors, i.e. n_used*nbingamma diffrent experimental setups.
+	// For each setup, we calculate the intensity of ESHS light scattered.
+
+//    for (g = 0; g < ng; g++)
+	for (ff=0;ff<nframes;ff++)
     {
 		// For each q vector, let's calculate the intensity.
-		for (qq=0;qq<n_used;qq++)
+//		for (qq=0;qq<n_used;qq++)
+//		for (ff=0;ff<nframes;ff++)
+		for (g = 0;g<ng;g++)
 		{
-			fprintf(stderr,"Doing q-point number %i of %i\n",qq+1,n_used);
-			// To recap (for my own sake: so that I don't forget!):
-			// For this group (of which there is only one), we are going
-			// to take every different q-vector that we have generated,
-			// of which there are n_used, and we will take each value of gamma
-			// for each q-vector. This will give us n_used*nbingamma different
-			// scattering planes, each with its own u and v vectors (i.e., n_used*nbingamma
-			// different experimental setups).
-			// For each of these experimental setups, we will calculate the intensity of
-			// ESHS light scattered. Each of these setups has a corresponding value of q.
-
-			nx = narray[qq][0];
-			ny = narray[qq][1];
-			nz = narray[qq][2];
-			nxa = abs(nx);
-			nya = abs(ny);
-			nza = abs(nz);
-			// The sine matrices are odd in their arguments; we must take this into account.
-			nxb = 2*(nx>0) - 1;
-			nyb = 2*(ny>0) - 1;
-			nzb = 2*(nz>0) - 1;
-
-			n2 = narray[qq][3];
-			n2a = (int)sqrt((float)nmax2/n2);
-			if (n2a > 1)
+//			for (ff=0;ff<nframes;ff++)
+			for (qq=0;qq<n_used;qq++)
 			{
-				fprintf(stderr,"n2 = %i, out of %i, we can use this for %i\n",n2,nmax2,(int)sqrt((float)nmax2/n2));
-			}
+//				fprintf(stderr,"Doing q-point number %i of %i\n",qq+1,n_used);
+				nx = narray[qq][0];
+				ny = narray[qq][1];
+				nz = narray[qq][2];
+				nxa = abs(nx);
+				nya = abs(ny);
+				nza = abs(nz);
+				// The sine matrices are odd in their arguments; we must take this into account.
+				nxb = 2*(nx>0) - 1;
+				nyb = 2*(ny>0) - 1;
+				nzb = 2*(nz>0) - 1;
 
-			for (c=0;c<nbingamma;c++)
-			{
-				// For this given group,
-				// q-vector,
-				// and value of gamma,
-				// we are going to calculate the intensity.
-				for (ff=0;ff<nframes;ff++)
+				n2 = narray[qq][3];
+				// If n2a is greater than 1, then this means that we can use this k-vector to get the intensities for higher k-vectors.
+				// (and the number of these vectors we can get is equal to n2a).
+				n2a = (int)sqrt((float)nmax2/n2);
+
+				for (c=0;c<nbingamma;c++)
 				{
+					// For this given group,
+					// q-vector,
+					// and value of gamma,
+					// we are going to calculate the intensity.
 					for (j=0;j<n2a;j++)
 					{
 						st[j] = 0.0;
@@ -842,13 +843,13 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 						}
 						
 					}
-					// Add to the average the intensity for a single frame.
+					// Add to the average the intensity for a single frame and gamma.
 					for (j=0;j<n2a;j++)
 					{
 						n2_2 = n2*(j+1)*(j+1);
-						intens_total[g][n2_2] += st[j]*st[j] + ct[j]*ct[j];
-						intens_incoh[g][n2_2] += zt[j];
-						intens_cohrt[g][n2_2] += intens_total[g][n2_2] - intens_incoh[g][n2_2];
+						intens_total[g][0][n2_2] += st[j]*st[j] + ct[j]*ct[j];
+						intens_incoh[g][0][n2_2] += zt[j];
+						intens_cohrt[g][0][n2_2] += intens_total[g][0][n2_2] - intens_incoh[g][0][n2_2];
 						num_count[n2_2] += 1;
 					}
 				}
@@ -857,11 +858,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 
     }
-
-	for (qq=0;qq<nmax2+1;qq++)
-	{
-		fprintf(stderr,"count %i %i\n",qq,num_count[qq]);
-	}
 
 /****************************************************************** PRINT OUT ********************************************************************************************/
 
@@ -875,7 +871,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[0][0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
@@ -886,7 +882,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_cohrt[0][0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
@@ -897,7 +893,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[0][0][qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
