@@ -132,8 +132,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms,nrp;
     int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n2max2,n_used,n2,n2_2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss,n2a;
-    real	      ***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,****beta_lab,*st,*ct,*zt;
-    rvec			**all_r;
+    real	      ***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,**beta_lab,*st,*ct,*zt;
+//    rvec			**all_r;
+	real			***uvv;
     real			*intens_total,*intens_cohrt,*intens_incoh,***s_array,***c_array,rval,dotp,mu_ind = 0.0,*induced_mu,xx,yy,zz;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
@@ -535,6 +536,24 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		}
 	}
 
+	snew(uvv,DIM*DIM*DIM);
+	for (i=0;i<DIM*DIM*DIM;i++)
+	{
+		snew(uvv[i],n_used);
+	}
+	for (i=0;i<DIM*DIM*DIM;i++)
+	{
+		for (qq=0;qq<n_used;qq++)
+		{
+			snew(uvv[i][qq],nbingamma);
+		}
+	}
+//	snew(uvv,DIM);
+//	for (ii=0;ii<DIM;ii++){snew(uvv[ii],DIM);}
+//	for (ii=0;ii<DIM;ii++){for (jj=0;jj<DIM;jj++){snew(uvv[ii][jj],DIM);}}
+//	for (ii=0;ii<DIM;ii++){for (jj=0;jj<DIM;jj++){for (kk=0;kk<DIM;kk++){snew(uvv[ii][jj][kk],n_used);}}}
+//	for (ii=0;ii<DIM;ii++){for (jj=0;jj<DIM;jj++){for (kk=0;kk<DIM;kk++){for (qq=0;qq<n_used;qq++){snew(uvv[ii][jj][kk][qq],nbingamma);}}}}
+
 	saout=sin(M_PI/180.0*pout_angle);
 	caout=cos(M_PI/180.0*pout_angle);
 	sain=sin(M_PI/180.0*pin_angle);
@@ -608,6 +627,29 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 		}
 	}
+
+	// uvv matrix.
+	rr = 0;
+	for (ii=0;ii<3;ii++)
+	{
+		for (jj=0;jj<3;jj++)
+		{
+			for (kk=jj;kk<3;kk++)
+			{
+				for (qq=0;qq<n_used;qq++)
+				{
+					for (c=0;c<nbingamma;c++)
+					{
+						uvv[rr][qq][c] = u_vec[qq][c][ii]*v_vec[qq][c][jj]*v_vec[qq][c][kk];
+						if (kk!=jj){uvv[rr][qq][c]*=2.0;}
+					}
+				}
+				rr++;
+			}
+		}
+	}
+	sfree(u_vec);
+	sfree(v_vec);
 	
 	fprintf(stderr,"\nUsing %i points in reciprocal space\n",n_used);
 
@@ -621,10 +663,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	do{nframes++;} while (read_next_x(oenv,status,&t,x,box));
 	fprintf(stderr,"\n\nTotal number of frames: %i\n\n",nframes);
 
-	// Initialize coordinate array.
-//	snew(all_r,isize0);
-//	for (i=0;i<isize0;i++){snew(all_r[i],molsize);}
-
 	// Initialize sine and cosine arrays.
 	snew(s_array,isize0);
 	snew(c_array,isize0);
@@ -633,10 +671,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
     //initialize beta tensor
 
-	snew(beta_lab, DIM);
-    for (i = 0; i < DIM; i++){snew(beta_lab[i], DIM);}
-    for (i = 0; i < DIM; i++){for (j = 0; j < DIM; j++){snew(beta_lab[i][j], DIM);}}
-	for (i = 0;i < DIM; i++){for (j = 0;j < DIM; j++){for (k = 0;k < DIM; k++){snew(beta_lab[i][j][k],isize0);}}}
+	snew(beta_lab, DIM*DIM*DIM);
+	for (i=0;i<DIM*DIM*DIM;i++)
+	{
+		snew(beta_lab[i],isize0);
+	}
 
 /**************************INITIALIZE ARRAYS USED TO CALCULATE INTENSITIES**************************************************************************************/
 
@@ -649,12 +688,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	snew(intens_total,n2max2+1);
 	snew(intens_cohrt,n2max2+1);
 	snew(intens_incoh,n2max2+1);
-//	for (g=0;g<ng;g++)
-//	{
-//		snew(intens_total[g],n2max2+1);
-//		snew(intens_cohrt[g],n2max2+1);
-//		snew(intens_incoh[g],n2max2+1);
-//	}
 	snew(num_count,n2max2+1);
 
 /**************************READ FRAMES IN AND FILL ARRAYS*******************************************************************************************************/
@@ -668,19 +701,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 	// Read in frames.
 	read_first_x(oenv, &status, fnTRX, &t, &x, box);
-//	for (ff=0;ff<nframes;ff++)
 	do
 	{
-//		if (ff==0){read_first_x(oenv, &status, fnTRX, &t, &x, box);}
-//		else{read_next_x(oenv,status,&t,x,box);}
-//		for (ii=0;ii<isize0;ii++)
-//		{
-//			ind0 = mols->index[molindex[0][ii]];
-//			for (j=0;j<molsize;j++)
-//			{
-//				copy_rvec(x[ind0+j],all_r[ii][j]);
-//			}
-//		}
 
 		// Fill sine and cosine arrays.
 		for (i=0;i<isize0;i++)
@@ -688,7 +710,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			ind0 = mols->index[molindex[0][i]];
 			for (j=0;j<3;j++)
 			{
-//				rval = all_r[i][0][j];
 				rval = x[ind0][j];
 				s_array[i][j][0] = 0.0;
 				c_array[i][j][0] = 1.0;
@@ -701,39 +722,35 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 					c_array[i][j][nn] = c_array[i][j][nn-1]*c_array[i][j][1] - s_array[i][j][nn-1]*s_array[i][j][1];
 				}
 			}
-//		}
 
 			// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
 			// we will multiply by the elements of the polarization vectors).
-//		for (i = 0;i<isize0;i++)
-//		{
-//			ind0 = mols->index[molindex[0][i]];
-			// For this frame and this molecule, calculate the direction cosines.
 			for (ii=0;ii<molsize;ii++)
 			{
 				pbc_dx(&pbc,x[ind0+ii],x[ind0],xmol[ii]);
-//				pbc_dx(&pbc,all_r[i][ii],all_r[i][0],xmol[ii]);
 			}
 
 			calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
 
+			rr = 0;
 			for (aa=0;aa<DIM;aa++)
 			{
 				for (bb=0;bb<DIM;bb++)
 				{
-					for (cc=0;cc<DIM;cc++)
+					for (cc=bb;cc<DIM;cc++)
 					{
-						beta_lab[aa][bb][cc][i] = 0.0;
+						beta_lab[rr][i] = 0.0;
 						for (ii=0;ii<DIM;ii++)
 						{
 							for (jj=0;jj<DIM;jj++)
 							{
 								for (kk=0;kk<DIM;kk++)
 								{
-									beta_lab[aa][bb][cc][i] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
+									beta_lab[rr][i] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
 								}
 							}
 						}
+						rr++;
 					}
 				}
 			}
@@ -744,96 +761,84 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		// their own u and v vectors, i.e. n_used*nbingamma different experimental setups.
 		// For each setup, we calculate the intensity of ESHS light scattered.
 
-//		for (g = 0;g<ng;g++)
-//		{
-//		g = 0;
-			for (qq=0;qq<n_used;qq++)
+		for (qq=0;qq<n_used;qq++)
+		{
+			nx = narray[qq][0];
+			ny = narray[qq][1];
+			nz = narray[qq][2];
+			nxa = abs(nx);
+			nya = abs(ny);
+			nza = abs(nz);
+			// The sine matrices are odd in their arguments; we must take this into account.
+			nxb = 2*(nx>0) - 1;
+			nyb = 2*(ny>0) - 1;
+			nzb = 2*(nz>0) - 1;
+
+			n2 = narray[qq][3];
+			// If n2a is greater than 1, then this means that we can use this k-vector to get the intensities for higher k-vectors.
+			// (and the number of these vectors we can get is equal to n2a).
+			n2a = narray[qq][4];
+
+			for (c=0;c<nbingamma;c++)
 			{
-				nx = narray[qq][0];
-				ny = narray[qq][1];
-				nz = narray[qq][2];
-				nxa = abs(nx);
-				nya = abs(ny);
-				nza = abs(nz);
-				// The sine matrices are odd in their arguments; we must take this into account.
-				nxb = 2*(nx>0) - 1;
-				nyb = 2*(ny>0) - 1;
-				nzb = 2*(nz>0) - 1;
-
-				n2 = narray[qq][3];
-				// If n2a is greater than 1, then this means that we can use this k-vector to get the intensities for higher k-vectors.
-				// (and the number of these vectors we can get is equal to n2a).
-//				n2a = (int)sqrt((float)n2max2/n2);
-				n2a = narray[qq][4];
-
-				for (c=0;c<nbingamma;c++)
+				// For this given group,
+				// q-vector,
+				// and value of gamma,
+				// we are going to calculate the intensity.
+				for (j=0;j<n2a;j++)
 				{
-					// For this given group,
-					// q-vector,
-					// and value of gamma,
-					// we are going to calculate the intensity.
+					st[j] = 0.0;
+					ct[j] = 0.0;
+					zt[j] = 0.0;
+				}
+				for (i=0;i<isize0;i++)
+				{
+//					mu_ind = 0.0;
+
+//					for (rr=0;rr<18;rr++)
+//					{
+//						mu_ind += beta_lab[rr][i]*uvv[rr][qq][c];
+//					}
+					mu_ind = beta_lab[0][i]*uvv[0][qq][c] + beta_lab[1][i]*uvv[1][qq][c] +
+							 beta_lab[2][i]*uvv[2][qq][c] + beta_lab[3][i]*uvv[3][qq][c] +
+							 beta_lab[4][i]*uvv[4][qq][c] + beta_lab[5][i]*uvv[5][qq][c] +
+							 beta_lab[6][i]*uvv[6][qq][c] + beta_lab[7][i]*uvv[7][qq][c] +
+							 beta_lab[8][i]*uvv[8][qq][c] + beta_lab[9][i]*uvv[9][qq][c] +
+							 beta_lab[10][i]*uvv[10][qq][c] + beta_lab[11][i]*uvv[11][qq][c] +
+							 beta_lab[12][i]*uvv[12][qq][c] + beta_lab[13][i]*uvv[13][qq][c] +
+							 beta_lab[14][i]*uvv[14][qq][c] + beta_lab[15][i]*uvv[15][qq][c] +
+							 beta_lab[16][i]*uvv[16][qq][c] + beta_lab[17][i]*uvv[17][qq][c];
+
+					// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
+
 					for (j=0;j<n2a;j++)
 					{
-						st[j] = 0.0;
-						ct[j] = 0.0;
-						zt[j] = 0.0;
+						nx = nxa*(j+1);
+						ny = nya*(j+1);
+						nz = nza*(j+1);
+						ct[j] += mu_ind*( c_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] - 
+							nxb*nyb*s_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] - 
+							nxb*nzb*s_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
+							nyb*nzb*c_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
+						st[j] += mu_ind*( nxb*s_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] + 
+							nyb*c_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] + 
+							nzb*c_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
+							nxb*nyb*nzb*s_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
+						zt[j] += mu_ind*mu_ind;
 					}
-					for (i=0;i<isize0;i++)
-					{
-						mu_ind = 0.0;
-
-						for (aa=0;aa<DIM;aa++)
-						{
-							mu_ind += beta_lab[aa][0][0][i]*u_vec[qq][c][aa]*v_vec[qq][c][0]*v_vec[qq][c][0] +
-									  beta_lab[aa][1][1][i]*u_vec[qq][c][aa]*v_vec[qq][c][1]*v_vec[qq][c][1] +
-									  beta_lab[aa][2][2][i]*u_vec[qq][c][aa]*v_vec[qq][c][2]*v_vec[qq][c][2];
-							for (bb=0;bb<DIM;bb++)
-							{
-								for (cc=bb+1;cc<DIM;cc++)
-								{
-									mu_ind += 2.0*beta_lab[aa][bb][cc][i]*u_vec[qq][c][aa]*v_vec[qq][c][bb]*v_vec[qq][c][cc];
-								}
-							}
-						}
-
-						// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
-
-						for (j=0;j<n2a;j++)
-						{
-							nx = nxa*(j+1);
-							ny = nya*(j+1);
-							nz = nza*(j+1);
-							ct[j] += mu_ind*( c_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] - 
-								nxb*nyb*s_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] - 
-								nxb*nzb*s_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
-								nyb*nzb*c_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
-							st[j] += mu_ind*( nxb*s_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] + 
-								nyb*c_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] + 
-								nzb*c_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
-								nxb*nyb*nzb*s_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
-							zt[j] += mu_ind*mu_ind;
-						}
-						
-					}
-					// Add to the average the intensity for a single frame and gamma.
-					for (j=0;j<n2a;j++)
-					{
-						n2_2 = n2*(j+1)*(j+1);
-						intens_total[n2_2] += st[j]*st[j] + ct[j]*ct[j];
-						intens_incoh[n2_2] += zt[j];
-//						intens_cohrt[g][n2_2] += intens_total[g][n2_2] - intens_incoh[g][n2_2];
-						num_count[n2_2] += 1;
-					}
+					
+				}
+				// Add to the average the intensity for a single frame and gamma.
+				for (j=0;j<n2a;j++)
+				{
+					n2_2 = n2*(j+1)*(j+1);
+					intens_total[n2_2] += st[j]*st[j] + ct[j]*ct[j];
+					intens_incoh[n2_2] += zt[j];
+					num_count[n2_2] += 1;
 				}
 			}
-
-		//}
-
+		}
     } while (read_next_x(oenv,status,&t,x,box));
-
-	// We no longer need our r array, so let's free it up now.
-//	sfree(all_r);
-
 /****************************************************************** PRINT OUT ********************************************************************************************/
 
 	// Now we have the intensity for each type of scattering, averaged over frames and
