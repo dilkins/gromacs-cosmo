@@ -406,11 +406,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	nmax2 = nmax*nmax;
 	n2max2 = n2max*n2max;
 	n_used = 0;
-	for (nx = -nmax;nx <= nmax;nx++)
+	for (nx = 0;nx <= nmax;nx++)
 	{
-		for (ny = -nmax;ny <= nmax;ny++)
+		for (ny = 0;ny <= nmax;ny++)
 		{
-			for (nz = -nmax;nz <= nmax;nz++)
+			for (nz = 0;nz <= nmax;nz++)
 			{
 				n2 = nx*nx + ny*ny + nz*nz;
 				if ((n2 != 0) && (n2 <= nmax2))
@@ -740,6 +740,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 					for (cc=bb;cc<DIM;cc++)
 					{
 						beta_lab[rr][i] = 0.0;
+//						beta_lab[rr][i] = cosdirmat[aa][0]*cosdirmat[bb][0]*cosdirmat[cc][0];
 						for (ii=0;ii<DIM;ii++)
 						{
 							for (jj=0;jj<DIM;jj++)
@@ -763,16 +764,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 		for (qq=0;qq<n_used;qq++)
 		{
-			nx = narray[qq][0];
-			ny = narray[qq][1];
-			nz = narray[qq][2];
-			nxa = abs(nx);
-			nya = abs(ny);
-			nza = abs(nz);
+			nxa = narray[qq][0];
+			nya = narray[qq][1];
+			nza = narray[qq][2];
+//			nxa = abs(nx);
+//			nya = abs(ny);
+//			nza = abs(nz);
 			// The sine matrices are odd in their arguments; we must take this into account.
-			nxb = 2*(nx>0) - 1;
-			nyb = 2*(ny>0) - 1;
-			nzb = 2*(nz>0) - 1;
+//			nxb = 2*(nx>0) - 1;
+//			nyb = 2*(ny>0) - 1;
+//			nzb = 2*(nz>0) - 1;
 
 			n2 = narray[qq][3];
 			// If n2a is greater than 1, then this means that we can use this k-vector to get the intensities for higher k-vectors.
@@ -799,15 +800,15 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 //					{
 //						mu_ind += beta_lab[rr][i]*uvv[rr][qq][c];
 //					}
-					mu_ind = beta_lab[0][i]*uvv[0][qq][c] + beta_lab[1][i]*uvv[1][qq][c] +
-							 beta_lab[2][i]*uvv[2][qq][c] + beta_lab[3][i]*uvv[3][qq][c] +
-							 beta_lab[4][i]*uvv[4][qq][c] + beta_lab[5][i]*uvv[5][qq][c] +
-							 beta_lab[6][i]*uvv[6][qq][c] + beta_lab[7][i]*uvv[7][qq][c] +
-							 beta_lab[8][i]*uvv[8][qq][c] + beta_lab[9][i]*uvv[9][qq][c] +
-							 beta_lab[10][i]*uvv[10][qq][c] + beta_lab[11][i]*uvv[11][qq][c] +
-							 beta_lab[12][i]*uvv[12][qq][c] + beta_lab[13][i]*uvv[13][qq][c] +
-							 beta_lab[14][i]*uvv[14][qq][c] + beta_lab[15][i]*uvv[15][qq][c] +
-							 beta_lab[16][i]*uvv[16][qq][c] + beta_lab[17][i]*uvv[17][qq][c];
+					mu_ind = beta_lab[0][i]*uvv[0][qq][c]   + beta_lab[1][i]*uvv[1][qq][c]   +
+						 beta_lab[2][i]*uvv[2][qq][c]   + beta_lab[3][i]*uvv[3][qq][c]   +
+						 beta_lab[4][i]*uvv[4][qq][c]   + beta_lab[5][i]*uvv[5][qq][c]   +
+						 beta_lab[6][i]*uvv[6][qq][c]   + beta_lab[7][i]*uvv[7][qq][c]   +
+						 beta_lab[8][i]*uvv[8][qq][c]   + beta_lab[9][i]*uvv[9][qq][c]   +
+						 beta_lab[10][i]*uvv[10][qq][c] + beta_lab[11][i]*uvv[11][qq][c] +
+						 beta_lab[12][i]*uvv[12][qq][c] + beta_lab[13][i]*uvv[13][qq][c] +
+						 beta_lab[14][i]*uvv[14][qq][c] + beta_lab[15][i]*uvv[15][qq][c] +
+						 beta_lab[16][i]*uvv[16][qq][c] + beta_lab[17][i]*uvv[17][qq][c];
 
 					// For this molecule, mu_ind is the component of beta that we're interested in, after all transformations are done.
 
@@ -816,14 +817,15 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 						nx = nxa*(j+1);
 						ny = nya*(j+1);
 						nz = nza*(j+1);
-						ct[j] += mu_ind*( c_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] - 
-							nxb*nyb*s_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] - 
-							nxb*nzb*s_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
-							nyb*nzb*c_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
-						st[j] += mu_ind*( nxb*s_array[i][0][nx]*c_array[i][1][ny]*c_array[i][2][nz] + 
-							nyb*c_array[i][0][nx]*s_array[i][1][ny]*c_array[i][2][nz] + 
-							nzb*c_array[i][0][nx]*c_array[i][1][ny]*s_array[i][2][nz] - 
-							nxb*nyb*nzb*s_array[i][0][nx]*s_array[i][1][ny]*s_array[i][2][nz]);
+						ct[j] += mu_ind*( c_array[i][0][nx]*(c_array[i][1][ny]*c_array[i][2][nz] - 
+								  		     s_array[i][1][ny]*s_array[i][2][nz]) -
+								  s_array[i][0][nx]*(s_array[i][1][ny]*c_array[i][2][nz] + 
+								  		     c_array[i][1][ny]*s_array[i][2][nz])); 
+						st[j] += mu_ind*( s_array[i][0][nx]*(c_array[i][1][ny]*c_array[i][2][nz] - 
+								  		     s_array[i][1][ny]*s_array[i][2][nz]) +
+								  c_array[i][0][nx]*(s_array[i][1][ny]*c_array[i][2][nz] + 
+								  		     c_array[i][1][ny]*s_array[i][2][nz])); 
+
 						zt[j] += mu_ind*mu_ind;
 					}
 					
@@ -878,6 +880,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	}
 	gmx_ffclose(fpn);
 }
+/****************************************************************** MAIN SUBROUTINE **************************************************************************************/
  
 int gmx_shscorr(int argc, char *argv[])
 {
