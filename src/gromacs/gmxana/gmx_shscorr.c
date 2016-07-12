@@ -128,7 +128,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     t_pbc          pbc;
     gmx_rmpbc_t    gpbc = NULL;
     gmx_rng_t      rng = NULL;
-    int            mol, a, molsize;
+    int            mol, a, molsize,nfr;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms,nrp;
     int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n2max2,n_used,n2,n2_2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss,n2a;
@@ -847,18 +847,18 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// values of gamma; we have the average intensity for each possible modulus |q|.
 	// (Or rather, as it stands, nx^2 + ny^2 + nz^2).
 	// All that remains, I think, is to print it out!
-    fpn = xvgropen("total_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
+    fpn = xvgropen(fnSFACT, "S(q)", "q [1/nm]", "S(q)", oenv);
     fprintf(fpn, "@type xy\n");
 	for (qq=0;qq<n2max2+1;qq++)
 	{
 		if (num_count[qq]>0)
 		{
-			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_total[qq]*invsize0/num_count[qq]);
+			fprintf(fpn, "%10g %10g %10g\n",sqrt(qq)*qnorm,intens_total[qq]*invsize0/num_count[qq],intens_incoh[qq]*invsize0/num_count[qq]);
 		}
 	}
 	gmx_ffclose(fpn);
 
-    fpn = xvgropen("cohrt_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
+/*    fpn = xvgropen("cohrt_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
     fprintf(fpn, "@type xy\n");
 	for (qq=0;qq<n2max2+1;qq++)
 	{
@@ -878,7 +878,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[qq]*invsize0/num_count[qq]);
 		}
 	}
-	gmx_ffclose(fpn);
+	gmx_ffclose(fpn);*/
 }
 /****************************************************************** MAIN SUBROUTINE **************************************************************************************/
  
