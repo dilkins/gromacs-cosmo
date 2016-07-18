@@ -88,7 +88,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, int nmax, int n2max, real intheta)
+                   const output_env_t oenv, int nmax, int n2max, real intheta, int skip)
 
 {
     FILE          *fp, *fpn;
@@ -133,7 +133,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     int           *chged_atom_indexes, n_chged_atoms,nrp;
     int		       nx,ny,nz,maxnpoint,**narray,**narray2,nmax2,n2max2,n_used,n2,n2_2,ii,jj,kk,l,ff,*num_count,nn,nxa,nya,nza,nxb,nyb,nzb,*repeat_list,*num_repeats,**to_repeat,nmx,ss,n2a;
     real	      ***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,**beta_lab,*st,*ct,*zt;
-//    rvec			**all_r;
 	real			***uvv;
     real			*intens_total,*intens_cohrt,*intens_incoh,***s_array,***c_array,rval,dotp,mu_ind = 0.0,*induced_mu,xx,yy,zz;
 
@@ -141,7 +140,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     atom = top->atoms.atom;
     mols = &(top->mols);
     isize0 = isize[0];
-//    isize0 = 2;
     molsize = mols->index[molindex[0][1]] - mols->index[molindex[0][0]];
     snew(xmol,molsize);
     snew(xref,molsize);
@@ -406,11 +404,11 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	nmax2 = nmax*nmax;
 	n2max2 = n2max*n2max;
 	n_used = 0;
-	for (nx = 0;nx <= nmax;nx++)
+	for (nx = 0;nx <= nmax;nx+=(1 + (nx/skip)))
 	{
-		for (ny = 0;ny <= nmax;ny++)
+		for (ny = 0;ny <= nmax;ny+=(1 + (ny/skip)))
 		{
-			for (nz = 0;nz <= nmax;nz++)
+			for (nz = 0;nz <= nmax;nz+=(1 + (nz/skip)))
 			{
 				n2 = nx*nx + ny*ny + nz*nz;
 				if ((n2 != 0) && (n2 <= nmax2))
@@ -901,8 +899,8 @@ int gmx_shscorr(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0 ;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
-    static int		     	 nmax = 10,n2max = 20;
-	static real				 intheta = 90;
+    static int		     	 nmax = 10,n2max = 20,skip = -1;
+    static real				 intheta = 90;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -928,6 +926,7 @@ int gmx_shscorr(int argc, char *argv[])
 		{ "-nmax",	    	FALSE, etINT, {&nmax}, "maximum modulus of n vector for sphere"},
 		{ "-n2max",			FALSE, etINT, {&n2max}, "maximum modulus of n vector for cutoff"},
 		{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
+		{ "-skip",			FALSE, etINT, {&skip}, "q-vector skip"},
         { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
         { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
@@ -1050,6 +1049,7 @@ int gmx_shscorr(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
 	if (n2max < nmax){n2max=nmax;}
+	if (skip < 0){skip = 2*nmax;}
 
     do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
@@ -1058,6 +1058,6 @@ int gmx_shscorr(int argc, char *argv[])
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip);
     return 0;
 }
