@@ -234,9 +234,6 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
        fprintf(stderr,"the density for the scalar kernel for each grid point i and for all atomic species j\n");
        fprintf(stderr,"is computed using gaussians rho_i = sum_j exp(-(x_i-x_j)^2/(2*std_dev^2))*weight_i\n");
        fprintf(stderr,"with a standard deviation of %f\n",std_dev_dens);
-       fprintf(stderr,"the density on the grid points is weighted with gaussians that are centred on the molecule\n");
-       fprintf(stderr,"with a standard deviation of %f\n",4.0*std_dev_dens);
-       fprintf(stderr,"if you want to change the standard deviation for these weights you have to modify the source\n");
        fprintf(stderr,"the total number of training points is %d\n",SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
        inv_tot_npoints_local_grid = 1.0/(SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
     }
@@ -707,8 +704,13 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                }
                            }
                         }
-                        gmx_fatal(FARGS,"end\n");
 */
+
+//                        if (debug )
+//                        {
+//                           gmx_fatal(FARGS,"end\n");
+//                        }
+
                     }
                     else if (kern[0] == 'k')
                     {
@@ -742,9 +744,19 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         {
                             for (c  = 0; c < nbingamma; c++)
                             {
-                                induced_second_order_fluct_dipole(cosdirmat, 
-                                                                  vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], 
-                                                                  beta_mol, &mu_ind);
+                                if (kern[0] == 'n')
+                                {
+                                   induced_second_order_fluct_dipole_fluct_beta(cosdirmat, 
+                                                                     vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], 
+                                                                     beta_mol, &mu_ind);
+                                }
+                                else
+                                {
+                                   induced_second_order_fluct_dipole_fluct_beta(cosdirmat,
+                                                                     vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
+                                                                     beta_mol, &mu_ind);
+
+                                }
                                 mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
                                 mu_ind_mols[i] = mu_ind;
                                 for (qq = 0; qq < nbinq; qq++)
@@ -900,13 +912,23 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         {
                             for (c = 0 ; c < nbingamma; c++)
                             {
-                            induced_second_order_fluct_dipole(cosdirmat,
-                                                              vec_pout_theta_gamma[rr][tt][c],
-                                                              vec_pin_theta_gamma[rr][tt][c],
-                                                              beta_mol, &mu_ind);
-                            mu_ind_t[i][rr][tt][c] = mu_ind;
-                            mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
-                            //printf("mu_ind_t %f \n", mu_ind_t[i][rr][tt][c]);
+
+                                if (kern[0] == 'n')
+                                {
+                                   induced_second_order_fluct_dipole(cosdirmat,
+                                                                     vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
+                                                                     beta_mol, &mu_ind);
+                                }
+                                else
+                                {
+                                   induced_second_order_fluct_dipole_fluct_beta(cosdirmat,
+                                                                     vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
+                                                                     beta_mol, &mu_ind);
+
+                                }
+                                mu_ind_t[i][rr][tt][c] = mu_ind;
+                                mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
+                               //printf("mu_ind_t %f \n", mu_ind_t[i][rr][tt][c]);
                             }
                         }
                     }
@@ -1084,8 +1106,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     for (tt = 0; tt < nbintheta ; tt++)
     {
        theta = 2.0*theta_vec[tt]*180.0/M_PI;
-       if ((round(theta) == -45.0) || (round(theta) == -30.0 ) || (round(theta) == -60.0 ) || (round(theta) == -90.0)
-          || (round(theta) == -150.0)  || (round(theta) == -120.0) || (tt ==  0) || (tt == nbintheta/2))
+       if ((round(abs(theta)) == 45.0) || (round(abs(theta)) == 30.0 ) || (round(abs(theta)) == 60.0 ) || (round(abs(theta)) == 90.0)
+          || (round(abs(theta)) == 150.0)  || (round(abs(theta)) == 120.0) || (round(abs(theta)) == 10.0) || (tt ==  0) || (tt == nbintheta/2))
        {
            fprintf(fpn, "@    s%d legend \"incoherent theta=%g all faces\"\n",nplots,theta);
            fprintf(fpn, "@target G0.S%d\n",nplots);
@@ -1580,6 +1602,72 @@ int check_ion(t_topology *top,char *name)
   return n;
 }
 
+void induced_second_order_fluct_dipole_fluct_beta(matrix cosdirmat,
+                                                  const rvec pout, const rvec pin,
+                                                  real ***betamol, real *mu_ind)
+{
+    int i, j, k;
+    int l, m, n;
+    //betal is the hyperpolarizability in lab frame
+    real ***betal,  mu_temp = 0.0;
+    //initialize beta
+    snew(betal, DIM);
+    *mu_ind = 0.0;
+    for (i = 0; i < DIM; i++)
+    {
+        snew(betal[i], DIM);
+        for (j = 0; j < DIM; j++)
+        {
+            snew(betal[i][j], DIM);
+        }
+    }
+    //compute beta_lab as beta_lab(i,j,k)=sum(p,q,r) c_i,p c_j,q c_k,r * beta_mol_p,q,r
+    for (i = 0; i < DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+           for (k = 0; k < DIM; k++)
+           {
+               for (l = 0; l < DIM; l++)
+               {
+                    for (m = 0; m < DIM; m++)
+                    {
+                         for ( n = 0; n < DIM; n++)
+                         {
+                              betal[i][j][k] +=cosdirmat[i][l]*cosdirmat[j][m]*cosdirmat[k][n]*betamol[l][m][n];
+                         }
+                    }
+               }
+           }
+        }
+    }
+
+    for (i = 0; i < DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+           for (k = 0; k < DIM; k++)
+           {
+               *mu_ind += betal[i][j][k]*pout[i]*pin[j]*pin[k];
+       
+           }
+        }
+    }
+
+    //FREE beta lab
+    for (i = 0; i < DIM; i++)
+    {
+        for (j = 0; j < DIM; j++)
+        {
+            sfree(betal[i][j]);
+        }
+        sfree(betal[i]);
+    }
+    sfree(betal);
+
+
+}
+
 
 
 void induced_second_order_fluct_dipole(matrix cosdirmat, 
@@ -1590,14 +1678,6 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
     int p, l, m;
     //betal is the hyperpolarizability in lab frame
     real ***betal,  mu_temp = 0.0;
-    rvec pout_temp, pin_temp;
-
-    pout_temp[XX] = 0.0;
-    pout_temp[YY] = 0.0;
-    pout_temp[ZZ] = 1.0;
-    pin_temp[XX] = 0.0;
-    pin_temp[YY] = 0.0;
-    pin_temp[ZZ] = 1.0;
 
 
     //initialize beta
@@ -1702,8 +1782,8 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          for (gr_ind = 0; gr_ind < SKern_E->gridpoints; gr_ind++)
          {
             ind_ex = DIM*(gr_ind + SKern_E->gridpoints*kern_ind) + XX;
-            ind_ey = DIM*(gr_ind + SKern_E->gridpoints*kern_ind) + YY;
-            ind_ez = DIM*(gr_ind + SKern_E->gridpoints*kern_ind) + ZZ;
+            ind_ey = ind_ex + YY;
+            ind_ez = ind_ex + ZZ;
             feature_vec_x = pow(SKern_E->vec_interp_quant_grid[gr_ind][XX] - SKern_E->meanquant[ind_ex], kern_ind+1);
             feature_vec_y = pow(SKern_E->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_ey], kern_ind+1);
             feature_vec_z = pow(SKern_E->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_ez], kern_ind+1);
@@ -1717,11 +1797,15 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
             printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
             printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
-            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][0][0][1]*feature_vec_x);
-            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][0][0][1]*feature_vec_y);
-            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][0][0][1]*feature_vec_z);
+            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]*feature_vec_x);
+            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
+            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
 
+            printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]);
+            printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]);
+            printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]);
 */
+
             for (a = 0; a < DIM ; a++)
             {
                 for (b = 0; b < DIM ; b++)
@@ -1743,9 +1827,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          {
             ind_rho = gr_ind + SKern_rho_O->gridpoints*kern_ind;
             feature_vec = pow(SKern_rho_O->interp_quant_grid[gr_ind] - SKern_rho_O->meanquant[ind_rho] , kern_ind+1);
-//            printf("feature_vec %f\n",feature_vec);
-//            printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
-//            printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][0][0][1]*feature_vec);
+/*
+            printf("feature_vec %f\n",feature_vec);
+            printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
+            printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
+            printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+*/
 
             for (a = 0; a < DIM ; a++)
             {
@@ -1763,9 +1850,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          {
             ind_rho = gr_ind + SKern_rho_H->gridpoints*kern_ind;
             feature_vec = pow(SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho] , kern_ind+1);
-//            printf("feature_vec %f\n",feature_vec);
-//            printf("predicted_vec_1 %f\n",SKern_rho_H->coeff[ind_rho][0][0][0]*feature_vec);
-//            printf("predicted_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][0][0][1]*feature_vec);
+/*
+            printf("feature_vec %f\n",feature_vec);
+            printf("predicted_vec_1 %f\n",SKern_rho_H->coeff[ind_rho][0][0][0]*feature_vec);
+            printf("predicted_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]*feature_vec);
+            printf("coeff_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]);
+*/
 
             for (a = 0; a < DIM ; a++)
             {
@@ -1786,7 +1876,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          {
             for (c = 0; c < DIM ; c++)
             {
-               (*betamol)[a][b][c] -= betamean[c+DIM*b+DIM*DIM*a];
+               (*betamol)[a][b][c] += betamean[c+DIM*b+DIM*DIM*a];
 //                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
             }
          }

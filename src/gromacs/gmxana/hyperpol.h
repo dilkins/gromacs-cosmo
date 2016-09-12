@@ -63,6 +63,9 @@ void rotate_wave_vec(const rvec wave_vec, const int rot_label, rvec rot_vec);
 
 void induced_second_order_dipole( const rvec xv2, const rvec xv3, const rvec pout, const rvec pin, real ***betamol, real *mu_ind);
 
+void induced_second_order_dipole_fluct_beta( const rvec xv2, const rvec xv3, const rvec pout, const rvec pin, real ***betamol, real *mu_ind);
+
+
 void beta_gaussian_noise(real ***beta_const_mean, real ***beta_const_dev, gmx_rng_t rng, real ****beta_gauss);
 
 
@@ -146,6 +149,12 @@ void calc_beta_efield_map(t_Map *Map, real **Efield, real ***betamol, real ****b
 
 //compute the component of the second order dipole projected onto the polarization vectors pin and pout
 extern void induced_second_order_fluct_dipole( matrix cosdirmat,
+                                       const rvec pout, const rvec pin,
+                                       real ***betamol,
+                                       real *mu_ind);
+
+//compute the component of the second order dipole projected onto the polarization vectors pin and pout
+extern void  induced_second_order_fluct_dipole_fluct_beta( matrix cosdirmat,
                                        const rvec pout, const rvec pin,
                                        real ***betamol,
                                        real *mu_ind);
