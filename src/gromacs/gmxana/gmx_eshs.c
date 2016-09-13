@@ -88,7 +88,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv)
+                   const output_env_t oenv, real eps)
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
@@ -656,7 +656,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    
                    calculate_spme_efield(SKern_E, ir, top, box, invvol, mols, molindex,
                                        chged_atom_indexes,n_chged_atoms,
-                                       gridsize, grid_spacing, interp_order, x, isize0, FT_pair_pot, &Emean);
+                                       gridsize, grid_spacing, interp_order, x, isize0, FT_pair_pot, &Emean,eps);
                    fprintf(stderr,"computed electric field with spme\n");
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
                 }
@@ -3185,7 +3185,7 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
                          matrix box, real invvol, t_block *mols, int  *molindex[],
                          int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
                          int interp_order, rvec *x, int isize0,
-                         t_complex ***FT_pair_pot, rvec *Emean)
+                         t_complex ***FT_pair_pot, rvec *Emean, real eps)
 {
 
         // Here we use the calculated FT_pair potential to find the electrostatic potential on the grid points.
@@ -3193,13 +3193,14 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         // then multiply it by FT_pair_potential. Inverse FTing the result will give the potential on these points.
         // We require that the input coordinates be fractional coordinates (though this should be easy to alter).
         real charge, ***Qmatr_z, ***Qmatr_y, ***Qmatr_x;
-        real mult_fac;
+        real mult_fac, scalfac;
         t_complex ****qF, ****convF, ***convF_z, ***qF_z, ***convF_y, ***qF_y, ***convF_x, ***qF_x;
         int n, i, j, k, m, d,points[3], kk1, kk2, kk3, idx;
         int ix, iy;
         int ind0;
         rvec xi, invbox, du;
         rvec ***Qmatr,bsplcoeff, d_bsplcoeff;
+	rvec dielectric;
 
         invbox[XX] =1.0/ box[XX][XX]; invbox[YY] = 1.0/box[YY][YY]; invbox[ZZ] = 1.0/box[ZZ][ZZ];
         mult_fac = pow(invvol/(grid_spacing[XX]*grid_spacing[YY]*grid_spacing[ZZ]),1.0/3.0);
@@ -3275,6 +3276,11 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
 
         // NOTE: as currently written, we also require that periodic boundary conditions have been applied to
         // the coordinates.
+	for (i=0;i<3;i++)
+	{
+		// Zero the electric-field correction due to dielectric boundary conditions.
+		dielectric[i] = 0.0;
+	}
         for (n = 0;n < isize0 ;n++)
         {
                 for (m = 0; m < n_chged_atoms; m++)
@@ -3288,6 +3294,12 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
                        //Find the nearest grid points to charge n.
                        for (i = 0;i < 3;i++)
                        {
+			       if (eps > 0.0)
+			       {
+				       // If we have as input a negative dielectric constant, this means that we don't want to include these
+				       // boundary conditions.
+				       dielectric[i] -= charge*xi[i];
+			       }
                                xi[i] *= invbox[i];                            
                                points[i] = floor(xi[i]*grid[i]);
                        }
@@ -3350,9 +3362,9 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         }
         // FT it back to get the convolution in real space. This convolution is the electrostatic potential on the grid points.
       
-        do_fft(Kern->quantity_on_grid_z,convF_z,grid,mult_fac,  GMX_FFT_COMPLEX_TO_REAL);
         do_fft(Kern->quantity_on_grid_x,convF_x,grid,mult_fac,  GMX_FFT_COMPLEX_TO_REAL);
         do_fft(Kern->quantity_on_grid_y,convF_y,grid,mult_fac,  GMX_FFT_COMPLEX_TO_REAL);
+        do_fft(Kern->quantity_on_grid_z,convF_z,grid,mult_fac,  GMX_FFT_COMPLEX_TO_REAL);
 
         (*Emean)[XX] = 0.0;
         (*Emean)[YY] = 0.0;
@@ -3398,6 +3410,31 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         sfree(Qmatr_z);
         sfree(qF_z);
         sfree(convF_z);
+
+	// The correction due to dielectric boundary conditions must now be multiplied by some constants.
+	if (eps > 0.0)
+	{
+		// A negative epsilon (which is unphysical) just means that we don't want to apply these
+		// boundary conditions.
+		scalfac = 4.0*M_PI * invvol / (1.0 + 2.0*eps);
+		for (i=0;i<3;i++)
+		{
+			dielectric[i] = scalfac*dielectric[i];
+		}
+		// We've calculated this correction; add it to the calculated electric field.
+		for (i=0;i<grid[0];i++)
+		{
+			for (j=0;j<grid[1];j++)
+			{
+				for (k=0;k<grid[2];k++)
+				{
+					Kern->quantity_on_grid_x[i][j][k] += dielectric[0];
+					Kern->quantity_on_grid_y[i][j][k] += dielectric[1];
+					Kern->quantity_on_grid_z[i][j][k] += dielectric[2];
+				}
+			}
+		}
+	}
 
 
 //        (*Emean)[XX] /=(grid[0]*grid[1]*grid[2]);
@@ -3666,7 +3703,7 @@ int gmx_eshs(int argc, char *argv[])
     static gmx_bool          bPBC = TRUE, bIONS = FALSE;
     static real              electrostatic_cutoff = 1.2, maxelcut = 2.0, kappa = 5.0,  kernstd = 10.0 ;
     static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05;
-    static real              binwidth = 0.002, angle_corr = 90.0 ;
+    static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 ;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
 
@@ -3708,6 +3745,7 @@ int gmx_eshs(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Always use, results without PBC not tested." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
+	{ "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -3819,6 +3857,6 @@ int gmx_eshs(int argc, char *argv[])
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps);
     return 0;
 }
