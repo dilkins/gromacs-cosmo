@@ -3370,14 +3370,14 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
                         sfree(Qmatr_z[i][j]);
                         sfree(qF_z[i][j]);
                         sfree(convF_z[i][j]);
-/*                        for (k = 0; k < grid[2];k++)
-                        { 
-                            (*Emean)[XX] += Kern->quantity_on_grid_x[i][j][k];
-                            (*Emean)[YY] += Kern->quantity_on_grid_y[i][j][k];
-                            (*Emean)[ZZ] += Kern->quantity_on_grid_z[i][j][k];
+//                        for (k = 0; k < grid[2];k++)
+//                        { 
+//                            (*Emean)[XX] += Kern->quantity_on_grid_x[i][j][k];
+//                            (*Emean)[YY] += Kern->quantity_on_grid_y[i][j][k];
+//                            (*Emean)[ZZ] += Kern->quantity_on_grid_z[i][j][k];
 //                            printf("emean %f %f %f\n",(*Emean)[XX],(*Emean)[YY],(*Emean)[ZZ]);
-                        }
-*/
+//                        }
+
                 }
                 sfree(Qmatr_x[i]);
                 sfree(qF_x[i]);
@@ -3399,12 +3399,29 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         sfree(qF_z);
         sfree(convF_z);
 
-/*
-        (*Emean)[XX] /=(grid[0]*grid[1]*grid[2]);
-        (*Emean)[YY] /=(grid[0]*grid[1]*grid[2]);
-        (*Emean)[ZZ] /=(grid[0]*grid[1]*grid[2]);
-*/
 
+//        (*Emean)[XX] /=(grid[0]*grid[1]*grid[2]);
+//        (*Emean)[YY] /=(grid[0]*grid[1]*grid[2]);
+//        (*Emean)[ZZ] /=(grid[0]*grid[1]*grid[2]);
+
+
+//compute field and subtract its mean value. now just as a test
+/*
+        for (i = 0;i<grid[0];i++)
+        {
+                for (j = 0;j<grid[1];j++)
+                {
+                        for (k = 0; k < grid[2];k++)
+                        {
+                            Kern->quantity_on_grid_x[i][j][k] -= (*Emean)[XX];
+                            Kern->quantity_on_grid_y[i][j][k] -= (*Emean)[YY];
+                            Kern->quantity_on_grid_z[i][j][k] -= (*Emean)[ZZ];
+//                            printf("emean %f %f %f\n",(*Emean)[XX],(*Emean)[YY],(*Emean)[ZZ]);
+                        }
+
+                }
+        }
+*/
 }
 
 int index_wrap(int idx, int wrap)
