@@ -67,8 +67,8 @@
 
 
 static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*/ const char *fnTRX,
-                   const char *fnTENSOR, const char *fnINCTENSOR, const char *fnQSWIPE, const char *fnTIMEEVOLTENSOR, 
-                   const char *fnTHETA, const char *method,
+                   const char *fnTENSOR, const char *fnINCTENSOR, const char *fnTIMEEVOLTENSOR, 
+                   const char *fnTHETA, const char *fnQSWIPE,  const char *method,
                    gmx_bool bPBC, int nbinq, int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
                    real bmzxx, real bmzyy, real bmzzz,
                    int *isize, int  *molindex[], char **grpname, int ng,
@@ -468,7 +468,13 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
            thetain=roundf(theta);
            sprintf(thetastr,"%d",thetain);
            strcpy(str,fnQSWIPE);
+           str[strlen(str)-1]=0;
+           str[strlen(str)-1]=0;
+           str[strlen(str)-1]=0;
+           str[strlen(str)-1]=0;
+           strcat(str,"_theta");
            strcat(str,thetastr);
+           strcat(str,".xvg");
            fq = xvgropen(str, "<Scat_ampl_ijk*Scatt_ampl_lmn> as a function of q"," ", " ", oenv);
            sprintf(refgt,"%s", "");
            fprintf(fq, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
@@ -501,7 +507,7 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                                  {
                                     for (qq = 0; qq <nbinq; qq++)
                                     {
-                                          fprintf(fq, "%10g %10g ",norm(arr_qvec_faces[1][qq]), (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                          fprintf(fq, "%10g %10g\n",norm(arr_qvec_faces[1][qq]), (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
                                                                 + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
                                                                 tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
                                     }
