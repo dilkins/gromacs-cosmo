@@ -95,7 +95,7 @@ extern void Scattering_Intensity_t(const int nf, real time, const int nt, const 
                                    real **********tot_tensor_squared_addr, real **********incoh_tensor_squared_addr,
                                    const char *fnTIMEEVOLTENSOR, FILE  *fname);
 
-extern void Print_tensors(const int nt, const int nframes, const real invgamma, real *theta_vec, int nbinq, real *********tot_tensor_squared,
+extern void Print_tensors(const int nt, const int nframes, const real invgamma, real *theta_vec, int nbinq, rvec **arr_qvec_faces, real *********tot_tensor_squared,
                            real *********incoh_tensor_squared, const char *fnTENSOR,  const char *fnINCTENSOR , const char *fnQSWIPE, char **grpname ,const output_env_t oenv);
 
 extern void Print_scattering_pattern(const int nt,  const int nframes, const real invgamma,

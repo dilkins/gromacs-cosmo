@@ -300,7 +300,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     /* Average volume */
     invvol = invvol_sum/nframes;
  
-    Print_tensors( nbintheta,    nframes, invgamma, theta_vec, nbinq,
+    Print_tensors( nbintheta,    nframes, invgamma, theta_vec, nbinq, arr_qvec_faces,
                   tot_tensor_squared, incoh_tensor_squared,  fnTENSOR, fnINCTENSOR, fnQSWIPE, grpname ,oenv);
  
     if (fnTHETA)
@@ -434,7 +434,10 @@ void Print_scattering_pattern(const int nt,  const int nframes, const real invga
      }
 }
 
-void Print_tensors(const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, real *********tot_tensor_squared, real *********incoh_tensor_squared, const char *fnTENSOR, const char *fnINCTENSOR , const char *fnQSWIPE, char **grpname ,const output_env_t oenv)
+void Print_tensors(const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, 
+                   rvec **arr_qvec_faces, real *********tot_tensor_squared, 
+                   real *********incoh_tensor_squared, const char *fnTENSOR, 
+                   const char *fnINCTENSOR , const char *fnQSWIPE, char **grpname ,const output_env_t oenv)
 {
     int pm, qm, sm, ppm, qpm, spm, qq;
     int rr, tt, thetain;
@@ -498,7 +501,7 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                                  {
                                     for (qq = 0; qq <nbinq; qq++)
                                     {
-                                          fprintf(fpn, "%10g ",(tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                          fprintf(fq, "%10g %10g ",norm(arr_qvec_faces[1][qq]), (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
                                                                 + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
                                                                 tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
                                     }
