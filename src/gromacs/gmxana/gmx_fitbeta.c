@@ -67,7 +67,7 @@
 
 
 static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*/ const char *fnTRX,
-                   const char *fnTENSOR, const char *fnINCTENSOR, const char *fnTIMEEVOLTENSOR, 
+                   const char *fnTENSOR, const char *fnINCTENSOR, const char *fnQSWIPE, const char *fnTIMEEVOLTENSOR, 
                    const char *fnTHETA, const char *method,
                    gmx_bool bPBC, int nbinq, int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
                    real bmzxx, real bmzyy, real bmzzz,
@@ -300,8 +300,8 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     /* Average volume */
     invvol = invvol_sum/nframes;
  
-    Print_tensors( nbintheta,    nframes, invgamma, theta_vec,
-                  tot_tensor_squared, incoh_tensor_squared,  fnTENSOR, fnINCTENSOR, grpname ,oenv);
+    Print_tensors( nbintheta,    nframes, invgamma, theta_vec, nbinq,
+                  tot_tensor_squared, incoh_tensor_squared,  fnTENSOR, fnINCTENSOR, fnQSWIPE, grpname ,oenv);
  
     if (fnTHETA)
     {
@@ -434,13 +434,13 @@ void Print_scattering_pattern(const int nt,  const int nframes, const real invga
      }
 }
 
-void Print_tensors(const int nt,  const int nframes, const real invgamma, real *theta_vec ,real *********tot_tensor_squared, real *********incoh_tensor_squared, const char *fnTENSOR, const char *fnINCTENSOR ,char **grpname ,const output_env_t oenv)
+void Print_tensors(const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, real *********tot_tensor_squared, real *********incoh_tensor_squared, const char *fnTENSOR, const char *fnINCTENSOR , const char *fnQSWIPE, char **grpname ,const output_env_t oenv)
 {
     int pm, qm, sm, ppm, qpm, spm, qq;
-    int rr, tt;
-    char refgt[30];
+    int rr, tt, thetain;
+    char refgt[30],str[80],thetastr[80];
     real theta;
-    FILE *fpn, *fpp;
+    FILE *fpn, *fpp, *fq;
 
     fpn = xvgropen(fnTENSOR, "<Scat_ampl_ijk*Scatt_ampl_lmn>", " ", " ", oenv);
     sprintf(refgt,"%s", "");
@@ -459,6 +459,16 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
         if (fnINCTENSOR)
         {
            fprintf(fpp, "%10g ",theta);
+        }
+        if (fnQSWIPE)
+        {
+           thetain=roundf(theta);
+           sprintf(thetastr,"%d",thetain);
+           strcpy(str,fnQSWIPE);
+           strcat(str,thetastr);
+           fq = xvgropen(str, "<Scat_ampl_ijk*Scatt_ampl_lmn> as a function of q"," ", " ", oenv);
+           sprintf(refgt,"%s", "");
+           fprintf(fq, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
         }
         for (pm = 0; pm < DIM; pm++)
         {
@@ -484,6 +494,15 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                                                         incoh_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
                                     }
                                  }
+                                 if (fnQSWIPE)
+                                 {
+                                    for (qq = 0; qq <nbinq; qq++)
+                                    {
+                                          fprintf(fpn, "%10g ",(tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                                                + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
+                                                                tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
+                                    }
+                                 }
                              }
                          }
                      }
@@ -495,11 +514,19 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
            {
               fprintf(fpp, "\n");
            }
+        if (fnQSWIPE)
+           {
+              fprintf(fq, "\n");
+           }
     }
     gmx_ffclose(fpn);
     if (fnINCTENSOR)
     {
        gmx_ffclose(fpp);
+    }
+    if (fnQSWIPE)
+    {
+       gmx_ffclose(fq);
     }
 }
 
@@ -996,6 +1023,8 @@ int gmx_fitbeta(int argc, char *argv[])
         { efXVG, "-oin",  "inc_intensity",    ffOPTWR },
         { efXVG, "-oev",  "time_evol_intensity",    ffOPTWR },
         { efXVG, "-otheta", "non_linear_sfact_vs_theta", ffOPTWR },
+        { efXVG, "-oqplot", "non_linear_sfact_vs_q", ffOPTWR },
+
 
     };
 #define NFILE asize(fnm)
@@ -1042,7 +1071,10 @@ int gmx_fitbeta(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
    
     do_fitbeta(top, ftp2fn(efTRX, NFILE, fnm),
-           opt2fn("-o", NFILE, fnm), opt2fn_null("-oin", NFILE, fnm), opt2fn_null("-oev", NFILE, fnm), opt2fn_null("-otheta", NFILE, fnm), methodt[0],  bPBC, nbinq,
+           opt2fn("-o", NFILE, fnm), opt2fn_null("-oin", NFILE, fnm), 
+           opt2fn_null("-oev", NFILE, fnm), opt2fn_null("-otheta", NFILE, fnm),
+           opt2fn_null("-oqplot", NFILE, fnm),
+           methodt[0],  bPBC, nbinq,
            nbintheta, nbingamma, pin_angle, pout_angle,
            bmzxx, bmzyy, bmzzz, 
            gnx, grpindex, grpname, ngroups, oenv);

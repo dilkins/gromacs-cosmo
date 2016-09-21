@@ -746,7 +746,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                             {
                                 if (kern[0] == 'n')
                                 {
-                                   induced_second_order_fluct_dipole_fluct_beta(cosdirmat, 
+                                   induced_second_order_fluct_dipole(cosdirmat, 
                                                                      vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], 
                                                                      beta_mol, &mu_ind);
                                 }
