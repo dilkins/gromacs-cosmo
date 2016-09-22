@@ -463,22 +463,6 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
         {
            fprintf(fpp, "%10g ",theta);
         }
-        if (fnQSWIPE)
-        {
-           thetain=roundf(theta);
-           sprintf(thetastr,"%d",thetain);
-           strcpy(str,fnQSWIPE);
-           str[strlen(str)-1]=0;
-           str[strlen(str)-1]=0;
-           str[strlen(str)-1]=0;
-           str[strlen(str)-1]=0;
-           strcat(str,"_theta");
-           strcat(str,thetastr);
-           strcat(str,".xvg");
-           fq = xvgropen(str, "<Scat_ampl_ijk*Scatt_ampl_lmn> as a function of q"," ", " ", oenv);
-           sprintf(refgt,"%s", "");
-           fprintf(fq, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
-        }
         for (pm = 0; pm < DIM; pm++)
         {
             for (qm = 0; qm < DIM; qm++)
@@ -503,15 +487,6 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                                                         incoh_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
                                     }
                                  }
-                                 if (fnQSWIPE)
-                                 {
-                                    for (qq = 0; qq <nbinq; qq++)
-                                    {
-                                          fprintf(fq, "%10g %10g\n",norm(arr_qvec_faces[1][qq]), (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
-                                                                + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
-                                                                tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
-                                    }
-                                 }
                              }
                          }
                      }
@@ -523,10 +498,6 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
            {
               fprintf(fpp, "\n");
            }
-        if (fnQSWIPE)
-           {
-              fprintf(fq, "\n");
-           }
     }
     gmx_ffclose(fpn);
     if (fnINCTENSOR)
@@ -535,8 +506,54 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
     }
     if (fnQSWIPE)
     {
-       gmx_ffclose(fq);
+        for (tt = 0; tt < nt; tt++ )
+        {
+           theta = (-M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
+           thetain=roundf(theta);
+           sprintf(thetastr,"%d",thetain);
+           strcpy(str,fnQSWIPE);
+           str[strlen(str)-1]=0;
+           str[strlen(str)-1]=0;
+           str[strlen(str)-1]=0;
+           str[strlen(str)-1]=0;
+           strcat(str,"_theta");
+           strcat(str,thetastr);
+           strcat(str,".xvg");
+           fq = xvgropen(str, "<Scat_ampl_ijk*Scatt_ampl_lmn> as a function of q"," ", " ", oenv);
+           sprintf(refgt,"%s", "");
+           fprintf(fq, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
+           for (qq = 0; qq < nbinq; qq++)
+           {
+               fprintf(fq, "%10g ",norm(arr_qvec_faces[1][qq]));
+               for (pm = 0; pm < DIM; pm++)
+               {
+                   for (qm = 0; qm < DIM; qm++)
+                   {
+                       for (sm = 0; sm < DIM; sm++)
+                       {
+                            for (ppm = 0; ppm < DIM; ppm++)
+                            {
+                                for (qpm = 0; qpm < DIM; qpm++)
+                                {
+                                    for (spm = 0; spm < DIM; spm++)
+                                    {
+                                        fprintf(fq, "   %10g", (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                                             + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
+                                                              tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma); 
+                                    }
+                                }
+                            }
+                       }
+                   }
+               }
+               fprintf(fq, "\n");
+           }
+           gmx_ffclose(fq);           
+        }
     }
+
+
+
 }
 
 void Projected_Scattering_Amplitude(const int nf, const int nt, const int nga, const int nq,
