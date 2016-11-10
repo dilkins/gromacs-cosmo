@@ -205,6 +205,12 @@ int
 gmx_fitbeta(int argc, char *argv[]);
 
 int
+gmx_calcbeta(int argc, char *argv[]);
+
+int
+gmx_shsint(int argc, char *argv[]);
+
+int
 gmx_eshs(int argc, char *argv[]);
 
 int

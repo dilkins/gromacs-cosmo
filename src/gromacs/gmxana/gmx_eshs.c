@@ -571,7 +571,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                              //fprintf(stderr,"polarization vector parallel to incoming %f %f %f\n",pol_par[XX], pol_par[YY], pol_par[ZZ]);
                              rvec_add(pol_perp, pol_par, vec_pin_theta_gamma[rr][tt][c]);
                              unitv(vec_pin_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c]);
-                             printf("polarization vectors at angles theta_expt = %f gamma = %f and face index %d \n",2.0*theta_vec[tt]*180.0/M_PI, gamma*180.0/M_PI, rr);
+                             printf("polarization vectors at angles theta_expt = %f gamma = %f and face index %d \n",M_PI+2.0*theta_vec[tt]*180.0/M_PI, gamma*180.0/M_PI, rr);
                              printf("incoming polarization vector = %f %f %f \n",vec_pin_theta_gamma[rr][tt][c][XX], vec_pin_theta_gamma[rr][tt][c][YY], vec_pin_theta_gamma[rr][tt][c][ZZ]);
                              printf("outcoming polarization vector = %f %f %f \n",vec_pout_theta_gamma[rr][tt][c][XX], vec_pout_theta_gamma[rr][tt][c][YY], vec_pout_theta_gamma[rr][tt][c][ZZ]);
                              printf("direction of scattered wave-vector = %f %f %f \n", vec_kout[XX] -vec_2kin[XX], vec_kout[YY] - vec_2kin[YY], vec_kout[ZZ] -vec_2kin[ZZ]);
@@ -1055,7 +1055,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     nplots++ ;
     for (tt = 0; tt < nbintheta ; tt++)
     {
-       theta = 2.0*theta_vec[tt]*180.0/M_PI;
+       theta = (M_PI+2.0*theta_vec[tt])*180.0/M_PI;
        for (rr = 0; rr< nfaces; rr++)
        {
            fprintf(fp, "%10g", theta);
@@ -1074,7 +1074,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
           nplots++ ;
           for (tt = 0; tt < nbintheta ; tt++)
           {
-             theta = 2.0*theta_vec[tt]*180.0/M_PI;
+             theta = (M_PI+2.0*theta_vec[tt])*180.0/M_PI;
              fprintf(fp, "%10g", theta);
              fprintf(fp, " %10g", s_method_coh_t[0][rr][tt][qq]/nframes*invgamma);
              fprintf(fp, "\n");
@@ -1086,7 +1086,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
           fprintf(fp, "@type xy\n");
           for (tt = 0; tt < nbintheta  ; tt++) 
           { 
-             theta = 2.0*theta_vec[tt]*180.0/M_PI;
+             theta = (M_PI+2.0*theta_vec[tt])*180.0/M_PI;
              fprintf(fp, "%10g", theta);
              fprintf(fp, " %10g", s_method_t[0][rr][tt][qq]/nframes*invgamma);
              fprintf(fp, "\n");
@@ -1105,7 +1105,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     sprintf(refgt, "%s", "");
     for (tt = 0; tt < nbintheta ; tt++)
     {
-       theta = 2.0*theta_vec[tt]*180.0/M_PI;
+       theta = (M_PI+ 2.0*theta_vec[tt])*180.0/M_PI;
        if ((round(abs(theta)) == 45.0) || (round(abs(theta)) == 30.0 ) || (round(abs(theta)) == 60.0 ) || (round(abs(theta)) == 90.0)
           || (round(abs(theta)) == 150.0)  || (round(abs(theta)) == 120.0) || (round(abs(theta)) == 10.0) || (tt ==  0) || (tt == nbintheta/2))
        {
@@ -1792,8 +1792,18 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             printf("index of coeff %d\n", ind_ex);
             printf("index of coeff %d\n", ind_ey);
             printf("index of coeff %d\n", ind_ez);
+*/
+//            printf("kern_ind %d gr_ind %d feature_vec_x %f\n",kern_ind, gr_ind, feature_vec_x);
+//            printf("kern_ind %d gr_ind %d feature_vec_y %f\n",kern_ind, gr_ind, feature_vec_y);
+//            printf("kern_ind %d gr_ind %d feature_vec_z %f\n",kern_ind, gr_ind, feature_vec_z);
 
-            printf("feature_vec %f\n feature_vec %f\n feature_vec %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
+
+            printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
+
+            printf("feature_vec_x %f \n",feature_vec_x);
+            printf("feature_vec_y %f \n",feature_vec_y);
+            printf("feature_vec_z %f \n",feature_vec_z);
+
             printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
             printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
             printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
@@ -1801,6 +1811,8 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
             printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
 
+
+/*
             printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]);
             printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]);
             printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]);
@@ -1827,12 +1839,14 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          {
             ind_rho = gr_ind + SKern_rho_O->gridpoints*kern_ind;
             feature_vec = pow(SKern_rho_O->interp_quant_grid[gr_ind] - SKern_rho_O->meanquant[ind_rho] , kern_ind+1);
-/*
+
+//            printf("kern_ind %d gr_ind %d feature_vec_rho_O %f\n",kern_ind, gr_ind, feature_vec);
+
             printf("feature_vec %f\n",feature_vec);
             printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
             printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
             printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
-*/
+
 
             for (a = 0; a < DIM ; a++)
             {
@@ -1842,6 +1856,8 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                    {
                       (*betamol)[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
 //                      printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
+
+
                    }
                 }
             }
@@ -1850,12 +1866,16 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          {
             ind_rho = gr_ind + SKern_rho_H->gridpoints*kern_ind;
             feature_vec = pow(SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho] , kern_ind+1);
-/*
+
+//            printf("kern_ind %d gr_ind %d feature_vec_rho_H %f\n",kern_ind, gr_ind, feature_vec);
+
+
+
             printf("feature_vec %f\n",feature_vec);
             printf("predicted_vec_1 %f\n",SKern_rho_H->coeff[ind_rho][0][0][0]*feature_vec);
             printf("predicted_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]*feature_vec);
             printf("coeff_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]);
-*/
+
 
             for (a = 0; a < DIM ; a++)
             {
@@ -1877,10 +1897,15 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             for (c = 0; c < DIM ; c++)
             {
                (*betamol)[a][b][c] += betamean[c+DIM*b+DIM*DIM*a];
-//                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
+                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
             }
          }
      }
+     if (debug)
+     {
+        gmx_fatal(FARGS,"consider only one loop\n");
+     }   
+     
 }
 
 void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, t_topology *top, t_block *mols, int  *molindex[],

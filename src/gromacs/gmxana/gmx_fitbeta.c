@@ -208,7 +208,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                           svmul(cos(M_PI/180.0*pin_angle), pol_par , pol_par);
                           rvec_add(pol_perp, pol_par, vec_pin_theta_gamma[rr][tt][c]);
                           unitv(vec_pin_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c]);
-                          printf("polarization vectors at angles theta_expt = %f gamma = %f and face index %d \n",(M_PI - 2.0*theta_vec[tt])*180.0/M_PI, gamma*180.0/M_PI, rr);
+                          printf("polarization vectors at angles theta_expt = %f gamma = %f and face index %d \n",(M_PI + 2.0*theta_vec[tt])*180.0/M_PI, gamma*180.0/M_PI, rr);
                           printf("incoming polarization vector = %f %f %f \n",vec_pin_theta_gamma[rr][tt][c][XX], vec_pin_theta_gamma[rr][tt][c][YY], vec_pin_theta_gamma[rr][tt][c][ZZ]);
                           printf("outcoming polarization vector = %f %f %f \n",vec_pout_theta_gamma[rr][tt][c][XX], vec_pout_theta_gamma[rr][tt][c][YY], vec_pout_theta_gamma[rr][tt][c][ZZ]);
                           printf("direction of scattered wave-vector = %f %f %f \n", vec_kout[XX] -vec_2kin[XX], vec_kout[YY] - vec_2kin[YY], vec_kout[ZZ] -vec_2kin[ZZ]);
@@ -363,7 +363,7 @@ void Print_scattering_pattern(const int nt,  const int nframes, const real invga
          {
              intensity_theta = 0.0;
              intensity_inc_theta = 0.0 ;
-             theta = (-M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
+             theta = (M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
              for (pm = 0; pm < DIM; pm++)
              {
                  for (qm = 0; qm < DIM; qm++)
@@ -441,9 +441,9 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
 {
     int pm, qm, sm, ppm, qpm, spm, qq;
     int rr, tt, thetain;
-    char refgt[30],str[80],thetastr[80];
+    char refgt[30],str[80],thetastr[80],strin[80];
     real theta;
-    FILE *fpn, *fpp, *fq;
+    FILE *fpn, *fpp, *fq, *fqinc;
 
     fpn = xvgropen(fnTENSOR, "<Scat_ampl_ijk*Scatt_ampl_lmn>", " ", " ", oenv);
     sprintf(refgt,"%s", "");
@@ -457,7 +457,7 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
     // average over the intensities computed at a wave-vector that lies along the diagonal of the three faces of the simulation box
     for (tt = 0; tt < nt; tt++ )
     {
-        theta = (-M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
+        theta = (M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
         fprintf(fpn, "%10g ",theta);
         if (fnINCTENSOR)
         {
@@ -508,7 +508,7 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
     {
         for (tt = 0; tt < nt; tt++ )
         {
-           theta = (-M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
+           theta = (M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
            thetain=roundf(theta);
            sprintf(thetastr,"%d",thetain);
            strcpy(str,fnQSWIPE);
@@ -516,15 +516,24 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
            str[strlen(str)-1]=0;
            str[strlen(str)-1]=0;
            str[strlen(str)-1]=0;
+           strcpy(strin,str);
+           strcat(strin,"_Inctheta");
+           strcat(strin,thetastr);
+           strcat(strin,".xvg");
            strcat(str,"_theta");
            strcat(str,thetastr);
            strcat(str,".xvg");
            fq = xvgropen(str, "<Scat_ampl_ijk*Scatt_ampl_lmn> as a function of q"," ", " ", oenv);
+           fqinc = xvgropen(strin, "<Inc_Scat_ampl_ijk*Inc_Scatt_ampl_lmn> as a function of q"," ", " ", oenv);
            sprintf(refgt,"%s", "");
            fprintf(fq, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
+           fprintf(fqinc, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
+
            for (qq = 0; qq < nbinq; qq++)
            {
                fprintf(fq, "%10g ",norm(arr_qvec_faces[1][qq]));
+               fprintf(fqinc, "%10g ",norm(arr_qvec_faces[1][qq]));
+
                for (pm = 0; pm < DIM; pm++)
                {
                    for (qm = 0; qm < DIM; qm++)
@@ -540,6 +549,11 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                                         fprintf(fq, "   %10g", (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
                                                              + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
                                                               tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma); 
+
+                                        fprintf(fqinc, "   %10g", (incoh_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                                             + incoh_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
+                                                              incoh_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
+
                                     }
                                 }
                             }
@@ -547,8 +561,10 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                    }
                }
                fprintf(fq, "\n");
+               fprintf(fqinc, "\n");
            }
-           gmx_ffclose(fq);           
+           gmx_ffclose(fq); 
+           gmx_ffclose(fqinc);          
         }
     }
 
@@ -825,7 +841,7 @@ void Scattering_Intensity_t(const int nf, real time, const int nt, const int nga
         {
             if (fnTIMEEVOLTENSOR && rr==0)
             {
-               theta = (-M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
+               theta = (M_PI + 2.0*theta_vec[tt])*180.0/M_PI;
                fprintf(fname, "%10g ",theta);
             }
             for (c  = 0; c < nga; c++)
