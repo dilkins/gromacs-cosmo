@@ -3736,7 +3736,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05;
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 ;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
-    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
+    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -3867,7 +3867,7 @@ int gmx_eshs(int argc, char *argv[])
           gmx_fatal(FARGS, "specify all files for krrr using -vcoeff, -vgrid, -vinp\n");
        }
     }
- 
+
     snew(top, ngroups+1);
     ePBC = read_tpx_top(ftp2fn(efTPS, NFILE, fnm), NULL, box,
                         &natoms, NULL, NULL, NULL, top);
@@ -3877,6 +3877,13 @@ int gmx_eshs(int argc, char *argv[])
     snew(grpindex, ngroups+1);
     get_index(&top->atoms, ftp2fn_null(efNDX, NFILE, fnm),
              ngroups +1 , gnx, grpindex, grpname);
+
+    if (kmax == 0)
+    {
+      // If no kmax is specified, then one is chosen according to the "optimizing" formula of Frenkel and Smit.
+      kmax = (int)(M_PI/(min(0.5,1.2*pow(natoms,-1.0/6.0))));
+      fprintf(stderr,"\nNo kmax specified; settting kmax = %i\n",natoms,kmax);
+    }
 
     fprintf(stderr,"Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
