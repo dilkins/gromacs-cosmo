@@ -3882,7 +3882,7 @@ int gmx_eshs(int argc, char *argv[])
     {
       // If no kmax is specified, then one is chosen according to the "optimizing" formula of Frenkel and Smit.
       kmax = (int)(M_PI/(min(0.5,1.2*pow(natoms,-1.0/6.0))));
-      fprintf(stderr,"\nNo kmax specified; settting kmax = %i\n",natoms,kmax);
+      fprintf(stderr,"\nNo kmax specified; settting kmax = %i\n",kmax);
     }
 
     fprintf(stderr,"Start indexing the atoms to each molecule\n");
