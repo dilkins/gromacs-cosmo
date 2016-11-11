@@ -347,7 +347,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
            //walpha=pi/rcut and rcut =min(box_lengths)*min(0.5,1.2*natoms^(-1/6))
            //kmax = (int)(max(max(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*M_PI/(min(min(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*min(0.5,1.2*pow(natoms,-1.0/6.0))));
            fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
-           fprintf(stderr,"max wave-vector for ewald sum is %d\n",kmax);
+           fprintf(stderr,"number of fourier components for spme is 4pi/3 * the cube of %d\n",kmax);
            setup_ewald_pair_potential(gridsize,interp_order,kmax,&FT_pair_pot,invkappa2);
            fprintf(stderr,"ewald pair potential has been set-up\n");
         
@@ -3764,7 +3764,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
         { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
         { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
-        { "-kmax_spme",        FALSE, etINT, {&kmax}, "max wave vector defining the images to use in SPME" },
+        { "-kmax_spme",        FALSE, etINT, {&kmax}, "number of fourier components within cutoff in fourier space for SPME (actual number is 4pi/3*kmax_spme^3)" },
         { "-kernstd",       FALSE, etREAL, {&kernstd}, "standard deviation of kernel function. only makes sense if kernel ridge regression is used"},
 
         { "-method",     FALSE, etENUM, {methodt}, "I(q) using a single summation O(N) or a double summation, O(N*N)" },
@@ -3881,8 +3881,9 @@ int gmx_eshs(int argc, char *argv[])
     if (kmax == 0)
     {
       // If no kmax is specified, then one is chosen according to the "optimizing" formula of Frenkel and Smit.
-      kmax = (int)(M_PI/(min(0.5,1.2*pow(natoms,-1.0/6.0))));
-      fprintf(stderr,"\nNo kmax specified; settting kmax = %i\n",kmax);
+      //kmax = (int)(M_PI/(min(0.5,1.2*pow(natoms,-1.0/6.0))));
+      kmax = (int)(2.5*box[XX][XX]*kappa/M_PI);
+      fprintf(stderr,"\nNo kmax_spme specified; setting kmax_spme = %i\n",kmax);
     }
 
     fprintf(stderr,"Start indexing the atoms to each molecule\n");
