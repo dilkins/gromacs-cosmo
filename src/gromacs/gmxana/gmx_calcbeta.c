@@ -470,7 +470,7 @@ int gmx_calcbeta(int argc, char *argv[])
     static real              fspacing = 0.01, std_dev_dens = 0.05;
     static real              eps = -1.0 ;
     static int               ngroups = 1 ;
-    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
+    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -483,7 +483,7 @@ int gmx_calcbeta(int argc, char *argv[])
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
         { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
         { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
-        { "-kmax_spme",        FALSE, etINT, {&kmax}, "max wave vector defining the images to use in SPME" },
+        { "-kmax_spme",        FALSE, etINT, {&kmax}, "number of fourier components within cutoff in fourier space for SPME (actual number is 4pi/3*kmax_spme^3)" },
         { "-method",     FALSE, etENUM, {methodt}, "I(q) using a single summation O(N) or a double summation, O(N*N)" },
         { "-kern",   FALSE, etENUM, {kernt}, "what method to use to compute beta"},
         { "-pbc",      FALSE, etBOOL, {&bPBC},
@@ -571,6 +571,15 @@ int gmx_calcbeta(int argc, char *argv[])
     snew(grpindex, ngroups+1);
     get_index(&top->atoms, ftp2fn_null(efNDX, NFILE, fnm),
              ngroups +1 , gnx, grpindex, grpname);
+
+    if (kmax == 0)
+    {
+      // If no kmax is specified, then one is chosen according to the "optimizing" formula of Frenkel and Smit.
+      //kmax = (int)(M_PI/(min(0.5,1.2*pow(natoms,-1.0/6.0))));
+      kmax = (int)(2.5*box[XX][XX]*kappa/M_PI);
+      fprintf(stderr,"\nNo kmax_spme specified; setting kmax_spme = %i\n",kmax);
+    }
+
 
     fprintf(stderr,"Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
