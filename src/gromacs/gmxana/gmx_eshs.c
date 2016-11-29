@@ -3882,6 +3882,8 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug){
 		fprintf(stderr,"\n\nThe requested fft has been performed. Values on the grid are:\n\n");
 		fprintf(stderr,"0 0 0 %f %f\n",kmatr[0][0][0].re,kmatr[0][0][0].im);
+		fprintf(stderr,"0 0 1 %f %f\n",kmatr[0][0][1].re,kmatr[0][0][1].im);
+		fprintf(stderr,"1 0 0 %f %f\n",kmatr[1][0][0].re,kmatr[1][0][0].im);
 		fprintf(stderr,"0 1 2 %f %f\n",kmatr[0][1][2].re,kmatr[0][1][2].im);
 		fprintf(stderr,"2 0 3 %f %f\n",kmatr[2][0][3].re,kmatr[2][0][3].im);
 		fprintf(stderr,"2 1 3 %f %f\n",kmatr[2][1][3].re,kmatr[2][1][3].im);
@@ -3891,15 +3893,17 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 
 	        gmx_parallel_3dfft_t fft_;
 		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
-		real *rdata;
-		t_complex *cdata;
+		real * rdata;
+		t_complex* cdata;
 		int ndata[] = {dims[0],dims[1],dims[2]};
 		int kk = 0;
 	        ivec       local_ndata, offset, rsize, csize, complex_order;
+		snew(rdata,2*dims[0]*dims[1]*dims[2]);
 		for (i=0;i<dims[0];i++)
 		{
 			for (j=0;j<dims[1];j++)
 			{
+
 				for (k=0;k<dims[2];k++)
 				{
 					rdata[kk] = rmatr[i][j][k];
@@ -3907,15 +3911,19 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 				}
 			}
 		}
+		fprintf(stderr,"fft 0\n");
 		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
+                fprintf(stderr,"fft 1\n");
 		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
+                fprintf(stderr,"fft 2\n");
 		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
+                fprintf(stderr,"fft 3\n");
 		int size = csize[0]*csize[1]*csize[2];
 
 //		memcpy(cdata, rdata, size*sizeof(t_complex));
 		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
-		fprintf(stderr,"check 1 %f\n",cdata[0].re);
-
+		fprintf(stderr,"check 1 %f\n",rdata[2]);
+		sfree(rdata);
 		exit(0);
 		}
 }
