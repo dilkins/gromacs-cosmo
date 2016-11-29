@@ -3911,9 +3911,9 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 //        gmx_parallel_3dfft_t fft_;
 
 
-//    int        ndata[] = {5, 6, 9};
+    int        ndata[] = {5, 6, 9};
 //    int		ndata[] = {4,5,8};
-	int ndata[] = {4,5,7};
+//	int ndata[] = {4,5,7};
     MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
     real     * rdata;
     t_complex* cdata;
@@ -3932,7 +3932,7 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 
     memcpy(rdata, inputdata, size*sizeof(t_complex));
     for (i=0;i<2*size;i++){
-	rdata[i] = 1.0;
+//	rdata[i] = 1.0;
 	fprintf(stderr,"here %i %f\n",i,rdata[i]);
     }
 //	rdata[0] = 1.0;
