@@ -202,6 +202,8 @@ void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec
 void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean);
 
 
+void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, int interp_order, rvec grid_spacing, rvec Emean);
+
 //read in the reference molecule, used to compute the direction cosine matrix
 void read_reference_mol(const char *fnREFMOL, rvec **xref);
 

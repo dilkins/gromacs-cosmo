@@ -685,8 +685,17 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         //fprintf(stderr,"finished interpolation O kern\n");
                         trilinear_interpolation_kern(SKern_rho_H, ir, &pbc, xi, grid_invspacing, grid_spacing);
                         //fprintf(stderr,"finished interpolation H kern\n");
+                        if (debug)
+                        {
+                            bspline_efield(SKern_E, ir, &pbc, invcosdirmat, xi,
+                                           grid_invspacing, interp_order, grid_spacing, Emean);
+                        }
+                        else
+                        {
+
                         vec_trilinear_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
                                                          grid_invspacing, grid_spacing, Emean);
+                        }
                         //fprintf(stderr,"finished interpolation E kern\n");
 
                         calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, kern_order, betamean, &beta_mol);
@@ -2746,6 +2755,149 @@ void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec
      }
 }
 
+
+void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, int interp_order, rvec grid_spacing, rvec Emean)
+{
+     int i, a, b, c, kk1, kk2, kk3;
+     int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
+     real ***Ematr_x, ***Ematr_y, ***Ematr_z;
+     rvec bsplcoeff, vec_t, du, Efield_temp;
+
+     sfree(Kern->vec_interp_quant_grid);
+     snew(Kern->vec_interp_quant_grid,Kern->gridpoints);
+
+     snew(Ematr_x,ir->nkx);
+     snew(Ematr_y,ir->nkx);
+     snew(Ematr_z,ir->nkx);
+
+     for (a = 0; a < ir->nkx; a++)
+     {
+         snew(Ematr_x[a],ir->nky);
+         snew(Ematr_y[a],ir->nky);
+         snew(Ematr_z[a],ir->nky);
+         for (b = 0; b < ir->nky; b++)
+         {
+             snew(Ematr_x[a][b],ir->nkz);
+             snew(Ematr_y[a][b],ir->nkz);
+             snew(Ematr_z[a][b],ir->nkz);
+         }
+     }
+
+     for (i = 0; i < Kern->gridpoints; i++)
+     {
+
+         bin_indx0 = floor((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
+         bin_indy0 = floor((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
+         bin_indz0 = floor((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+
+         if (bin_indx0 == ir->nkx  )
+         {
+            bin_indx0 = 0;
+         }
+         if (bin_indy0 == ir->nky )
+         {
+            bin_indy0 = 0;
+         }
+         if (bin_indz0 == ir->nkz )
+         {
+            bin_indz0 = 0;
+         }
+
+/*         fprintf(stderr,"binx %d biny %d binz %d NEW i %d\n",bin_indx0, bin_indy0, bin_indz0,i);
+
+
+         bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
+         bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
+         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+
+         if (bin_indx1 > ir->nkx-1)
+         {
+            bin_indx1 = 0;
+         }
+         if (bin_indz1 > ir->nkz-1)
+         {
+            bin_indz1 = 0;
+         }
+         if (bin_indy1 > ir->nky-1)
+         {
+            bin_indy1 = 0;
+         }
+
+         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : ir->nkx-1 ;
+         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : ir->nky-1 ;
+         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : ir->nkz-1 ;
+         
+         fprintf(stderr,"binx %d biny %d binz %d\n",bin_indx0, bin_indy0, bin_indz0);
+
+*/
+         vec_t[XX] = 0.0;
+         vec_t[YY] = 0.0;
+         vec_t[ZZ] = 0.0;
+       
+         for (a = bin_indx0 - interp_order +1; a <= bin_indx0 + interp_order; a++)
+         {
+             //du[XX] = Kern->translgrid[i][XX]*grid_invspacing[XX] -a;
+             kk1 = index_wrap(a,ir->nkx);
+             bsplcoeff[XX] = Bspline(kk1,interp_order);
+             for (b = bin_indy0 - interp_order + 1; b <= bin_indy0 + interp_order; b++)
+             {
+                 //du[YY] = Kern->translgrid[i][YY]*grid_invspacing[YY] -b;
+                 kk2 = index_wrap(b,ir->nky);
+                 bsplcoeff[YY] = Bspline(kk2,interp_order);
+                 for (c = bin_indz0 - interp_order + 1; c <= bin_indz0 + interp_order; c++)
+                 {
+                     //du[ZZ] = Kern->translgrid[i][ZZ]*grid_invspacing[ZZ] -c;
+                     kk3 = index_wrap(c,ir->nkz);
+                     bsplcoeff[ZZ] = Bspline(kk3,interp_order);
+                     
+                     vec_t[XX] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_x[kk1][kk2][kk3]-Emean[XX]);
+                     vec_t[YY] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_y[kk1][kk2][kk3]-Emean[YY]);
+                     vec_t[ZZ] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_z[kk1][kk2][kk3]-Emean[ZZ]);
+                     
+                 }
+             }
+         }
+	 
+         /*for (a = bin_indx0 - interp_order +1; a <= bin_indx0 + interp_order; a++)
+         {
+                kk1 = index_wrap(a,ir->nkx);
+		for (b = bin_indy0 - interp_order + 1; b <= bin_indy0 + interp_order; b++) 
+                {
+                        kk2 = index_wrap(b,ir->nky);
+			for (c = bin_indz0 - interp_order + 1; c <= bin_indz0 + interp_order; c++)
+                        {
+                                kk3 = index_wrap(c,ir->nkz);
+				vec_t[XX] += Ematr_x[kk1][kk2][kk3];
+				vec_t[YY] += Ematr_y[kk1][kk2][kk3];
+				vec_t[ZZ] += Ematr_z[kk1][kk2][kk3];
+//                                rvec_inc(Kern->vec_interp_quant_grid[i],Efield_temp);
+			}
+		}	
+	 }
+         */
+         mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+     }
+
+
+     for (a = 0; a < ir->nkx; a++)
+     {
+         for (b = 0; b < ir->nky; b++)
+         {
+             sfree(Ematr_x[a][b]);
+             sfree(Ematr_y[a][b]);
+             sfree(Ematr_z[a][b]);
+         }
+         sfree(Ematr_x[a]);
+         sfree(Ematr_y[a]);
+         sfree(Ematr_z[a]);
+     }
+     sfree(Ematr_x);
+     sfree(Ematr_y);
+     sfree(Ematr_z);
+
+//     fprintf(stderr,"freed everything\n");  
+}
+
 void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
 {
      int i, ix, iy, iz, d, ind0;
@@ -2788,7 +2940,11 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
          yd = fabs(delx[YY])*grid_invspacing[YY];
          zd = fabs(delx[ZZ])*grid_invspacing[ZZ];
 
-         pbc_dx(pbc,xi,Kern->translgrid[i],delx);
+//         pbc_dx(pbc,xi,Kern->translgrid[i],delx);
+
+
+
+
 
                                 vec_t[XX] = (Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz0]-Emean[XX])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
                                          (Kern->quantity_on_grid_x[bin_indx1][bin_indy0][bin_indz0]-Emean[XX])*xd*(1 - yd)*(1 - zd) +
@@ -3353,7 +3509,7 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
                                                du[ZZ] = xi[ZZ]*grid[ZZ] - k;
                                                kk3 = index_wrap(k,grid[ZZ]);
                                                bsplcoeff[ZZ] = Bspline(du[ZZ],interp_order);
-//                                               Qmatr_x[kk1][kk2][kk3] += charge*bsplcoeff[XX]*bsplcoeff[YY]* bsplcoeff[ZZ];
+                                               //Qmatr_x[kk1][kk2][kk3] += charge*bsplcoeff[XX]*bsplcoeff[YY]* bsplcoeff[ZZ];
                                                d_bsplcoeff[ZZ] = (Bspline(du[ZZ],interp_order-1)-Bspline(du[ZZ]-1.0,interp_order-1));
                                                //Qmatr_x[kk1][kk2][kk3] += charge*bsplcoeff[XX]*bsplcoeff[YY]* bsplcoeff[ZZ];
                                                Qmatr_x[kk1][kk2][kk3] -= charge*d_bsplcoeff[XX]*bsplcoeff[YY]*bsplcoeff[ZZ];
