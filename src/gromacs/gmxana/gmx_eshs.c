@@ -65,6 +65,7 @@
 #include "coulomb.h"
 #include "gromacs/math/gmxcomplex.h"
 #include "gromacs/fft/fft.h"
+#include "gromacs/fft/parallel_3dfft.h"
 #include "gromacs/math/do_fit.h"
 #include "mtop_util.h"
 #include "typedefs.h"
@@ -3764,6 +3765,11 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 	t_complex *kdat,*k_in, *k_out, *kmatr_temp;
 	int i,j,k,m, kdims[3] = {dims[0], dims[1], dims[2]/2 + 1};
 
+		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug){
+		fprintf(stderr,"We are sitting in the do_fft loop. Firstly, we look at the result of carrying out ");
+		fprintf(stderr,"an FFT using 2d and 1d transforms.\n");
+		}
+
 	rdat = (real*) malloc(sizeof(real)*dims[1]*dims[2]);
 	kdat = (t_complex*) malloc(sizeof(t_complex)*kdims[1]*kdims[2]);
 	k_in = (t_complex*) malloc(sizeof(t_complex) * kdims[0]);
@@ -3871,7 +3877,47 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 		exit(-1);
 	}
         sfree(rdat); sfree(kdat), sfree(kmatr_temp);
-        sfree(k_in);  sfree(k_out);     
+        sfree(k_in);  sfree(k_out);
+
+		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug){
+		fprintf(stderr,"\n\nThe requested fft has been performed. Values on the grid are:\n\n");
+		fprintf(stderr,"0 0 0 %f %f\n",kmatr[0][0][0].re,kmatr[0][0][0].im);
+		fprintf(stderr,"0 1 2 %f %f\n",kmatr[0][1][2].re,kmatr[0][1][2].im);
+		fprintf(stderr,"2 0 3 %f %f\n",kmatr[2][0][3].re,kmatr[2][0][3].im);
+		fprintf(stderr,"2 1 3 %f %f\n",kmatr[2][1][3].re,kmatr[2][1][3].im);
+		fprintf(stderr,"1 1 5 %f %f\n",kmatr[1][1][5].re,kmatr[1][1][5].im);
+		fprintf(stderr,"2 2 2 %f %f\n",kmatr[2][2][2].re,kmatr[2][2][2].im);
+		fprintf(stderr,"\n\nNow, using the parallel 3d fft function of Gromacs, also carry out the real-to-complex transform that was requested.\n");
+
+	        gmx_parallel_3dfft_t fft_;
+		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
+		real *rdata;
+		t_complex *cdata;
+		int ndata[] = {dims[0],dims[1],dims[2]};
+		int kk = 0;
+	        ivec       local_ndata, offset, rsize, csize, complex_order;
+		for (i=0;i<dims[0];i++)
+		{
+			for (j=0;j<dims[1];j++)
+			{
+				for (k=0;k<dims[2];k++)
+				{
+					rdata[kk] = rmatr[i][j][k];
+					kk++;
+				}
+			}
+		}
+		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
+		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
+		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
+		int size = csize[0]*csize[1]*csize[2];
+
+//		memcpy(cdata, rdata, size*sizeof(t_complex));
+		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
+		fprintf(stderr,"check 1 %f\n",cdata[0].re);
+
+		exit(0);
+		}
 }
  
 int gmx_eshs(int argc, char *argv[])
