@@ -3880,7 +3880,7 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
         sfree(k_in);  sfree(k_out);
 
 		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug){
-
+/***************************************************** THIS TEST IS JUST TO WORK OUT HOW THE 3DFFT PART OF GROMACS WORKS. *******************************
 		fprintf(stderr,"we now do this.\n");
 
 
@@ -3907,13 +3907,10 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
     8.4, 4.0, -6.2, -6.9, -7.2, 7.7, -5.0, 5.3, 1.9, -5.3, -7.5, 8.8, 8.3, 9.0, 8.1, 3.2, 1.2, -5.4, -0.2, 2.1, -5.2, 9.5, 5.9, 5.6, -7.8,
 };
 
-        gmx_fft_t fft_;
-//        gmx_parallel_3dfft_t fft_;
+        gmx_parallel_3dfft_t fft_;
 
 
     int        ndata[] = {5, 6, 9};
-//    int		ndata[] = {4,5,8};
-//	int ndata[] = {4,5,7};
     MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
     real     * rdata;
     t_complex* cdata;
@@ -3925,55 +3922,96 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
     gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
     gmx_parallel_3dfft_complex_limits(fft_, complex_order,
                                       local_ndata, offset, csize);
-//    checker_.checkVector(rsize, "rsize");
-//    checker_.checkVector(csize, "csize");
     int size = csize[0]*csize[1]*csize[2];
 	fprintf(stderr,"size %i %i %i %i\n",size,csize[0],csize[1],csize[2]);
 
     memcpy(rdata, inputdata, size*sizeof(t_complex));
     for (i=0;i<2*size;i++){
-//	rdata[i] = 1.0;
 	fprintf(stderr,"here %i %f\n",i,rdata[i]);
     }
-//	rdata[0] = 1.0;
     gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
 
 	fprintf(stderr,"\n");
     for (i=0;i<size;i++){
 	cdata[i].re /= (ndata[0]*ndata[1]*ndata[2]);
 	cdata[i].im /= (ndata[0]*ndata[1]*ndata[2]);
-//	cdata[i].re = 1.0;
-//	cdata[i].im = 0.0;
 	fprintf(stderr,"here2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
     }
-//    for (i=size;i<2*size;i++){
-//	cdata[i].re = 0.0;
-//	cdata[i].im = 0.0;
-//    }
 	fprintf(stderr,"\n");
 
-//    memcpy(cdata, inputdata, size*sizeof(t_complex));
     gmx_parallel_3dfft_execute(fft_, GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
 
     for (i=0;i<2*size;i++){
 	fprintf(stderr,"here3 %i %f\n",i,rdata[i]);
     }
+***************************************************** DMW ******************************************************************************************/
 
 
-		exit(0);
-
-/******
 		fprintf(stderr,"\n\nThe requested fft has been performed. Values on the grid are:\n\n");
 		fprintf(stderr,"0 0 0 %f %f\n",kmatr[0][0][0].re,kmatr[0][0][0].im);
 		fprintf(stderr,"0 0 1 %f %f\n",kmatr[0][0][1].re,kmatr[0][0][1].im);
-		fprintf(stderr,"1 0 0 %f %f\n",kmatr[1][0][0].re,kmatr[1][0][0].im);
-		fprintf(stderr,"0 1 2 %f %f\n",kmatr[0][1][2].re,kmatr[0][1][2].im);
+		fprintf(stderr,"0 0 2 %f %f\n",kmatr[0][0][2].re,kmatr[0][0][2].im);
+		fprintf(stderr,"0 0 3 %f %f\n",kmatr[0][0][3].re,kmatr[0][0][3].im);
 		fprintf(stderr,"2 0 3 %f %f\n",kmatr[2][0][3].re,kmatr[2][0][3].im);
 		fprintf(stderr,"2 1 3 %f %f\n",kmatr[2][1][3].re,kmatr[2][1][3].im);
 		fprintf(stderr,"1 1 5 %f %f\n",kmatr[1][1][5].re,kmatr[1][1][5].im);
 		fprintf(stderr,"2 2 2 %f %f\n",kmatr[2][2][2].re,kmatr[2][2][2].im);
+//		fprintf(stderr,"X X X %f %f\n",kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].re,kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].im);
 		fprintf(stderr,"\n\nNow, using the parallel 3d fft function of Gromacs, also carry out the real-to-complex transform that was requested.\n");
 
+	        gmx_parallel_3dfft_t fft_;
+		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
+		real * rdata;
+		t_complex* cdata;
+		int ndata[] = {dims[0],dims[1],dims[2]-1};
+	        ivec       local_ndata, offset, rsize, csize, complex_order;
+
+		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
+		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
+		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
+		int size = csize[0]*csize[1]*csize[2];
+//		int size=dims[0]*dims[1]*dims[2];
+
+		fprintf(stderr,"OFFSETS ETC. %i %i %i :: %i %i %i\n",offset[0],offset[1],offset[2],rsize[0],rsize[1],rsize[2]);
+
+		real *rmat2;
+		snew(rmat2,dims[0]*dims[1]*dims[2]);
+		int kk=0;
+		for (i=0;i<dims[0];i++){
+			for (j=0;j<dims[1];j++){
+				for (k=0;k<dims[2];k++){
+					rmat2[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];
+//					rmat2[kk] = rmatr[i][j][k];
+//					kk++;
+				}
+			}
+		}
+		fprintf(stderr,"SIZE %i %i %i %i\n",csize[0],csize[1],csize[2],size);
+		fprintf(stderr,"SIZE %i %i %i %i\n",dims[0],dims[1],dims[2],size);
+//		memcpy(rdata, rmat2, size*sizeof(t_complex));
+	fprintf(stderr,"here 1\n");
+		memcpy(rdata, rmat2, (dims[0]*dims[1]*dims[2])*sizeof(real));
+//		fprintf(stderr,"fft 1\n");
+		for (i=0;i<dims[0]*dims[1]*dims[2];i++)
+		{
+			fprintf(stderr,"A1 %i %f\n",i,rdata[i]);
+		}
+		fprintf(stderr,"fft 2\n");
+		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
+		for (i=0;i<size;i++){
+			fprintf(stderr,"A2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
+		}
+//		fprintf(stderr,"A0 A0 %f\n",rmatr[0][0][1]);
+//		fprintf(stderr,"A0 A0 %f\n",rmat2[1]);
+//		for (i=0;i<2*size;i++){
+//			fprintf(stderr,"A0 %i %f\n",i,rdata[i]);
+//		}
+
+		
+
+		exit(0);
+
+/******
 	        gmx_parallel_3dfft_t fft_;
 		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
 		real * rdata;
