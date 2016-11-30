@@ -3300,6 +3300,25 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
 
 	// Now Fourier transform the pair potential and the M matrix.
 
+	if (debug)
+	{
+		fprintf(stderr,"ABOUT TO DO FIRST FOURIER TRANSFORM. USE ORIGINAL FUNCTION!\n");
+		do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
+		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pK[0][0][0].re,pK[0][0][0].im);
+		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pK[0][1][0].re,pK[0][1][0].im);
+		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pK[0][1][2].re,pK[0][1][2].im);
+		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pK[3][1][4].re,pK[3][1][4].im);
+		fprintf(stderr,"ABOUT TO DO FIRST FOURIER TRANSFORM. USE OTHER FUNCTION INSTEAD!\n");
+		do_fft_2(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
+		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pK[0][0][0].re,pK[0][0][0].im);
+		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pK[0][1][0].re,pK[0][1][0].im);
+		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pK[0][1][2].re,pK[0][1][2].im);
+		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pK[3][1][4].re,pK[3][1][4].im);
+		exit(0);
+	}
+
+
+
 	do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
 	do_fft(Mmatr,mK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
 
@@ -3753,6 +3772,64 @@ long long combi(int n,int k)
     return ans;
 }
 
+void do_fft_2(real ***rmatr,t_complex ***kmatr,int *dims,int fwbck)
+{
+	// Do fast Fourier transform. A real array and a complex array are passed in, and the integer fwbck tells us
+	// whether we are doing a forward or a backward transform (i.e., which is the target array and which the input?)
+	static int plan_made = 0;	// This is zero until we've set up our FFT.
+	static gmx_parallel_3dfft_t fft_;
+	static MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
+	static real * rdata;
+	static t_complex* cdata;
+	static int ndata[] = {0,0,0};// = {dims[0],dims[1],dims[2]-1};
+	static ivec       local_ndata, offset, rsize, csize, complex_order;
+	static int size;
+	int i,j,k;
+
+	if (plan_made == 0)
+	{
+//		ndata = {dims[0],dims[1],dims[2]-1};
+		ndata[0]=dims[0];ndata[1]=dims[1];ndata[2]=dims[2]-1;
+		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
+		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
+		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
+		size = csize[0]*csize[1]*csize[2];
+		plan_made = 1;		// We have now set up FFT.
+	}
+
+	if (fwbck == GMX_FFT_REAL_TO_COMPLEX)
+	{
+		// We want to FT from real to reciprocal space. Start by copying the real data into an array.
+		real *rmat2;
+		snew(rmat2,dims[0]*dims[1]*dims[2]);
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ rmat2[i*dims[1]*dims[2] + j*dims[2] + k]=rmatr[i][j][k]; }}}
+		memcpy(rdata,rmat2,size*sizeof(t_complex));
+		// Now Fourier transform!
+		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
+		// Copy this data back into the complex array (multidimensional; to be changed)
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ kmatr[i][j][k].re=cdata[i*dims[1]*dims[2] + j*dims[2] + k].re; kmatr[i][j][k].im=cdata[i*dims[1]*dims[2] + j*dims[2] + k].im; }}}
+	}
+	else if (fwbck == GMX_FFT_COMPLEX_TO_REAL)
+	{
+/**		// We want to FT from reciprocal to real space. Start by copying the complex data into an array.
+		t_complex *cmat2;
+		snew(cmat2,size);
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ cmat2[i*dims[1]*dims[2] + j*dims[2] + k].re=kmatr[i][j][k].re; cmat2[i*dims[1]*dims[2] + j*dims[2] + k].im=kmatr[i][j][k].im; }}}
+		memcpy(cdata,cmat2,size*sizeof(t_complex));
+		// Now Fourier transform!
+		gmx_parallel_3dfft_execute(fft_,GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
+		// Copy this data back into the real array (multidimensional; to be changed)
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ rmatr[i][j][k]=rdata[i*dims[1]*dims[2] + j*dims[2] + k]; }}}**/
+	}
+	else
+	{
+		fprintf(stderr,"Incorrect flag passed to do_fft: %i\n",fwbck);
+		exit(-1);
+	}
+
+
+}
+
 void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_factor, int fwbck)
 {
 	// Do fast Fourier transform. We pass in a real array and a complex array, and the integer fwbck tells us
@@ -4023,7 +4100,7 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 		// An important test is that inverting whatever we've just done (whether or not it's a fast fourier transform!)
 		// gives back what we had originally. So let's do that.
 
-		rmatr[0][0][0] = 0.1;
+//		rmatr[0][0][0] = 0.1;
 		
 		gmx_parallel_3dfft_execute(fft_, GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
 		for (i=0;i<size;i++){
@@ -4031,7 +4108,7 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 		}
 		
 
-		exit(0);
+//		exit(0);
 
 /******
 	        gmx_parallel_3dfft_t fft_;
