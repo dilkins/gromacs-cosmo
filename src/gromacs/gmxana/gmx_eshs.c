@@ -3959,7 +3959,17 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 //		fprintf(stderr,"X X X %f %f\n",kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].re,kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].im);
 		fprintf(stderr,"\n\nNow, using the parallel 3d fft function of Gromacs, also carry out the real-to-complex transform that was requested.\n");
 
+
+		for (i=0;i<dims[0];i++) {
+			for (j=0;j<dims[1];j++) {
+				for (k=0;k<dims[2];k++) {
+					fprintf(stderr,"MATR %i %i %i %f\n",i,j,k,rmatr[i][j][k]);
+				}
+			}
+		}
+
 	        gmx_parallel_3dfft_t fft_;
+//		gmx_fft_t fft_;
 		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
 		real * rdata;
 		t_complex* cdata;
@@ -3981,6 +3991,7 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 			for (j=0;j<dims[1];j++){
 				for (k=0;k<dims[2];k++){
 					rmat2[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];
+//					rmat2[i*dims[1]*dims[2] + j*dims[2] + k] = 1.0;
 //					rmat2[kk] = rmatr[i][j][k];
 //					kk++;
 				}
@@ -3988,17 +3999,19 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 		}
 		fprintf(stderr,"SIZE %i %i %i %i\n",csize[0],csize[1],csize[2],size);
 		fprintf(stderr,"SIZE %i %i %i %i\n",dims[0],dims[1],dims[2],size);
-//		memcpy(rdata, rmat2, size*sizeof(t_complex));
+		memcpy(rdata, rmat2, size*sizeof(t_complex));
 	fprintf(stderr,"here 1\n");
-		memcpy(rdata, rmat2, (dims[0]*dims[1]*dims[2])*sizeof(real));
+//		memcpy(rdata, rmat2, (dims[0]*dims[1]*dims[2])*sizeof(real));
 //		fprintf(stderr,"fft 1\n");
-		for (i=0;i<dims[0]*dims[1]*dims[2];i++)
+		for (i=0;i<2*size;i++)
 		{
 			fprintf(stderr,"A1 %i %f\n",i,rdata[i]);
 		}
 		fprintf(stderr,"fft 2\n");
 		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
 		for (i=0;i<size;i++){
+//			cdata[i].re /= (ndata[0]*ndata[1]*ndata[2]);
+//			cdata[i].im /= (ndata[0]*ndata[1]*ndata[2]);
 			fprintf(stderr,"A2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
 		}
 //		fprintf(stderr,"A0 A0 %f\n",rmatr[0][0][1]);
@@ -4007,6 +4020,15 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 //			fprintf(stderr,"A0 %i %f\n",i,rdata[i]);
 //		}
 
+		// An important test is that inverting whatever we've just done (whether or not it's a fast fourier transform!)
+		// gives back what we had originally. So let's do that.
+
+		rmatr[0][0][0] = 0.1;
+		
+		gmx_parallel_3dfft_execute(fft_, GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
+		for (i=0;i<size;i++){
+			fprintf(stderr,"A3 %i %f\n",i,rdata[i]/(ndata[0]*ndata[1]*ndata[2]));
+		}
 		
 
 		exit(0);
