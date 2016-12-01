@@ -41,6 +41,8 @@
 
 #include <math.h>
 
+#include <fftw3.h>
+
 #include "sysstuff.h"
 #include "macros.h"
 #include "vec.h"
@@ -3842,9 +3844,23 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 	t_complex *kdat,*k_in, *k_out, *kmatr_temp;
 	int i,j,k,m, kdims[3] = {dims[0], dims[1], dims[2]/2 + 1};
 
-		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug){
+		real rtot;
+		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug && 0){
 		fprintf(stderr,"We are sitting in the do_fft loop. Firstly, we look at the result of carrying out ");
 		fprintf(stderr,"an FFT using 2d and 1d transforms.\n");
+		rtot = 0.0;
+		for (i=0;i<dims[0];i++)
+		{
+		for (j=0;j<dims[1];j++)
+		{
+		for (k=0;k<dims[2];k++)
+		{
+			rtot += rmatr[i][j][k];
+		}
+		}
+		}
+		fprintf(stderr,"total = %f\n",rtot);
+//		exit(0);
 		}
 
 	rdat = (real*) malloc(sizeof(real)*dims[1]*dims[2]);
@@ -3956,19 +3972,19 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
         sfree(rdat); sfree(kdat), sfree(kmatr_temp);
         sfree(k_in);  sfree(k_out);
 
-		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug){
-/***************************************************** THIS TEST IS JUST TO WORK OUT HOW THE 3DFFT PART OF GROMACS WORKS. *******************************
+		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug && 0){
+/***************************************************** THIS TEST IS JUST TO WORK OUT HOW THE 3DFFT PART OF GROMACS WORKS. *******************************/
 		fprintf(stderr,"we now do this.\n");
 
 
-const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-99,99)/10.,) for i in range(25)]) for j in range(20)])
+/*const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-99,99)/10.,) for i in range(25)]) for j in range(20)])
     -3.5, 6.3, 1.2, 0.3, 1.1, -5.7, 5.8, -1.9, -6.3, -1.4, 7.4, 2.4, -9.9, -7.2, 5.4, 6.1, -1.9, -7.6, 1.4, -3.5, 0.7, 5.6, -4.2, -1.1, -4.4,
     -6.3, -7.2, 4.6, -3.0, -0.9, 7.2, 2.5, -3.6, 6.1, -3.2, -2.1, 6.5, -0.4, -9.0, 2.3, 8.4, 4.0, -5.2, -9.0, 4.7, -3.7, -2.0, -9.5, -3.9, -3.6,
     7.1, 0.8, -0.6, 5.2, -9.3, -4.5, 5.9, 2.2, -5.8, 5.0, 1.2, -0.1, 2.2, 0.2, -7.7, 1.9, -8.4, 4.4, 2.3, -2.9, 6.7, 2.7, 5.8, -3.6, 8.9,
     8.9, 4.3, 9.1, 9.3, -8.7, 4.1, 9.6, -6.2, 6.6, -9.3, 8.2, 4.5, 6.2, 9.4, -8.0, -6.8, -3.3, 7.2, 1.7, 0.6, -4.9, 9.8, 1.3, 3.2, -0.2,
     9.9, 4.4, -9.9, -7.2, 4.4, 4.7, 7.2, -0.3, 0.3, -2.1, 8.4, -2.1, -6.1, 4.1, -5.9, -2.2, -3.8, 5.2, -8.2, -7.8, -8.8, 6.7, -9.5, -4.2, 0.8,
     8.3, 5.2, -9.0, 8.7, 9.8, -9.9, -7.8, -8.3, 9.0, -2.8, -9.2, -9.6, 8.4, 2.5, 6.0, -0.4, 1.3, -0.5, 9.1, -9.5, -0.8, 1.9, -6.2, 4.3, -3.8,
-    8.6, -1.9, -2.1, -0.4, -7.1, -3.7, 9.1, -6.4, -0.6, 2.5, 8.0, -5.2, -9.8, -4.3, 4.5, 1.7, 9.3, 9.2, 1.0, 5.3, -4.5, 6.4, -6.6, 3.1, -6.8,
+   8.6, -1.9, -2.1, -0.4, -7.1, -3.7, 9.1, -6.4, -0.6, 2.5, 8.0, -5.2, -9.8, -4.3, 4.5, 1.7, 9.3, 9.2, 1.0, 5.3, -4.5, 6.4, -6.6, 3.1, -6.8,
     2.1, 2.0, 7.3, 8.6, 5.0, 5.2, 0.4, -7.1, 4.5, -9.2, -9.1, 0.2, -6.3, -1.1, -9.6, 7.4, -3.7, -5.5, 2.6, -3.5, -0.7, 9.0, 9.8, -8.0, 3.6,
     3.0, -2.2, -2.8, 0.8, 9.0, 2.8, 7.7, -0.7, -5.0, -1.8, -2.3, -0.4, -6.2, -9.1, -9.2, 0.5, 5.7, -3.9, 2.1, 0.6, 0.4, 9.1, 7.4, 7.1, -2.5,
     7.3, 7.8, -4.3, 6.3, -0.8, -3.8, -1.5, 6.6, 2.3, 3.9, -4.6, 5.8, -7.4, 5.9, 2.8, 4.7, 3.9, -5.4, 9.1, -1.6, -1.9, -4.2, -2.6, 0.6, -5.1,
@@ -3982,12 +3998,23 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
     7.3, -0.4, 7.7, -7.0, 2.1, 0.3, 3.7, 3.3, -8.6, 9.8, 3.6, 3.1, 6.5, -2.4, 7.8, 7.5, 8.4, -2.8, -6.3, -5.1, -2.7, 9.3, -0.8, -9.2, 7.9,
     8.9, 3.4, 0.1, -5.3, -6.8, 4.9, 4.3, -0.7, -2.2, -3.2, -7.5, -2.3, 0.0, 8.1, -9.2, -2.3, -5.7, 2.1, 2.6, 2.0, 0.3, -8.0, -2.0, -7.9, 6.6,
     8.4, 4.0, -6.2, -6.9, -7.2, 7.7, -5.0, 5.3, 1.9, -5.3, -7.5, 8.8, 8.3, 9.0, 8.1, 3.2, 1.2, -5.4, -0.2, 2.1, -5.2, 9.5, 5.9, 5.6, -7.8,
-};
+};*/
+
+real *inputdata;
+snew (inputdata,70*70*70);
+int xx = 70*70*70 - 62*62*62;
+//xx-=1000;
+xx = 0;
+for (i=0;i<62*62*62 + xx;i++)
+{
+	inputdata[i] = 1.0;
+}
 
         gmx_parallel_3dfft_t fft_;
 
 
-    int        ndata[] = {5, 6, 9};
+//    int        ndata[] = {5, 6, 9};
+    int ndata[] = {62,62,62};
     MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
     real     * rdata;
     t_complex* cdata;
@@ -4001,6 +4028,7 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
                                       local_ndata, offset, csize);
     int size = csize[0]*csize[1]*csize[2];
 	fprintf(stderr,"size %i %i %i %i\n",size,csize[0],csize[1],csize[2]);
+	fprintf(stderr,"size %i %i %i %i\n",size,rsize[0],rsize[1],rsize[2]);
 
     memcpy(rdata, inputdata, size*sizeof(t_complex));
     for (i=0;i<2*size;i++){
@@ -4021,7 +4049,8 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
     for (i=0;i<2*size;i++){
 	fprintf(stderr,"here3 %i %f\n",i,rdata[i]);
     }
-***************************************************** DMW ******************************************************************************************/
+    exit(0);
+/***************************************************** DMW ******************************************************************************************
 
 
 		fprintf(stderr,"\n\nThe requested fft has been performed. Values on the grid are:\n\n");
@@ -4036,14 +4065,18 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 //		fprintf(stderr,"X X X %f %f\n",kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].re,kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].im);
 		fprintf(stderr,"\n\nNow, using the parallel 3d fft function of Gromacs, also carry out the real-to-complex transform that was requested.\n");
 
-
+		rtot = 0.0;
 		for (i=0;i<dims[0];i++) {
 			for (j=0;j<dims[1];j++) {
 				for (k=0;k<dims[2];k++) {
-					fprintf(stderr,"MATR %i %i %i %f\n",i,j,k,rmatr[i][j][k]);
+					rtot += rmatr[i][j][k];
+//					fprintf(stderr,"now %f\n",rtot);
+//					fprintf(stderr,"MATR %i %i %i %f\n",i,j,k,rmatr[i][j][k]);
 				}
 			}
 		}
+		fprintf(stderr,"total %f\n",rtot);
+//		exit(0);
 
 	        gmx_parallel_3dfft_t fft_;
 //		gmx_fft_t fft_;
@@ -4054,16 +4087,20 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 	        ivec       local_ndata, offset, rsize, csize, complex_order;
 
 		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
+//		for (i=1;i<4*dims[0]*dims[1]*dims[2];i++)
+//		{
+//			fprintf(stderr,"test %i %f\n",i,rdata[i]);
+//		}
+//		exit(0);
 		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
 		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
 		int size = csize[0]*csize[1]*csize[2];
 //		int size=dims[0]*dims[1]*dims[2];
 
-		fprintf(stderr,"OFFSETS ETC. %i %i %i :: %i %i %i\n",offset[0],offset[1],offset[2],rsize[0],rsize[1],rsize[2]);
+//		fprintf(stderr,"OFFSETS ETC. %i %i %i :: %i %i %i\n",offset[0],offset[1],offset[2],rsize[0],rsize[1],rsize[2]);
 
 		real *rmat2;
 		snew(rmat2,dims[0]*dims[1]*dims[2]);
-		int kk=0;
 		for (i=0;i<dims[0];i++){
 			for (j=0;j<dims[1];j++){
 				for (k=0;k<dims[2];k++){
@@ -4075,21 +4112,48 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 			}
 		}
 		fprintf(stderr,"SIZE %i %i %i %i\n",csize[0],csize[1],csize[2],size);
+		fprintf(stderr,"SIZE %i %i %i %i\n",rsize[0],rsize[1],rsize[2],size);
 		fprintf(stderr,"SIZE %i %i %i %i\n",dims[0],dims[1],dims[2],size);
+		fprintf(stderr,"SIZE %f\n",rmat2[dims[0]*dims[1]*dims[2]-1]);
 		memcpy(rdata, rmat2, size*sizeof(t_complex));
-	fprintf(stderr,"here 1\n");
 //		memcpy(rdata, rmat2, (dims[0]*dims[1]*dims[2])*sizeof(real));
 //		fprintf(stderr,"fft 1\n");
+
+
+//		rdata = malloc(sizeof(real)*dims[0]*dims[1]*dims[2]);
+//		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){rdata[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];}}}
+//		memcpy(rdata,rmatr,(dims[0]*dims[1]*dims[2])*sizeof(real));
+//		memcpy(rdata,rmatr,size*sizeof(t_complex));
+		rtot = 0.0;
 		for (i=0;i<2*size;i++)
 		{
+			rtot += rdata[i];
 			fprintf(stderr,"A1 %i %f\n",i,rdata[i]);
 		}
-		fprintf(stderr,"fft 2\n");
+		fprintf(stderr,"total %f\n",rtot);
+//		exit(0);
 		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
+		fprintf(stderr,"zero %f\n",cdata[0].re);
+
+		// This has allowed some diagnosis of the problem.
+		// I write it here in detail in case it's of any use to anyone, though
+		// intend to work on it asap.
+		// (1) the total of all elements of the matrix is 0.
+		// (2) this total should be the same as the (0,0,0) element of the fourier
+		//     transformed matrix.
+		// (3) this element of the fourier transformed matrix is, for a 62x62x62
+		//     grid, equal to -0.015146
+		// (4) taking the running total of the original matrix, when we get to one
+		//     element, we get -0.015146.
+		// (5) however, the number of this element doesn't seem to be meaningful.
+//		real*	tester = (real*)(cdata);
+
 		for (i=0;i<size;i++){
 //			cdata[i].re /= (ndata[0]*ndata[1]*ndata[2]);
 //			cdata[i].im /= (ndata[0]*ndata[1]*ndata[2]);
 			fprintf(stderr,"A2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
+//			fprintf(stderr,"A2 %i %f %f\n",i,tester[i]);
+			
 		}
 //		fprintf(stderr,"A0 A0 %f\n",rmatr[0][0][1]);
 //		fprintf(stderr,"A0 A0 %f\n",rmat2[1]);
@@ -4106,9 +4170,20 @@ const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-
 		for (i=0;i<size;i++){
 			fprintf(stderr,"A3 %i %f\n",i,rdata[i]/(ndata[0]*ndata[1]*ndata[2]));
 		}
+
+//		double *in = (double*) malloc(sizeof(double)*dims[0]*dims[1]*dims[2]);
+//		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){in[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];}}}
+//		int dmnh = (dims[2]/2) + 1;
+//		fftw_complex *out = fftw_malloc(sizeof(fftw_complex)*dims[0]*dims[1]*dmnh);
+//		int plan_forward = fftw_plan_dft_r2c_3d(dims[0],dims[1],dims[2],in,out,FFTW_ESTIMATE);
+
 		
 
-//		exit(0);
+		exit(0);
+
+
+***************************************************** DMW ******************************************************************************************/
+
 
 /******
 	        gmx_parallel_3dfft_t fft_;
