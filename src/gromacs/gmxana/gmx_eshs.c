@@ -102,7 +102,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq,   mu_ind =0.0, mu_sq =0.0, mod_f ;
     real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
-    int            max_i, isize0, ind0, indj;
+    int            max_i, isize0, ind0, indj, ind1;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
     real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
     rvec          *x, xcm, xcm_transl, dx,  *x_i1, xi, x01, x02, *arr_qvec, **arr_qvec_faces ,vec_polin, vec_polout, ***vec_pout_theta_gamma, ***vec_pin_theta_gamma;
@@ -133,6 +133,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
+    real		rnorm,fac,beta;
+    rvec	   xj, deltar;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -692,6 +694,26 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         {
                             bspline_efield(SKern_E, ir, &pbc, invcosdirmat, xi,
                                            grid_invspacing, interp_order, grid_spacing, Emean);
+
+			    // Now loop over all other molecules and find the real-space electric field at this position.
+			    for (j=0;j<isize0;j++)
+			    {
+				if (i!=j)
+				{
+					// TODO:Find rvec as the vector between i and j.
+					// TODO: check that this is ri - rj.
+					ind1 = mols->index[molindex[g][j]];
+					copy_rvec(x[ind0],xj);
+					pbc_dx(&pbc,xi,xj,deltar);
+					// TODO: beta is defined such that E = sum(erfc(beta delta r)/delta r). Find expression for beta.
+					rnorm = sqrt(deltar[0]*deltar[0] + deltar[1]*deltar[1] + deltar[2]*deltar[2]);
+					fac = (2.0 * beta / sqrt(M_PI))*exp(-beta*beta*rnorm*rnorm);
+					fac += erfc(beta*rnorm)/rnorm;
+					SKern_E->vec_interp_quant_grid[0][0] += fac*deltar[0]/rnorm;
+					SKern_E->vec_interp_quant_grid[0][1] += fac*deltar[1]/rnorm;
+					SKern_E->vec_interp_quant_grid[0][2] += fac*deltar[2]/rnorm;
+				}
+			    }
                         }
                         else
                         {
@@ -2878,7 +2900,13 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 		}	
 	 }
          */
-         mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+//         mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+	// Instead of rotating the electric field into the "molecular frame", here we leave it in the lab frame;
+	// it's assumed that we're going to have only one grid point at the position of the oxygen atom, and thus
+	// will calculate the true (SPME) electric field.
+	Kern->vec_interp_quant_grid[i][XX] = vec_t[XX];
+	Kern->vec_interp_quant_grid[i][YY] = vec_t[YY];
+	Kern->vec_interp_quant_grid[i][ZZ] = vec_t[ZZ];
      }
 
 
@@ -3301,43 +3329,6 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
 
 
 	// Now Fourier transform the pair potential and the M matrix.
-
-	if (debug && 0)
-	{
-		fprintf(stderr,"ABOUT TO DO FIRST FOURIER TRANSFORM. USE ORIGINAL FUNCTION!\n");
-		do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
-		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pK[0][0][0].re,pK[0][0][0].im);
-		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pK[0][1][0].re,pK[0][1][0].im);
-		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pK[0][1][2].re,pK[0][1][2].im);
-		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pK[3][1][4].re,pK[3][1][4].im);
-
-		fprintf(stderr,"ABOUT TO DO FIRST FOURIER TRANSFORM. USE OTHER FUNCTION INSTEAD!\n");
-		do_fft_2(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
-		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pK[0][0][0].re,pK[0][0][0].im);
-		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pK[0][1][0].re,pK[0][1][0].im);
-		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pK[0][1][2].re,pK[0][1][2].im);
-		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pK[3][1][4].re,pK[3][1][4].im);
-
-		fprintf(stderr,"REVERSE 1!\n");
-		do_fft(pair_potential,pK,grid,1.0,GMX_FFT_COMPLEX_TO_REAL);
-		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pair_potential[0][0][0]);
-		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pair_potential[0][1][0]);
-		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pair_potential[0][1][2]);
-		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pair_potential[3][1][4]);
-
-		fprintf(stderr,"NOW REVERSE IT!\n");
-		do_fft_2(pair_potential,pK,grid,1.0,GMX_FFT_COMPLEX_TO_REAL);
-		fprintf(stderr,"%i %i %i %f\n",0,0,0,pair_potential[0][0][0]);
-		fprintf(stderr,"%i %i %i %f\n",0,1,0,pair_potential[0][1][0]);
-		fprintf(stderr,"%i %i %i %f\n",0,1,2,pair_potential[0][1][2]);
-		fprintf(stderr,"%i %i %i %f\n",3,1,4,pair_potential[3][1][4]);
-
-
-
-		exit(0);
-	}
-
-
 
 	do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
 	do_fft(Mmatr,mK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
@@ -3792,69 +3783,6 @@ long long combi(int n,int k)
     return ans;
 }
 
-void do_fft_2(real ***rmatr,t_complex ***kmatr,int *dims,int fwbck)
-{
-	// Do fast Fourier transform. A real array and a complex array are passed in, and the integer fwbck tells us
-	// whether we are doing a forward or a backward transform (i.e., which is the target array and which the input?)
-	static int plan_made = 0;	// This is zero until we've set up our FFT.
-	static gmx_parallel_3dfft_t fft_;
-	static MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
-	static real * rdata;
-	static t_complex* cdata;
-	static int ndata[] = {0,0,0};// = {dims[0],dims[1],dims[2]-1};
-	static ivec       local_ndata, offset, rsize, csize, complex_order;
-	static int size;
-	int i,j,k;
-
-	if (plan_made == 0)
-	{
-//		ndata = {dims[0],dims[1],dims[2]-1};
-		ndata[0]=dims[0];ndata[1]=dims[1];ndata[2]=dims[2]-1;
-		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
-		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
-		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
-		size = csize[0]*csize[1]*csize[2];
-		plan_made = 1;		// We have now set up FFT.
-	}
-
-	if (fwbck == GMX_FFT_REAL_TO_COMPLEX)
-	{
-		fprintf(stderr,"ft 1\n");
-		// We want to FT from real to reciprocal space. Start by copying the real data into an array.
-		real *rmat2;
-		snew(rmat2,dims[0]*dims[1]*dims[2]);
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ rmat2[i*dims[1]*dims[2] + j*dims[2] + k]=rmatr[i][j][k]; }}}
-		memcpy(rdata,rmat2,size*sizeof(t_complex));
-		// Now Fourier transform!
-		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
-		// Copy this data back into the complex array (multidimensional; to be changed)
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2]/2;k++){ kmatr[i][j][k].re=cdata[i*dims[1]*dims[2] + j*dims[2] + k].re; kmatr[i][j][k].im=cdata[i*dims[1]*dims[2] + j*dims[2] + k].im;}}}
-	}
-	else if (fwbck == GMX_FFT_COMPLEX_TO_REAL)
-	{
-		fprintf(stderr,"ft 2a\n");
-		// We want to FT from reciprocal to real space. Start by copying the complex data into an array.
-		t_complex *cmat2;
-		snew(cmat2,2*size);
-		fprintf(stderr,"ft 2b\n");
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2]/2;k++){cmat2[i*dims[1]*dims[2] + j*dims[2] + k].re=kmatr[i][j][k].re; cmat2[i*dims[1]*dims[2] + j*dims[2] + k].im=kmatr[i][j][k].im; }}}
-		fprintf(stderr,"ft 2c\n");
-		memcpy(cdata,cmat2,size*sizeof(t_complex));
-		fprintf(stderr,"ft 2d\n");
-		// Now Fourier transform!
-		gmx_parallel_3dfft_execute(fft_,GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
-		// Copy this data back into the real array (multidimensional; to be changed)
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ rmatr[i][j][k]=rdata[i*dims[1]*dims[2] + j*dims[2] + k]; }}}
-	}
-	else
-	{
-		fprintf(stderr,"Incorrect flag passed to do_fft: %i\n",fwbck);
-		exit(-1);
-	}
-
-
-}
-
 void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_factor, int fwbck)
 {
 	// Do fast Fourier transform. We pass in a real array and a complex array, and the integer fwbck tells us
@@ -3866,25 +3794,6 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 	real *rdat;
 	t_complex *kdat,*k_in, *k_out, *kmatr_temp;
 	int i,j,k,m, kdims[3] = {dims[0], dims[1], dims[2]/2 + 1};
-
-		real rtot;
-		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug && 0){
-		fprintf(stderr,"We are sitting in the do_fft loop. Firstly, we look at the result of carrying out ");
-		fprintf(stderr,"an FFT using 2d and 1d transforms.\n");
-		rtot = 0.0;
-		for (i=0;i<dims[0];i++)
-		{
-		for (j=0;j<dims[1];j++)
-		{
-		for (k=0;k<dims[2];k++)
-		{
-			rtot += rmatr[i][j][k];
-		}
-		}
-		}
-		fprintf(stderr,"total = %f\n",rtot);
-//		exit(0);
-		}
 
 	rdat = (real*) malloc(sizeof(real)*dims[1]*dims[2]);
 	kdat = (t_complex*) malloc(sizeof(t_complex)*kdims[1]*kdims[2]);
@@ -3994,305 +3903,6 @@ void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_fact
 	}
         sfree(rdat); sfree(kdat), sfree(kmatr_temp);
         sfree(k_in);  sfree(k_out);
-
-		if (fwbck==GMX_FFT_REAL_TO_COMPLEX && debug && 0){
-/***************************************************** THIS TEST IS JUST TO WORK OUT HOW THE 3DFFT PART OF GROMACS WORKS. *******************************/
-		fprintf(stderr,"we now do this.\n");
-
-
-/*const real inputdata[] = { //print ",\n".join([",".join(["%4s"%(random.randint(-99,99)/10.,) for i in range(25)]) for j in range(20)])
-    -3.5, 6.3, 1.2, 0.3, 1.1, -5.7, 5.8, -1.9, -6.3, -1.4, 7.4, 2.4, -9.9, -7.2, 5.4, 6.1, -1.9, -7.6, 1.4, -3.5, 0.7, 5.6, -4.2, -1.1, -4.4,
-    -6.3, -7.2, 4.6, -3.0, -0.9, 7.2, 2.5, -3.6, 6.1, -3.2, -2.1, 6.5, -0.4, -9.0, 2.3, 8.4, 4.0, -5.2, -9.0, 4.7, -3.7, -2.0, -9.5, -3.9, -3.6,
-    7.1, 0.8, -0.6, 5.2, -9.3, -4.5, 5.9, 2.2, -5.8, 5.0, 1.2, -0.1, 2.2, 0.2, -7.7, 1.9, -8.4, 4.4, 2.3, -2.9, 6.7, 2.7, 5.8, -3.6, 8.9,
-    8.9, 4.3, 9.1, 9.3, -8.7, 4.1, 9.6, -6.2, 6.6, -9.3, 8.2, 4.5, 6.2, 9.4, -8.0, -6.8, -3.3, 7.2, 1.7, 0.6, -4.9, 9.8, 1.3, 3.2, -0.2,
-    9.9, 4.4, -9.9, -7.2, 4.4, 4.7, 7.2, -0.3, 0.3, -2.1, 8.4, -2.1, -6.1, 4.1, -5.9, -2.2, -3.8, 5.2, -8.2, -7.8, -8.8, 6.7, -9.5, -4.2, 0.8,
-    8.3, 5.2, -9.0, 8.7, 9.8, -9.9, -7.8, -8.3, 9.0, -2.8, -9.2, -9.6, 8.4, 2.5, 6.0, -0.4, 1.3, -0.5, 9.1, -9.5, -0.8, 1.9, -6.2, 4.3, -3.8,
-   8.6, -1.9, -2.1, -0.4, -7.1, -3.7, 9.1, -6.4, -0.6, 2.5, 8.0, -5.2, -9.8, -4.3, 4.5, 1.7, 9.3, 9.2, 1.0, 5.3, -4.5, 6.4, -6.6, 3.1, -6.8,
-    2.1, 2.0, 7.3, 8.6, 5.0, 5.2, 0.4, -7.1, 4.5, -9.2, -9.1, 0.2, -6.3, -1.1, -9.6, 7.4, -3.7, -5.5, 2.6, -3.5, -0.7, 9.0, 9.8, -8.0, 3.6,
-    3.0, -2.2, -2.8, 0.8, 9.0, 2.8, 7.7, -0.7, -5.0, -1.8, -2.3, -0.4, -6.2, -9.1, -9.2, 0.5, 5.7, -3.9, 2.1, 0.6, 0.4, 9.1, 7.4, 7.1, -2.5,
-    7.3, 7.8, -4.3, 6.3, -0.8, -3.8, -1.5, 6.6, 2.3, 3.9, -4.6, 5.8, -7.4, 5.9, 2.8, 4.7, 3.9, -5.4, 9.1, -1.6, -1.9, -4.2, -2.6, 0.6, -5.1,
-    1.8, 5.2, 4.0, -6.2, 6.5, -9.1, 0.5, 2.1, 7.1, -8.6, 7.6, -9.7, -4.6, -5.7, 6.1, -1.8, -7.3, 9.4, 8.0, -2.6, -1.8, 5.7, 9.3, -7.9, 7.4,
-    6.3, 2.0, 9.6, -4.5, -6.2, 6.1, 2.3, 0.8, 5.9, -2.8, -3.5, -1.5, 6.0, -4.9, 3.5, 7.7, -4.2, -9.7, 2.4, 8.1, 5.9, 3.4, -7.5, 7.5, 2.6,
-    4.7, 2.7, 2.2, 2.6, 6.2, 7.5, 0.2, -6.4, -2.8, -0.5, -0.3, 0.4, 1.2, 3.5, -4.0, -0.5, 9.3, -7.2, 8.5, -5.5, -1.7, -5.3, 0.3, 3.9, -3.6,
-    -3.6, 4.7, -8.1, 1.4, 4.0, 1.3, -4.3, -8.8, -7.3, 6.3, -7.5, -9.0, 9.1, 4.5, -1.9, 1.9, 9.9, -1.7, -9.1, -5.1, 8.5, -9.3, 2.1, -5.8, -3.6,
-    -0.8, -0.9, -3.3, -2.7, 7.0, -7.2, -5.0, 7.4, -1.4, 0.0, -4.5, -9.7, 0.7, -1.0, -9.1, -5.3, 4.3, 3.4, -6.6, 9.8, -1.1, 8.9, 5.0, 2.9, 0.2,
-    -2.9, 0.8, 6.7, -0.6, 0.6, 4.1, 5.3, -1.7, -0.3, 4.2, 3.7, -8.3, 4.0, 1.3, 6.3, 0.2, 1.3, -1.1, -3.5, 2.8, -7.7, 6.2, -4.9, -9.9, 9.6,
-    3.0, -9.2, -8.0, -3.9, 7.9, -6.1, 6.0, 5.9, 9.6, 1.2, 6.2, 3.6, 2.1, 5.8, 9.2, -8.8, 8.8, -3.3, -9.2, 4.6, 1.8, 4.6, 2.9, -2.7, 4.2,
-    7.3, -0.4, 7.7, -7.0, 2.1, 0.3, 3.7, 3.3, -8.6, 9.8, 3.6, 3.1, 6.5, -2.4, 7.8, 7.5, 8.4, -2.8, -6.3, -5.1, -2.7, 9.3, -0.8, -9.2, 7.9,
-    8.9, 3.4, 0.1, -5.3, -6.8, 4.9, 4.3, -0.7, -2.2, -3.2, -7.5, -2.3, 0.0, 8.1, -9.2, -2.3, -5.7, 2.1, 2.6, 2.0, 0.3, -8.0, -2.0, -7.9, 6.6,
-    8.4, 4.0, -6.2, -6.9, -7.2, 7.7, -5.0, 5.3, 1.9, -5.3, -7.5, 8.8, 8.3, 9.0, 8.1, 3.2, 1.2, -5.4, -0.2, 2.1, -5.2, 9.5, 5.9, 5.6, -7.8,
-};*/
-
-real *inputdata;
-snew (inputdata,70*70*70);
-int xx = 70*70*70 - 62*62*62;
-//xx-=1000;
-xx = 0;
-for (i=0;i<62;i++)
-{
-	for (j=0;j<62;j++)
-	{
-		for (k=0;k<62;k++)
-		{
-			inputdata[i*62*62 + j*62 + k] = 1.0;
-			inputdata[i*62*62 + j*62 + k] = rmatr[i][j][k];
-		}
-	}
-}
-
-//for (i=0;i<62*62*62 + xx;i++)
-//for (i=xx;i<72*72*72;i++)
-//{
-//	inputdata[i] = 1.0;
-//}
-
-        gmx_parallel_3dfft_t fft_;
-
-
-    int        ndata[] = {5, 6, 9};
-//    int ndata[] = {62,62,61};
-    MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
-    real     * rdata;
-    t_complex* cdata;
-    ivec       local_ndata, offset, rsize, csize, complex_order;
-
-    gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata,
-                            comm, TRUE, 1);
-
-    gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
-    gmx_parallel_3dfft_complex_limits(fft_, complex_order,
-                                      local_ndata, offset, csize);
-    int size = csize[0]*csize[1]*csize[2];
-	fprintf(stderr,"size %i %i %i %i\n",size,csize[0],csize[1],csize[2]);
-	fprintf(stderr,"size %i %i %i %i\n",size,rsize[0],rsize[1],rsize[2]);
-
-//	fprintf(stderr,"%i %i %i\n",dims[0],dims[1],dims[2]);
-//	exit(0);
-
-    memcpy(rdata, inputdata, size*sizeof(t_complex));
-    real rtot = 0.0;
-    for (i=0;i<2*size;i++){
-	rtot += rdata[i];
-	fprintf(stderr,"here1 %i %f\n",i,rdata[i]);
-    }
-	fprintf(stderr,"total %f\n",rtot);
-    gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
-
-	fprintf(stderr,"\n");
-    for (i=0;i<size;i++){
-	cdata[i].re /= (ndata[0]*ndata[1]*ndata[2]);
-	cdata[i].im /= (ndata[0]*ndata[1]*ndata[2]);
-	fprintf(stderr,"here2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
-    }
-	fprintf(stderr,"\n");
-
-	t_complex *cdata2;
-	snew(cdata2,size);
-
-//	for (i=0;i<2*size;i++)
-//	{
-//		fprintf(stderr,"AAA %i %f\n",i,100000.*cdata[i].re);
-//	}
-
-	for (i=0;i<size;i++)
-	{
-		cdata2[i].re = cdata[i].re;
-		cdata[i].re = 0.0;
-		cdata2[i].im = cdata[i].im;
-		cdata[i].im = 0.0;
-	}
-
-	memcpy(cdata,cdata2,size*sizeof(t_complex));
-
-    gmx_parallel_3dfft_execute(fft_, GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
-
-    for (i=0;i<2*size;i++){
-	fprintf(stderr,"here3 %i %f\n",i,rdata[i]);
-    }
-    exit(0);
-/***************************************************** DMW ******************************************************************************************
-
-
-		fprintf(stderr,"\n\nThe requested fft has been performed. Values on the grid are:\n\n");
-		fprintf(stderr,"0 0 0 %f %f\n",kmatr[0][0][0].re,kmatr[0][0][0].im);
-		fprintf(stderr,"0 0 1 %f %f\n",kmatr[0][0][1].re,kmatr[0][0][1].im);
-		fprintf(stderr,"0 0 2 %f %f\n",kmatr[0][0][2].re,kmatr[0][0][2].im);
-		fprintf(stderr,"0 0 3 %f %f\n",kmatr[0][0][3].re,kmatr[0][0][3].im);
-		fprintf(stderr,"2 0 3 %f %f\n",kmatr[2][0][3].re,kmatr[2][0][3].im);
-		fprintf(stderr,"2 1 3 %f %f\n",kmatr[2][1][3].re,kmatr[2][1][3].im);
-		fprintf(stderr,"1 1 5 %f %f\n",kmatr[1][1][5].re,kmatr[1][1][5].im);
-		fprintf(stderr,"2 2 2 %f %f\n",kmatr[2][2][2].re,kmatr[2][2][2].im);
-//		fprintf(stderr,"X X X %f %f\n",kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].re,kmatr[kdims[0]-1][kdims[1]-1][kdims[2]-1].im);
-		fprintf(stderr,"\n\nNow, using the parallel 3d fft function of Gromacs, also carry out the real-to-complex transform that was requested.\n");
-
-		rtot = 0.0;
-		for (i=0;i<dims[0];i++) {
-			for (j=0;j<dims[1];j++) {
-				for (k=0;k<dims[2];k++) {
-					rtot += rmatr[i][j][k];
-//					fprintf(stderr,"now %f\n",rtot);
-//					fprintf(stderr,"MATR %i %i %i %f\n",i,j,k,rmatr[i][j][k]);
-				}
-			}
-		}
-		fprintf(stderr,"total %f\n",rtot);
-//		exit(0);
-
-	        gmx_parallel_3dfft_t fft_;
-//		gmx_fft_t fft_;
-		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
-		real * rdata;
-		t_complex* cdata;
-		int ndata[] = {dims[0],dims[1],dims[2]-1};
-	        ivec       local_ndata, offset, rsize, csize, complex_order;
-
-		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
-//		for (i=1;i<4*dims[0]*dims[1]*dims[2];i++)
-//		{
-//			fprintf(stderr,"test %i %f\n",i,rdata[i]);
-//		}
-//		exit(0);
-		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
-		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
-		int size = csize[0]*csize[1]*csize[2];
-//		int size=dims[0]*dims[1]*dims[2];
-
-//		fprintf(stderr,"OFFSETS ETC. %i %i %i :: %i %i %i\n",offset[0],offset[1],offset[2],rsize[0],rsize[1],rsize[2]);
-
-		real *rmat2;
-		snew(rmat2,dims[0]*dims[1]*dims[2]);
-		for (i=0;i<dims[0];i++){
-			for (j=0;j<dims[1];j++){
-				for (k=0;k<dims[2];k++){
-					rmat2[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];
-//					rmat2[i*dims[1]*dims[2] + j*dims[2] + k] = 1.0;
-//					rmat2[kk] = rmatr[i][j][k];
-//					kk++;
-				}
-			}
-		}
-		fprintf(stderr,"SIZE %i %i %i %i\n",csize[0],csize[1],csize[2],size);
-		fprintf(stderr,"SIZE %i %i %i %i\n",rsize[0],rsize[1],rsize[2],size);
-		fprintf(stderr,"SIZE %i %i %i %i\n",dims[0],dims[1],dims[2],size);
-		fprintf(stderr,"SIZE %f\n",rmat2[dims[0]*dims[1]*dims[2]-1]);
-		memcpy(rdata, rmat2, size*sizeof(t_complex));
-//		memcpy(rdata, rmat2, (dims[0]*dims[1]*dims[2])*sizeof(real));
-//		fprintf(stderr,"fft 1\n");
-
-
-//		rdata = malloc(sizeof(real)*dims[0]*dims[1]*dims[2]);
-//		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){rdata[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];}}}
-//		memcpy(rdata,rmatr,(dims[0]*dims[1]*dims[2])*sizeof(real));
-//		memcpy(rdata,rmatr,size*sizeof(t_complex));
-		rtot = 0.0;
-		for (i=0;i<2*size;i++)
-		{
-			rtot += rdata[i];
-			fprintf(stderr,"A1 %i %f\n",i,rdata[i]);
-		}
-		fprintf(stderr,"total %f\n",rtot);
-//		exit(0);
-		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
-		fprintf(stderr,"zero %f\n",cdata[0].re);
-
-		// This has allowed some diagnosis of the problem.
-		// I write it here in detail in case it's of any use to anyone, though
-		// intend to work on it asap.
-		// (1) the total of all elements of the matrix is 0.
-		// (2) this total should be the same as the (0,0,0) element of the fourier
-		//     transformed matrix.
-		// (3) this element of the fourier transformed matrix is, for a 62x62x62
-		//     grid, equal to -0.015146
-		// (4) taking the running total of the original matrix, when we get to one
-		//     element, we get -0.015146.
-		// (5) however, the number of this element doesn't seem to be meaningful.
-//		real*	tester = (real*)(cdata);
-
-		for (i=0;i<size;i++){
-//			cdata[i].re /= (ndata[0]*ndata[1]*ndata[2]);
-//			cdata[i].im /= (ndata[0]*ndata[1]*ndata[2]);
-			fprintf(stderr,"A2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
-//			fprintf(stderr,"A2 %i %f %f\n",i,tester[i]);
-			
-		}
-//		fprintf(stderr,"A0 A0 %f\n",rmatr[0][0][1]);
-//		fprintf(stderr,"A0 A0 %f\n",rmat2[1]);
-//		for (i=0;i<2*size;i++){
-//			fprintf(stderr,"A0 %i %f\n",i,rdata[i]);
-//		}
-
-		// An important test is that inverting whatever we've just done (whether or not it's a fast fourier transform!)
-		// gives back what we had originally. So let's do that.
-
-//		rmatr[0][0][0] = 0.1;
-		
-		gmx_parallel_3dfft_execute(fft_, GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
-		for (i=0;i<size;i++){
-			fprintf(stderr,"A3 %i %f\n",i,rdata[i]/(ndata[0]*ndata[1]*ndata[2]));
-		}
-
-//		double *in = (double*) malloc(sizeof(double)*dims[0]*dims[1]*dims[2]);
-//		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){in[i*dims[1]*dims[2] + j*dims[2] + k] = rmatr[i][j][k];}}}
-//		int dmnh = (dims[2]/2) + 1;
-//		fftw_complex *out = fftw_malloc(sizeof(fftw_complex)*dims[0]*dims[1]*dmnh);
-//		int plan_forward = fftw_plan_dft_r2c_3d(dims[0],dims[1],dims[2],in,out,FFTW_ESTIMATE);
-
-		
-
-		exit(0);
-
-
-***************************************************** DMW ******************************************************************************************/
-
-
-/******
-	        gmx_parallel_3dfft_t fft_;
-		MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
-		real * rdata;
-		t_complex* cdata;
-		int ndata[] = {dims[0],dims[1],dims[2]};
-		int kk = 0;
-	        ivec       local_ndata, offset, rsize, csize, complex_order;
-
-		gmx_parallel_3dfft_init(&fft_, ndata, &rdata, &cdata, comm, TRUE, 1);
-		gmx_parallel_3dfft_real_limits(fft_, local_ndata, offset, rsize);
-		gmx_parallel_3dfft_complex_limits(fft_, complex_order, local_ndata, offset, csize);
-		int size = csize[0]*csize[1]*csize[2];
-
-//		fprintf(stderr,"SIZE = %i %i %i %i\n",csize[0],csize[1],csize[2],size);
-
-
-		memcpy(rdata, rmatr, size*sizeof(t_complex));
-
-		for (i=0;i<2*dims[0]*dims[1]*dims[2];i++){
-			fprintf(stderr,"A0 %f\n",rdata[i]);
-		}
-		sfree(rdata);
-		
-		snew(rdata,2*dims[0]*dims[1]*dims[2]);
-		for (i=0;i<dims[0];i++)
-		{
-			for (j=0;j<dims[1];j++)
-			{
-
-				for (k=0;k<dims[2];k++)
-				{
-					rdata[kk] = rmatr[i][j][k];
-					kk++;
-				}
-			}
-		}
-		for (i=0;i<2*dims[0]*dims[1]*dims[2];i++){
-			fprintf(stderr,"A1 %f\n",rdata[i]);
-		}
-//		memcpy(cdata, rdata, size*sizeof(t_complex));
-		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
-		for (i=0;i<2*dims[0]*dims[1]*dims[2];i++){
-			fprintf(stderr,"A2 %i %f\n",i,rdata[i]);
-		}
-		sfree(rdata);
-		exit(0);**********/
-		}
 }
  
 int gmx_eshs(int argc, char *argv[])
