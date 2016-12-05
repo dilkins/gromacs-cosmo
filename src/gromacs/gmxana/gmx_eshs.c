@@ -3302,7 +3302,7 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
 
 	// Now Fourier transform the pair potential and the M matrix.
 
-	if (debug)
+	if (debug && 0)
 	{
 		fprintf(stderr,"ABOUT TO DO FIRST FOURIER TRANSFORM. USE ORIGINAL FUNCTION!\n");
 		do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
@@ -3310,12 +3310,30 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
 		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pK[0][1][0].re,pK[0][1][0].im);
 		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pK[0][1][2].re,pK[0][1][2].im);
 		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pK[3][1][4].re,pK[3][1][4].im);
+
 		fprintf(stderr,"ABOUT TO DO FIRST FOURIER TRANSFORM. USE OTHER FUNCTION INSTEAD!\n");
 		do_fft_2(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
 		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pK[0][0][0].re,pK[0][0][0].im);
 		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pK[0][1][0].re,pK[0][1][0].im);
 		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pK[0][1][2].re,pK[0][1][2].im);
 		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pK[3][1][4].re,pK[3][1][4].im);
+
+		fprintf(stderr,"REVERSE 1!\n");
+		do_fft(pair_potential,pK,grid,1.0,GMX_FFT_COMPLEX_TO_REAL);
+		fprintf(stderr,"%i %i %i %f %f\n",0,0,0,pair_potential[0][0][0]);
+		fprintf(stderr,"%i %i %i %f %f\n",0,1,0,pair_potential[0][1][0]);
+		fprintf(stderr,"%i %i %i %f %f\n",0,1,2,pair_potential[0][1][2]);
+		fprintf(stderr,"%i %i %i %f %f\n",3,1,4,pair_potential[3][1][4]);
+
+		fprintf(stderr,"NOW REVERSE IT!\n");
+		do_fft_2(pair_potential,pK,grid,1.0,GMX_FFT_COMPLEX_TO_REAL);
+		fprintf(stderr,"%i %i %i %f\n",0,0,0,pair_potential[0][0][0]);
+		fprintf(stderr,"%i %i %i %f\n",0,1,0,pair_potential[0][1][0]);
+		fprintf(stderr,"%i %i %i %f\n",0,1,2,pair_potential[0][1][2]);
+		fprintf(stderr,"%i %i %i %f\n",3,1,4,pair_potential[3][1][4]);
+
+
+
 		exit(0);
 	}
 
@@ -3801,6 +3819,7 @@ void do_fft_2(real ***rmatr,t_complex ***kmatr,int *dims,int fwbck)
 
 	if (fwbck == GMX_FFT_REAL_TO_COMPLEX)
 	{
+		fprintf(stderr,"ft 1\n");
 		// We want to FT from real to reciprocal space. Start by copying the real data into an array.
 		real *rmat2;
 		snew(rmat2,dims[0]*dims[1]*dims[2]);
@@ -3809,19 +3828,23 @@ void do_fft_2(real ***rmatr,t_complex ***kmatr,int *dims,int fwbck)
 		// Now Fourier transform!
 		gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
 		// Copy this data back into the complex array (multidimensional; to be changed)
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ kmatr[i][j][k].re=cdata[i*dims[1]*dims[2] + j*dims[2] + k].re; kmatr[i][j][k].im=cdata[i*dims[1]*dims[2] + j*dims[2] + k].im; }}}
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2]/2;k++){ kmatr[i][j][k].re=cdata[i*dims[1]*dims[2] + j*dims[2] + k].re; kmatr[i][j][k].im=cdata[i*dims[1]*dims[2] + j*dims[2] + k].im;}}}
 	}
 	else if (fwbck == GMX_FFT_COMPLEX_TO_REAL)
 	{
-/**		// We want to FT from reciprocal to real space. Start by copying the complex data into an array.
+		fprintf(stderr,"ft 2a\n");
+		// We want to FT from reciprocal to real space. Start by copying the complex data into an array.
 		t_complex *cmat2;
-		snew(cmat2,size);
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ cmat2[i*dims[1]*dims[2] + j*dims[2] + k].re=kmatr[i][j][k].re; cmat2[i*dims[1]*dims[2] + j*dims[2] + k].im=kmatr[i][j][k].im; }}}
+		snew(cmat2,2*size);
+		fprintf(stderr,"ft 2b\n");
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2]/2;k++){cmat2[i*dims[1]*dims[2] + j*dims[2] + k].re=kmatr[i][j][k].re; cmat2[i*dims[1]*dims[2] + j*dims[2] + k].im=kmatr[i][j][k].im; }}}
+		fprintf(stderr,"ft 2c\n");
 		memcpy(cdata,cmat2,size*sizeof(t_complex));
+		fprintf(stderr,"ft 2d\n");
 		// Now Fourier transform!
 		gmx_parallel_3dfft_execute(fft_,GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
 		// Copy this data back into the real array (multidimensional; to be changed)
-		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ rmatr[i][j][k]=rdata[i*dims[1]*dims[2] + j*dims[2] + k]; }}}**/
+		for (i=0;i<dims[0];i++){for (j=0;j<dims[1];j++){for (k=0;k<dims[2];k++){ rmatr[i][j][k]=rdata[i*dims[1]*dims[2] + j*dims[2] + k]; }}}
 	}
 	else
 	{
@@ -4005,16 +4028,29 @@ snew (inputdata,70*70*70);
 int xx = 70*70*70 - 62*62*62;
 //xx-=1000;
 xx = 0;
-for (i=0;i<62*62*62 + xx;i++)
+for (i=0;i<62;i++)
 {
-	inputdata[i] = 1.0;
+	for (j=0;j<62;j++)
+	{
+		for (k=0;k<62;k++)
+		{
+			inputdata[i*62*62 + j*62 + k] = 1.0;
+			inputdata[i*62*62 + j*62 + k] = rmatr[i][j][k];
+		}
+	}
 }
+
+//for (i=0;i<62*62*62 + xx;i++)
+//for (i=xx;i<72*72*72;i++)
+//{
+//	inputdata[i] = 1.0;
+//}
 
         gmx_parallel_3dfft_t fft_;
 
 
-//    int        ndata[] = {5, 6, 9};
-    int ndata[] = {62,62,62};
+    int        ndata[] = {5, 6, 9};
+//    int ndata[] = {62,62,61};
     MPI_Comm   comm[]  = {MPI_COMM_NULL, MPI_COMM_NULL};
     real     * rdata;
     t_complex* cdata;
@@ -4030,10 +4066,16 @@ for (i=0;i<62*62*62 + xx;i++)
 	fprintf(stderr,"size %i %i %i %i\n",size,csize[0],csize[1],csize[2]);
 	fprintf(stderr,"size %i %i %i %i\n",size,rsize[0],rsize[1],rsize[2]);
 
+//	fprintf(stderr,"%i %i %i\n",dims[0],dims[1],dims[2]);
+//	exit(0);
+
     memcpy(rdata, inputdata, size*sizeof(t_complex));
+    real rtot = 0.0;
     for (i=0;i<2*size;i++){
-	fprintf(stderr,"here %i %f\n",i,rdata[i]);
+	rtot += rdata[i];
+	fprintf(stderr,"here1 %i %f\n",i,rdata[i]);
     }
+	fprintf(stderr,"total %f\n",rtot);
     gmx_parallel_3dfft_execute(fft_, GMX_FFT_REAL_TO_COMPLEX, 0, NULL);
 
 	fprintf(stderr,"\n");
@@ -4043,6 +4085,24 @@ for (i=0;i<62*62*62 + xx;i++)
 	fprintf(stderr,"here2 %i %f %f\n",i,cdata[i].re,cdata[i].im);
     }
 	fprintf(stderr,"\n");
+
+	t_complex *cdata2;
+	snew(cdata2,size);
+
+//	for (i=0;i<2*size;i++)
+//	{
+//		fprintf(stderr,"AAA %i %f\n",i,100000.*cdata[i].re);
+//	}
+
+	for (i=0;i<size;i++)
+	{
+		cdata2[i].re = cdata[i].re;
+		cdata[i].re = 0.0;
+		cdata2[i].im = cdata[i].im;
+		cdata[i].im = 0.0;
+	}
+
+	memcpy(cdata,cdata2,size*sizeof(t_complex));
 
     gmx_parallel_3dfft_execute(fft_, GMX_FFT_COMPLEX_TO_REAL, 0, NULL);
 
