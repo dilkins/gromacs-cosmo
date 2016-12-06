@@ -133,7 +133,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     int            mol, a, molsize;
     int            atom_id_0, nspecies_0, atom_id_1, nspecies_1;
     int           *chged_atom_indexes, n_chged_atoms;
-    real		rnorm,fac,beta;
+    real	   rr2, rnorm,fac,beta;
     rvec	   xj, deltar;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
@@ -700,21 +700,21 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 			    {
 				if (i!=j)
 				{
-					// TODO: check that this is ri - rj.
 					ind1 = mols->index[molindex[g][j]];
 					copy_rvec(x[ind1],xj);
 					pbc_dx(&pbc,xi,xj,deltar);
 					rnorm = sqrt(deltar[0]*deltar[0] + deltar[1]*deltar[1] + deltar[2]*deltar[2]);
+					rr2 = rnorm*rnorm;
 					beta = kappa;
-					// TODO: fix fractional vs. real-space coordinates (i.e., include the right number of multiplication factors).
-					// TODO: if deltar and rnorm are in fractional coordinates then we can replace this with exp(-rnorm*rnorm/invkappa2).
-					fac = (2.0 * beta / sqrt(M_PI))*exp(-beta*beta*rnorm*rnorm);
+					fac = (2.0 * beta / sqrt(M_PI))*exp(-beta*beta*rr2);
 					fac += erfc(beta*rnorm)/rnorm;
-					SKern_E->vec_interp_quant_grid[0][0] += fac*deltar[0]/rnorm;
-					SKern_E->vec_interp_quant_grid[0][1] += fac*deltar[1]/rnorm;
-					SKern_E->vec_interp_quant_grid[0][2] += fac*deltar[2]/rnorm;
+					SKern_E->vec_interp_quant_grid[0][0] += fac*deltar[0]/rr2;
+					SKern_E->vec_interp_quant_grid[0][1] += fac*deltar[1]/rr2;
+					SKern_E->vec_interp_quant_grid[0][2] += fac*deltar[2]/rr2;
 				}
 			    }
+                            printf("force electrostatic %d %f %f %f\n",i,SKern_E->vec_interp_quant_grid[0][0],
+                                             SKern_E->vec_interp_quant_grid[0][1],SKern_E->vec_interp_quant_grid[0][2]);
                         }
                         else
                         {
@@ -1942,10 +1942,10 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             }
          }
      }
-     if (debug)
-     {
-        gmx_fatal(FARGS,"consider only one loop\n");
-     }   
+//     if (debug)
+//     {
+//        gmx_fatal(FARGS,"consider only one loop\n");
+//     }   
      
 }
 
