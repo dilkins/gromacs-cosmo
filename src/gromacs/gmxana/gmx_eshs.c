@@ -700,13 +700,14 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 			    {
 				if (i!=j)
 				{
-					// TODO:Find rvec as the vector between i and j.
 					// TODO: check that this is ri - rj.
 					ind1 = mols->index[molindex[g][j]];
-					copy_rvec(x[ind0],xj);
+					copy_rvec(x[ind1],xj);
 					pbc_dx(&pbc,xi,xj,deltar);
-					// TODO: beta is defined such that E = sum(erfc(beta delta r)/delta r). Find expression for beta.
 					rnorm = sqrt(deltar[0]*deltar[0] + deltar[1]*deltar[1] + deltar[2]*deltar[2]);
+					beta = kappa;
+					// TODO: fix fractional vs. real-space coordinates (i.e., include the right number of multiplication factors).
+					// TODO: if deltar and rnorm are in fractional coordinates then we can replace this with exp(-rnorm*rnorm/invkappa2).
 					fac = (2.0 * beta / sqrt(M_PI))*exp(-beta*beta*rnorm*rnorm);
 					fac += erfc(beta*rnorm)/rnorm;
 					SKern_E->vec_interp_quant_grid[0][0] += fac*deltar[0]/rnorm;
