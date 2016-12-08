@@ -692,11 +692,14 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         //fprintf(stderr,"finished interpolation H kern\n");
                         if (debug)
                         {
+                              //vec_trilinear_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
+//                                                         grid_invspacing, grid_spacing, Emean);
                             bspline_efield(SKern_E, ir, &pbc, invcosdirmat, xi,
                                            grid_invspacing, interp_order, grid_spacing, Emean);
 
+
 			    // Now loop over all other molecules and find the real-space electric field at this position.
-			    for (j=0;j<isize0;j++)
+/*			    for (j=0;j<isize0;j++)
 			    {
 				if (i!=j)
 				{
@@ -715,6 +718,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 			    }
                             printf("force electrostatic %d %f %f %f\n",i,SKern_E->vec_interp_quant_grid[0][0],
                                              SKern_E->vec_interp_quant_grid[0][1],SKern_E->vec_interp_quant_grid[0][2]);
+*/
                         }
                         else
                         {
@@ -2862,23 +2866,24 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
        
          for (a = bin_indx0 - interp_order +1; a <= bin_indx0 + interp_order; a++)
          {
-             //du[XX] = Kern->translgrid[i][XX]*grid_invspacing[XX] -a;
+             du[XX] = Kern->translgrid[i][XX]*grid_invspacing[XX] -a;
              kk1 = index_wrap(a,ir->nkx);
-             bsplcoeff[XX] = Bspline(kk1,interp_order);
+             bsplcoeff[XX] = Bspline(du[XX],interp_order);
              for (b = bin_indy0 - interp_order + 1; b <= bin_indy0 + interp_order; b++)
              {
-                 //du[YY] = Kern->translgrid[i][YY]*grid_invspacing[YY] -b;
+                 du[YY] = Kern->translgrid[i][YY]*grid_invspacing[YY]  -b;
                  kk2 = index_wrap(b,ir->nky);
-                 bsplcoeff[YY] = Bspline(kk2,interp_order);
+                 bsplcoeff[YY] = Bspline(du[YY],interp_order);
                  for (c = bin_indz0 - interp_order + 1; c <= bin_indz0 + interp_order; c++)
                  {
-                     //du[ZZ] = Kern->translgrid[i][ZZ]*grid_invspacing[ZZ] -c;
+                     du[ZZ] = Kern->translgrid[i][ZZ]*grid_invspacing[ZZ] -c;
                      kk3 = index_wrap(c,ir->nkz);
-                     bsplcoeff[ZZ] = Bspline(kk3,interp_order);
+                     bsplcoeff[ZZ] = Bspline(du[ZZ],interp_order);
                      
                      vec_t[XX] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_x[kk1][kk2][kk3]-Emean[XX]);
                      vec_t[YY] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_y[kk1][kk2][kk3]-Emean[YY]);
                      vec_t[ZZ] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_z[kk1][kk2][kk3]-Emean[ZZ]);
+//                     printf("vec_t %d %d %d %f %f %f\n",a,b,c,vec_t[XX],vec_t[YY],vec_t[ZZ]);
                      
                  }
              }
@@ -2908,6 +2913,13 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 	Kern->vec_interp_quant_grid[i][XX] = vec_t[XX];
 	Kern->vec_interp_quant_grid[i][YY] = vec_t[YY];
 	Kern->vec_interp_quant_grid[i][ZZ] = vec_t[ZZ];
+        printf("mol_grid_espl %f %f\n",Kern->translgrid[i][ZZ],Kern->vec_interp_quant_grid[i][ZZ]);
+        printf("four_grid_espl %f %f\n",grid_spacing[ZZ]*bin_indz0,Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ]);
+     }
+
+     for ( i = 0; i < ir->nkz-1; i++)
+     {
+         printf("grid_efield_z %f %f\n",grid_spacing[ZZ]*i,Kern->quantity_on_grid_z[0][0][i]);
      }
 
 
@@ -2942,9 +2954,20 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
 
      for (i = 0; i < Kern->gridpoints; i++)
      {
+
+/*         if (debug)
+         {
+           Kern->translgrid[i][XX]= 0.0;
+           Kern->translgrid[i][YY]= 0.0;
+           Kern->translgrid[i][ZZ]= i*0.11;
+           Emean[ZZ]=0.0;
+         }
+*/
+
          bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
          bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
          bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+
          if (bin_indx1 > ir->nkx-1)
          {
             bin_indx1 = 0;
@@ -2974,10 +2997,6 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
 
 //         pbc_dx(pbc,xi,Kern->translgrid[i],delx);
 
-
-
-
-
                                 vec_t[XX] = (Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz0]-Emean[XX])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
                                          (Kern->quantity_on_grid_x[bin_indx1][bin_indy0][bin_indz0]-Emean[XX])*xd*(1 - yd)*(1 - zd) +
                                          (Kern->quantity_on_grid_x[bin_indx0][bin_indy1][bin_indz0]-Emean[XX])*(1.0 - xd)*yd*(1 - zd) +
@@ -3005,23 +3024,29 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
                                          (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz0]-Emean[ZZ])*xd*yd*(1 - zd) +
                                          (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1]-Emean[ZZ])*xd*yd*zd;
 
-                                 mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+//                                 mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+              copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 //            Kern->vec_interp_quant_grid[i][d] *= Kern->weights[i];
 //            Kern->vec_interp_quant_grid[i][d] -= Kern->selfterm[i];
 
-/*         printf("xi %f %f %f\n",xi[XX],xi[YY],xi[ZZ]);
+         printf("xi %f %f %f\n",xi[XX],xi[YY],xi[ZZ]);
          printf("grid %f %f %f\n",Kern->translgrid[i][XX],Kern->translgrid[i][YY],Kern->translgrid[i][ZZ]);
          printf("grid index %d %d %d\n",bin_indx0,bin_indy0,bin_indz0);
-         printf("nearest grid 0 0 0 %f %f %f\n",Kern->rspace_grid[bin_indx0][bin_indy0][bin_indz0][XX],Kern->rspace_grid[bin_indx0][bin_indy0][bin_indz0][YY],Kern->rspace_grid[bin_indx0][bin_indy0][bin_indz0][ZZ]);
-         printf("nearest grid 1 1 1 %f %f %f\n",Kern->rspace_grid[bin_indx1][bin_indy1][bin_indz1][XX],Kern->rspace_grid[bin_indx1][bin_indy1][bin_indz1][YY],Kern->rspace_grid[bin_indx1][bin_indy1][bin_indz1][ZZ]);
+         printf("nearest grid 0 0 0 %f %f %f %f\n",Kern->rspace_grid[XX],Kern->rspace_grid[YY],Kern->rspace_grid[ZZ],Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ]);
+         printf("nearest grid 1 1 1 %f %f %f %f\n",grid_spacing[XX]*bin_indx1,grid_spacing[XX]*bin_indy1,grid_spacing[XX]*bin_indz1,Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1] -Emean[ZZ]);
+         printf("molecular_efield_z %f %f\n",Kern->translgrid[i][ZZ],Kern->vec_interp_quant_grid[i][ZZ]);
          printf("distance grid to x %f \n",norm(delx));
          printf("d= %f electric_field_bare= %f %f %f\n",norm(delx),vec_t[XX], vec_t[YY], vec_t[ZZ]);
          printf("d= %f electric field rotated= %f %f %f\n",norm(delx),Kern->vec_interp_quant_grid[i][XX], Kern->vec_interp_quant_grid[i][YY], Kern->vec_interp_quant_grid[i][ZZ]);
-         pbc_dx(pbc,Kern->rspace_grid[bin_indx0][bin_indy0][bin_indz0],xi,delxdeb);
+         pbc_dx(pbc,Kern->rspace_grid,xi,delxdeb);
          printf("xd %f yd %f zd %f\n",xd,yd,zd);
-*/
+
      }
-//     gmx_fatal(FARGS,"exit from elfield\n");
+     for ( i = 0; i < ir->nkz-1; i++)
+     {
+         printf("grid_efield_z %f %f\n",grid_spacing[ZZ]*i,Kern->quantity_on_grid_z[0][0][i]);
+     }
+     gmx_fatal(FARGS,"exit from elfield\n");
 }
 
 //
@@ -3502,11 +3527,11 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
 	}
         for (n = 0;n < isize0 ;n++)
         {
-                for (m = 0; m < n_chged_atoms; m++)
+                for (m = 0; m <  n_chged_atoms  ; m++)
                 {
-                       ind0 = mols->index[molindex[0][n]]   + chged_atom_indexes[m];
+                       ind0 = mols->index[molindex[0][n]]   + chged_atom_indexes[m] ;
                        copy_rvec(x[ind0],xi);
-                       charge = top->atoms.atom[ind0].q;
+                        charge = top->atoms.atom[ind0].q; 
 //                       charge= 1.0;
                        //fprintf(stderr,"charge =%f\n",charge);
                        //fprintf(stderr,"chged atoms=%d chged_atom_indexes %d atom ind %d\n",n_chged_atoms,chged_atom_indexes[m],ind0);
