@@ -778,7 +778,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     };
 #define NLEGADIP asize(leg_adip)
 
-    FILE         *outdd, *outmtot, *outaver, *outeps, *caver = NULL;
+    FILE         *andrea, *outdd, *outmtot, *outaver, *outeps, *caver = NULL;
     FILE         *dip3d = NULL, *adip = NULL;
     rvec         *x, *dipole = NULL, mu_t, quad, *dipsp = NULL;
     t_gkrbin     *gkrbin = NULL;
@@ -901,6 +901,9 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                        "Time (ps)", "", oenv);
     outaver = xvgropen(out_aver, "Total dipole moment",
                        "Time (ps)", "D", oenv);
+
+    andrea = fopen("mol_dipoles.txt", "w");   //NEW
+
     if (bSlab)
     {
         idim = axtitle[0] - 'X';
@@ -1029,6 +1032,8 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     /* Start while loop over frames */
     t0     = t;
     teller = 0;
+
+
     do
     {
         if (bCorr && (teller >= nframes))
@@ -1075,8 +1080,11 @@ static void do_dip(t_topology *top, int ePBC, real volume,
             gmx_rmpbc(gpbc, natom, box, x);
 
             /* Begin loop of all molecules in frame */
+
+
             for (n = 0; (n < ncos); n++)
-            {
+            {   
+
                 for (i = 0; (i < gnx[n]); i++)
                 {
                     int ind0, ind1;
@@ -1085,6 +1093,10 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                     ind1  = mols->index[molindex[n][i]+1];
 
                     mol_dip(ind0, ind1, x, atom, dipole[i]);
+
+                    fprintf(andrea, "%12.8e %12.8e", dipole[i][ZZ]/norm(dipole[i]), 
+                                           pow(dipole[i][ZZ]/norm(dipole[i]),2.0) );  //NEW
+
                     gmx_stats_add_point(mulsq, 0, norm(dipole[i]), 0, 0);
                     gmx_stats_add_point(muframelsq, 0, norm(dipole[i]), 0, 0);
                     if (bSlab)
@@ -1185,6 +1197,9 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                                     ncolour, ind0, i);
                         }
                     }
+
+                fprintf(andrea, "                                         ");      //NEW
+
                 } /* End loop of all molecules in frame */
 
                 if (dip3d)
@@ -1341,6 +1356,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     gmx_ffclose(outmtot);
     gmx_ffclose(outaver);
     gmx_ffclose(outeps);
+    gmx_ffclose(andrea);
 
     if (fnadip)
     {
