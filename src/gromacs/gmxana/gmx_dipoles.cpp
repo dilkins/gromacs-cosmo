@@ -778,7 +778,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     };
 #define NLEGADIP asize(leg_adip)
 
-    FILE         *z_dipoles, *outdd, *outmtot, *outaver, *outeps, *caver = NULL;
+    FILE         *z_projection, *outdd, *outmtot, *outaver, *outeps, *caver = NULL;
     FILE         *dip3d = NULL, *adip = NULL;
     rvec         *x, *dipole = NULL, mu_t, quad, *dipsp = NULL;
     t_gkrbin     *gkrbin = NULL;
@@ -901,8 +901,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                        "Time (ps)", "", oenv);
     outaver = xvgropen(out_aver, "Total dipole moment",
                        "Time (ps)", "D", oenv);
-
-    z_dipoles = fopen("z_dipoles.txt", "w");  
+    z_projection = fopen("z_projection.dat", "w");  
 
     if (bSlab)
     {
@@ -1093,10 +1092,15 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                     ind1  = mols->index[molindex[n][i]+1];
 
                     mol_dip(ind0, ind1, x, atom, dipole[i]);
-
-                    fprintf(z_dipoles, "%12.8e %12.8e", dipole[i][ZZ]/norm(dipole[i]), 
+                    
+                    int do_zproj;
+ 
+                    if  (do_zproj = 1)
+                    {
+                        fprintf(z_projection, "%f\t %f\t %f\n", x[i][ZZ], 
+                                               dipole[i][ZZ]/norm(dipole[i]), 
                                            pow(dipole[i][ZZ]/norm(dipole[i]),2.0) );  
-
+                    }
                     gmx_stats_add_point(mulsq, 0, norm(dipole[i]), 0, 0);
                     gmx_stats_add_point(muframelsq, 0, norm(dipole[i]), 0, 0);
                     if (bSlab)
@@ -1197,8 +1201,6 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                                     ncolour, ind0, i);
                         }
                     }
-
-                fprintf(z_dipoles, "                                         ");   
 
                 } /* End loop of all molecules in frame */
 
@@ -1356,7 +1358,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     gmx_ffclose(outmtot);
     gmx_ffclose(outaver);
     gmx_ffclose(outeps);
-    gmx_ffclose(z_dipoles);
+    gmx_ffclose(z_projection);
 
     if (fnadip)
     {
@@ -1562,6 +1564,9 @@ int gmx_dipoles(int argc, char *argv[])
     int            nslices    = 10; /* nr of slices defined       */
     int            skip       = 0, nFA = 0, nFB = 0, ncos = 1;
     int            nlevels    = 20, ndegrees = 90;
+    int		   do_zproj   = 0;
+
+
     output_env_t   oenv;
     t_pargs        pa[] = {
         { "-mu",       FALSE, etREAL, {&mu_aver},
@@ -1597,7 +1602,9 @@ int gmx_dipoles(int argc, char *argv[])
         { "-nlevels",  FALSE, etINT, {&nlevels},
           "Number of colors in the cmap output" },
         { "-ndegrees", FALSE, etINT, {&ndegrees},
-          "Number of divisions on the [IT]y[it]-axis in the cmap output (for 180 degrees)" }
+          "Number of divisions on the [IT]y[it]-axis in the cmap output (for 180 degrees)" },
+        { "-zproj", FALSE, etINT, {&do_zproj},
+          "Print out molecular dipoles projection along z?"}
     };
     int           *gnx;
     int            nFF[2];
