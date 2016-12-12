@@ -741,7 +741,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                    int  *gkatom,  int skip,
                    gmx_bool bSlab,    int nslices,
                    const char *axtitle, const char *slabfn,
-                   const output_env_t oenv)
+                   const output_env_t oenv, int do_zproj)
 {
     const char *leg_mtot[] = {
         "M\\sx \\N",
@@ -1093,9 +1093,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
 
                     mol_dip(ind0, ind1, x, atom, dipole[i]);
                     
-                    int do_zproj;
- 
-                    if  (do_zproj = 1)
+                    if  (do_zproj == 1)
                     {
                         fprintf(z_projection, "%f\t %f\t %f\n", x[i][ZZ], 
                                                dipole[i][ZZ]/norm(dipole[i]), 
@@ -1716,7 +1714,7 @@ int gmx_dipoles(int argc, char *argv[])
            opt2fn("-cmap", NFILE, fnm), rcmax,
            bQuad, bMU,     opt2fn("-en", NFILE, fnm),
            gnx, grpindex, mu_max, mu_aver, epsilonRF, temp, nFF, skip,
-           bSlab, nslices, axtitle, opt2fn("-slab", NFILE, fnm), oenv);
+           bSlab, nslices, axtitle, opt2fn("-slab", NFILE, fnm), oenv, do_zproj);
 
     do_view(oenv, opt2fn("-o", NFILE, fnm), "-autoscale xy -nxy");
     do_view(oenv, opt2fn("-eps", NFILE, fnm), "-autoscale xy -nxy");
