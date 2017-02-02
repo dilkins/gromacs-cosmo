@@ -2606,33 +2606,96 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
      }
 }
 
-void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top,  
+void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc *pbc, 
                           matrix box, real invvol, t_block *mols, int  *molindex[],
                          int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
-                         rvec *x, int isize0, real big_sigma, real small_sigma)
+                         rvec *x, int isize0, real *sigma_vals,real dxcut2)
 {
 	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
 	// using a different cutoff radius.
 
-	int ix,iy,iz;
+	int ix,iy,iz,m,i,ind0,n;
+	rvec dx,xi;
+	real charge,dx2,ef0,invdx2,dx2s,dx2b,dxs,dxb,invdx;
+
+	// Note: sigma_vals should be a 4-d array:
+	// 0: 1/small_sigma
+	// 1: 1/big_sigma
+	// 2: 1/small_sigma^2
+	// 3: 1/big_sigma^2
 
 	for (ix=0;ix<ir->nkx;ix++)
 	{
 		for (iy=0;iy<ir->nky;iy++)
 		{
-			sfree(Kern->quantity_on_grid[ix][iy]);
+			sfree(Kern->quantity_on_grid_x[ix][iy]);
+			sfree(Kern->quantity_on_grid_y[ix][iy]);
+			sfree(Kern->quantity_on_grid_z[ix][iy]);
 		}
-		sfree(Kern->quantity_on_grid[ix]);
+		sfree(Kern->quantity_on_grid_x[ix]);
+		sfree(Kern->quantity_on_grid_y[ix]);
+		sfree(Kern->quantity_on_grid_z[ix]);
 	}
-	sfree(Kern->quantity_on_grid);
+	sfree(Kern->quantity_on_grid_x);
+	sfree(Kern->quantity_on_grid_y);
+	sfree(Kern->quantity_on_grid_z);
 
-	snew(Kern->quantity_on_grid,ir->nkx);
+	snew(Kern->quantity_on_grid_x,ir->nkx);
+	snew(Kern->quantity_on_grid_y,ir->nkx);
+	snew(Kern->quantity_on_grid_z,ir->nkx);
 	for (ix=0;ix<ir->nkx;ix++)
 	{
-		snew(Kern->quantity_on_grid[ix],ir->nky);
+		snew(Kern->quantity_on_grid_x[ix],ir->nky);
+		snew(Kern->quantity_on_grid_y[ix],ir->nky);
+		snew(Kern->quantity_on_grid_z[ix],ir->nky);
 		for (iy=0;iy<ir->nky;iy++)
 		{
-			snew(Kern->quantity_on_grid[ix][iy],ir->nkz);
+			snew(Kern->quantity_on_grid_x[ix][iy],ir->nkz);
+			snew(Kern->quantity_on_grid_y[ix][iy],ir->nkz);
+			snew(Kern->quantity_on_grid_z[ix][iy],ir->nkz);
+		}
+	}
+
+	// Loop over molecules.
+	for (i=0;i<isize0;i++)
+	{
+		for (m = 0;m<n_chged_atoms;m++)
+		{
+			ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
+			copy_rvec(x[ind0],xi);
+			charge = top->atoms.atom[ind0].q;
+			charge = top->atoms.atom[ind0+m].q;
+			for (ix=0;ix<ir->nkx;ix++)
+			{
+				Kern->rspace_grid[XX] = ix*grid_spacing[XX];
+				for (iy=0;iy<ir->nky;iy++)
+				{
+					Kern->rspace_grid[YY] = iy*grid_spacing[YY];
+					for (iz=0;iz<ir->nkz;iz++)
+					{
+						Kern->rspace_grid[ZZ] = iz*grid_spacing[ZZ];
+						pbc_dx(pbc,xi,Kern->rspace_grid,dx);
+						dx2 = norm2(dx);
+						if (dx2<=dxcut2)
+						{
+							// Calculate electric field correction terms.
+							invdx2 = 1.0/dx2;
+							dx2s = dx2 * sigma_vals[2];
+							dx2b = dx2 * sigma_vals[3];
+							ef0 = sigma_vals[0]*exp(-dx2s) - sigma_vals[1]*exp(-dx2b);
+							ef0*=2.0/ M_PI;
+							invdx = sqrt(invdx2);
+							dxs = sqrt(dx2s);
+							dxb = sqrt(dx2b);
+							ef0 += invdx*( erf(dxs) - erf(dxb));
+							ef0 *= invdx2;
+							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[XX];
+							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[YY];
+							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[ZZ];
+						}
+					}
+				}
+			}
 		}
 	}
 
