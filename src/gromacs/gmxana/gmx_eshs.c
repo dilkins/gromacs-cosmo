@@ -2624,7 +2624,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	// 2: 1/small_sigma^2
 	// 3: 1/big_sigma^2
 
-	for (ix=0;ix<ir->nkx;ix++)
+/*	for (ix=0;ix<ir->nkx;ix++)
 	{
 		for (iy=0;iy<ir->nky;iy++)
 		{
@@ -2654,7 +2654,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 			snew(Kern->quantity_on_grid_y[ix][iy],ir->nkz);
 			snew(Kern->quantity_on_grid_z[ix][iy],ir->nkz);
 		}
-	}
+	}*/
 
 	// Loop over molecules.
 	for (i=0;i<isize0;i++)
