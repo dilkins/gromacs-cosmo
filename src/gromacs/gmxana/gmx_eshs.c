@@ -2664,7 +2664,6 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 			ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
 			copy_rvec(x[ind0],xi);
 			charge = top->atoms.atom[ind0].q;
-			charge = top->atoms.atom[ind0+m].q;
 			for (ix=0;ix<ir->nkx;ix++)
 			{
 				Kern->rspace_grid[XX] = ix*grid_spacing[XX];
@@ -2690,8 +2689,8 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 							ef0 += invdx*( erf(dxs) - erf(dxb));
 							ef0 *= invdx2;
 							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[XX];
-							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[YY];
-							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[ZZ];
+							Kern->quantity_on_grid_y[ix][iy][iz] = ef0 * dx[YY];
+							Kern->quantity_on_grid_z[ix][iy][iz] = ef0 * dx[ZZ];
 						}
 					}
 				}
