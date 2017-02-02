@@ -2606,10 +2606,35 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
      }
 }
 
-void calc_efield_correction()
+void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top,  
+                          matrix box, real invvol, t_block *mols, int  *molindex[],
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
+                         rvec *x, int isize0, real big_sigma, real small_sigma)
 {
 	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
 	// using a different cutoff radius.
+
+	int ix,iy,iz;
+
+	for (ix=0;ix<ir->nkx;ix++)
+	{
+		for (iy=0;iy<ir->nky;iy++)
+		{
+			sfree(Kern->quantity_on_grid[ix][iy]);
+		}
+		sfree(Kern->quantity_on_grid[ix]);
+	}
+	sfree(Kern->quantity_on_grid);
+
+	snew(Kern->quantity_on_grid,ir->nkx);
+	for (ix=0;ix<ir->nkx;ix++)
+	{
+		snew(Kern->quantity_on_grid[ix],ir->nky);
+		for (iy=0;iy<ir->nky;iy++)
+		{
+			snew(Kern->quantity_on_grid[ix][iy],ir->nkz);
+		}
+	}
 
 }
 

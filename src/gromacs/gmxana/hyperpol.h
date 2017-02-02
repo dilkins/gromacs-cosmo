@@ -228,6 +228,10 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
                          int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
                          int interp_order, rvec *x, int isize0,
                          t_complex ***FT_pair_pot, rvec *Emean, real eps);
+void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top,  
+                          matrix box, real invvol, t_block *mols, int  *molindex[],
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
+                         rvec *x, int isize0, real big_sigma, real small_sigma);
 
 int index_wrap(int idx, int wrap);
 
