@@ -2606,6 +2606,13 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
      }
 }
 
+void calc_efield_correction()
+{
+	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
+	// using a different cutoff radius.
+
+}
+
 void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
                        t_block *mols, int  *molindex[], int atom_id0, int nspecies ,int isize0, rvec *x,
                        real std_dev_dens, real inv_std_dev_dens, rvec grid_invspacing, int *gridsize, rvec grid_spacing)
