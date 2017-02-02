@@ -91,7 +91,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, real eps)
+                   const output_env_t oenv, real eps, real *sigma_vals, real ecorrcut)
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
@@ -135,6 +135,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     int           *chged_atom_indexes, n_chged_atoms;
     real	   rr2, rnorm,fac,beta;
     rvec	   xj, deltar;
+    real ecorrcut2;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -148,6 +149,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     nfaces = 6;
     invsize0 = 1.0/isize0;
     invgamma = 1.0/nbingamma;
+    ecorrcut2 = ecorrcut*ecorrcut;
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
     // need to know the index of oxygen atoms in a molecule and of the hydrogens
     // also need to know the number of oxygen and hydrogens in each molecule
@@ -663,6 +665,12 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                        chged_atom_indexes,n_chged_atoms,
                                        gridsize, grid_spacing, interp_order, x, isize0, FT_pair_pot, &Emean,eps);
                    fprintf(stderr,"computed electric field with spme\n");
+                   calc_efield_correction(SKern_E, ir, top, &pbc, box, invvol, mols, molindex,
+                                       chged_atom_indexes, n_chged_atoms,
+                                       gridsize, grid_spacing, grid_invspacing, x, isize0, sigma_vals, ecorrcut,
+                                       ecorrcut2, gridsize);
+                   fprintf(stderr,"computed real-space correction to electric field\n");
+
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
                 }
                 for (i = 0; i < isize0; i++)
@@ -2608,15 +2616,18 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
 
 void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc *pbc, 
                           matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
-                         rvec *x, int isize0, real *sigma_vals,real dxcut2)
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing, rvec grid_invspacing,
+                         rvec *x, int isize0, real *sigma_vals,real dxcut, real dxcut2, int *gridsize)
 {
 	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
 	// using a different cutoff radius.
 
-	int ix,iy,iz,m,i,ind0,n;
+	int ix,iy,iz,m,i,j,ind0,n,size_near2;
+	int ind_x, ind_y, ind_z, mx;
 	rvec dx,xi;
 	real charge,dx2,ef0,invdx2,dx2s,dx2b,dxs,dxb,invdx;
+	int *bin_ind0;
+  int **relevant_grid_points,*half_size_grid_points,*size_nearest_grid_points;
 
 	// Note: sigma_vals should be a 4-d array:
 	// 0: 1/small_sigma
@@ -2624,37 +2635,26 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	// 2: 1/small_sigma^2
 	// 3: 1/big_sigma^2
 
-/*	for (ix=0;ix<ir->nkx;ix++)
-	{
-		for (iy=0;iy<ir->nky;iy++)
-		{
-			sfree(Kern->quantity_on_grid_x[ix][iy]);
-			sfree(Kern->quantity_on_grid_y[ix][iy]);
-			sfree(Kern->quantity_on_grid_z[ix][iy]);
-		}
-		sfree(Kern->quantity_on_grid_x[ix]);
-		sfree(Kern->quantity_on_grid_y[ix]);
-		sfree(Kern->quantity_on_grid_z[ix]);
-	}
-	sfree(Kern->quantity_on_grid_x);
-	sfree(Kern->quantity_on_grid_y);
-	sfree(Kern->quantity_on_grid_z);
+	// We don't free and re-initialize Kern->quantity_on_grid_XYZ,
+	// because we're going to append to our previous values.
 
-	snew(Kern->quantity_on_grid_x,ir->nkx);
-	snew(Kern->quantity_on_grid_y,ir->nkx);
-	snew(Kern->quantity_on_grid_z,ir->nkx);
-	for (ix=0;ix<ir->nkx;ix++)
+  snew(bin_ind0,DIM);
+	snew(half_size_grid_points,DIM);
+	snew(size_nearest_grid_points,DIM);
+
+	mx = 0;
+	for (ix=0;ix<DIM;ix++)
 	{
-		snew(Kern->quantity_on_grid_x[ix],ir->nky);
-		snew(Kern->quantity_on_grid_y[ix],ir->nky);
-		snew(Kern->quantity_on_grid_z[ix],ir->nky);
-		for (iy=0;iy<ir->nky;iy++)
-		{
-			snew(Kern->quantity_on_grid_x[ix][iy],ir->nkz);
-			snew(Kern->quantity_on_grid_y[ix][iy],ir->nkz);
-			snew(Kern->quantity_on_grid_z[ix][iy],ir->nkz);
-		}
-	}*/
+		half_size_grid_points[ix] = floor(dxcut*grid_invspacing[ix]) + 1;
+		size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
+		if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
+	}
+
+	snew(relevant_grid_points,mx);
+	for (i=0;i<mx;i++)
+	{
+		snew(relevant_grid_points[i],DIM);
+	}
 
 	// Loop over molecules.
 	for (i=0;i<isize0;i++)
@@ -2664,15 +2664,38 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 			ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
 			copy_rvec(x[ind0],xi);
 			charge = top->atoms.atom[ind0].q;
-			for (ix=0;ix<ir->nkx;ix++)
+
+			// Work out what the closest grid point is to this molecule.
+			for (ix=0;ix<DIM;ix++)
 			{
-				Kern->rspace_grid[XX] = ix*grid_spacing[XX];
-				for (iy=0;iy<ir->nky;iy++)
+				bin_ind0[ix] = roundf(xi[ix]*grid_invspacing[ix]);
+				if (bin_ind0[ix] == gridsize[ix]){bin_ind0[ix]=0;}
+				if (bin_ind0[ix] == -1){bin_ind0[ix]=gridsize[ix]-1;}
+			}
+
+			// Now find out which grid points should be checked.
+			for (ix=0;ix<DIM;ix++)
+			{
+				for (j=0;j<size_nearest_grid_points[ix];j++)
 				{
-					Kern->rspace_grid[YY] = iy*grid_spacing[YY];
-					for (iz=0;iz<ir->nkz;iz++)
+					relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
+					if (relevant_grid_points[j][ix] >= gridsize[ix]){relevant_grid_points[j][ix] -= gridsize[ix];}
+					if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += gridsize[ix];}
+				}
+			}
+
+			for (ix=0;ix < size_nearest_grid_points[XX];ix++)
+			{
+				ind_x = relevant_grid_points[ix][XX];
+				Kern->rspace_grid[XX] = ind_x * grid_spacing[XX];
+				for (iy=0;iy < size_nearest_grid_points[YY];iy++)
+				{
+					ind_y = relevant_grid_points[iy][YY];
+					Kern->rspace_grid[YY] = ind_y * grid_spacing[YY];
+					for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
 					{
-						Kern->rspace_grid[ZZ] = iz*grid_spacing[ZZ];
+						ind_z = relevant_grid_points[iz][ZZ];
+						Kern->rspace_grid[ZZ] = ind_z * grid_spacing[ZZ];
 						pbc_dx(pbc,xi,Kern->rspace_grid,dx);
 						dx2 = norm2(dx);
 						if (dx2<=dxcut2)
@@ -2686,11 +2709,11 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 							invdx = sqrt(invdx2);
 							dxs = sqrt(dx2s);
 							dxb = sqrt(dx2b);
-							ef0 += invdx*( erf(dxs) - erf(dxb));
+							ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
 							ef0 *= invdx2;
-							Kern->quantity_on_grid_x[ix][iy][iz] = ef0 * dx[XX];
-							Kern->quantity_on_grid_y[ix][iy][iz] = ef0 * dx[YY];
-							Kern->quantity_on_grid_z[ix][iy][iz] = ef0 * dx[ZZ];
+							Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
+							Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
+							Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
 						}
 					}
 				}
@@ -4044,6 +4067,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0;
+		static real							 smallkappa = 1.0, ecorrcut;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -4083,7 +4107,8 @@ int gmx_eshs(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Always use, results without PBC not tested." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
-	{ "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
+        { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
+        { "-smallkappa", FALSE, etREAL, {&smallkappa}, "small kappa for real-space correction."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -4194,6 +4219,18 @@ int gmx_eshs(int argc, char *argv[])
     fprintf(stderr," Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
+		// TODO: A value should be worked out for ecorrcut.
+		ecorrcut = 0;
+		fprintf(stderr,"THIS PROGRAM SHOULD NOT BE RUN UNTIL A VALUE HAS BEEN GIVEN FOR ECORRCUT!");
+		exit(0);
+
+		real *sigma_vals;
+		snew(sigma_vals,4);
+		sigma_vals[0] = 1.0/smallkappa;
+		sigma_vals[1] = 1.0/kappa;
+		sigma_vals[2] = sigma_vals[0]*sigma_vals[0];
+		sigma_vals[3] = sigma_vals[1]*sigma_vals[1];
+
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
@@ -4201,6 +4238,6 @@ int gmx_eshs(int argc, char *argv[])
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut);
     return 0;
 }
