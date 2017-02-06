@@ -2634,6 +2634,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	// 1: 1/big_sigma
 	// 2: 1/small_sigma^2
 	// 3: 1/big_sigma^2
+
 	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
 	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
 	// program.
@@ -4226,10 +4227,13 @@ int gmx_eshs(int argc, char *argv[])
     fprintf(stderr," Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
-		// TODO: A value should be worked out for ecorrcut.
-		ecorrcut = 0;
-		fprintf(stderr,"THIS PROGRAM SHOULD NOT BE RUN UNTIL A VALUE HAS BEEN GIVEN FOR ECORRCUT!");
-		exit(0);
+		fprintf(stderr,"VALUE CHOSEN FOR ECORRCUT (HALF BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!");
+		real bx = 0.0;
+		for (int i=0;i<DIM;i++)
+		{
+			if (bx<box[i][i]){bx = box[i][i];}
+		}
+		bx *= 0.5;
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
