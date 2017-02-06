@@ -2635,6 +2635,12 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	// 2: 1/small_sigma^2
 	// 3: 1/big_sigma^2
 
+	for (ix=0;ix<grid[XX];ix++){for (iy=0;iy<grid[YY];iy++){for (iz=0;iz<grid[ZZ];iz++){
+/*	fprintf(stderr,"BEFORE: %f\n",Kern->quantity_on_grid_x[ix][iy][iz]);
+	fprintf(stderr,"BEFORE: %f\n",Kern->quantity_on_grid_y[ix][iy][iz]);
+	fprintf(stderr,"BEFORE: %f\n",Kern->quantity_on_grid_z[ix][iy][iz]);*/
+	}}}
+
 	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
 	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
 	// program.
@@ -2655,6 +2661,17 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 			size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
 			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
 		}
+
+		fprintf(stderr,"Maximum grid spacing = %i\n",mx);
+		fprintf(stderr,"Number of grid points = %i %i %i\n",gridsize[0],gridsize[1],gridsize[2]);
+		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_invspacing[0],grid_invspacing[1],grid_invspacing[2]);
+		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_spacing[0],grid_spacing[1],grid_spacing[2]);
+		for (ix=0;ix<DIM;ix++)
+		{
+			half_size_grid_points[ix] = gridsize[ix]/2 - 1;
+			size_nearest_grid_points[ix] = gridsize[ix];
+		}
+//		exit(0);
 	
 		snew(relevant_grid_points,mx);
 		for (i=0;i<mx;i++)
@@ -2663,7 +2680,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		}
 	
 		// Loop over molecules.
-		for (i=0;i<isize0;i++)
+		for (n=0;n<isize0;n++)
 		{
 			for (m = 0;m<n_chged_atoms;m++)
 			{
@@ -2682,6 +2699,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 				// Now find out which grid points should be checked.
 				for (ix=0;ix<DIM;ix++)
 				{
+//					fprintf(stderr,"HERE %i %i\n",ix,size_nearest_grid_points[ix]);
 					for (j=0;j<size_nearest_grid_points[ix];j++)
 					{
 						relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
@@ -2711,15 +2729,22 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 								dx2s = dx2 * sigma_vals[2];
 								dx2b = dx2 * sigma_vals[3];
 								ef0 = sigma_vals[0]*exp(-dx2s) - sigma_vals[1]*exp(-dx2b);
+//								fprintf(stderr,"here 1, %f\n",ef0);
 								ef0*=2.0/ M_PI;
+//								fprintf(stderr,"here 2, %f\n",ef0);
 								invdx = sqrt(invdx2);
 								dxs = sqrt(dx2s);
 								dxb = sqrt(dx2b);
 								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
+//								fprintf(stderr,"here 3, %f\n",ef0);
 								ef0 *= invdx2;
-								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
-								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
-								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
+//								fprintf(stderr,"here 4, %f\n",ef0);
+//								fprintf(stderr,"here 5, %f\n",Kern->quantity_on_grid_x[ix][iy][iz]);
+//								fprintf(stderr,"dx= %f %f %f\n",dx[XX],dx[YY],dx[ZZ]);
+								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX]*invvol;
+//								fprintf(stderr,"here 5, %f\n",Kern->quantity_on_grid_x[ix][iy][iz]);
+								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY]*invvol;
+								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ]*invvol;
 							}
 						}
 					}
@@ -2728,6 +2753,12 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		}
 
 	}
+
+	for (ix=0;ix<grid[XX];ix++){for (iy=0;iy<grid[YY];iy++){for (iz=0;iz<grid[ZZ];iz++){
+/*	fprintf(stderr,"AFTER: %i %i %i %f\n",ix,iy,iz,Kern->quantity_on_grid_x[ix][iy][iz]);
+	fprintf(stderr,"AFTER: %i %i %i %f\n",ix,iy,iz,Kern->quantity_on_grid_y[ix][iy][iz]);
+	fprintf(stderr,"AFTER: %i %i %i %f\n",ix,iy,iz,Kern->quantity_on_grid_z[ix][iy][iz]);*/
+	}}}
 
 }
 
@@ -4227,20 +4258,23 @@ int gmx_eshs(int argc, char *argv[])
     fprintf(stderr," Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
-		fprintf(stderr,"VALUE CHOSEN FOR ECORRCUT (HALF BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!");
+		// TODO: the chosen value for the electrostatic cutoff should be reviewed.
+		fprintf(stderr,"VALUE CHOSEN FOR ECORRCUT (HALF BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!\n");
 		real bx = 0.0;
 		for (int i=0;i<DIM;i++)
 		{
 			if (bx<box[i][i]){bx = box[i][i];}
 		}
-		bx *= 0.5;
+		ecorrcut = bx * 0.5;
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
-		sigma_vals[0] = 1.0/smallkappa;
-		sigma_vals[1] = 1.0/kappa;
-		sigma_vals[2] = sigma_vals[0]*sigma_vals[0];
-		sigma_vals[3] = sigma_vals[1]*sigma_vals[1];
+/*		sigma_vals[2] = 1.0/(sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*smallkappa*smallkappa);
+		sigma_vals[3] = 1.0/(sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*kappa*kappa);*/
+		sigma_vals[2] = (sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*smallkappa*smallkappa);
+		sigma_vals[3] = (sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*kappa*kappa);
+		sigma_vals[0] = sqrt(sigma_vals[2]);
+		sigma_vals[1] = sqrt(sigma_vals[3]);
 
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
