@@ -2634,91 +2634,98 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	// 1: 1/big_sigma
 	// 2: 1/small_sigma^2
 	// 3: 1/big_sigma^2
-
-	// We don't free and re-initialize Kern->quantity_on_grid_XYZ,
-	// because we're going to append to our previous values.
-
-  snew(bin_ind0,DIM);
-	snew(half_size_grid_points,DIM);
-	snew(size_nearest_grid_points,DIM);
-
-	mx = 0;
-	for (ix=0;ix<DIM;ix++)
+	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
+	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
+	// program.
+	if (sigma_vals[0] > 0.0)
 	{
-		half_size_grid_points[ix] = floor(dxcut*grid_invspacing[ix]) + 1;
-		size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
-		if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
-	}
+	
+		// We don't free and re-initialize Kern->quantity_on_grid_XYZ,
+		// because we're going to append to our previous values.
+	
+  	snew(bin_ind0,DIM);
+		snew(half_size_grid_points,DIM);
+		snew(size_nearest_grid_points,DIM);
 
-	snew(relevant_grid_points,mx);
-	for (i=0;i<mx;i++)
-	{
-		snew(relevant_grid_points[i],DIM);
-	}
-
-	// Loop over molecules.
-	for (i=0;i<isize0;i++)
-	{
-		for (m = 0;m<n_chged_atoms;m++)
+		mx = 0;
+		for (ix=0;ix<DIM;ix++)
 		{
-			ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
-			copy_rvec(x[ind0],xi);
-			charge = top->atoms.atom[ind0].q;
-
-			// Work out what the closest grid point is to this molecule.
-			for (ix=0;ix<DIM;ix++)
+			half_size_grid_points[ix] = floor(dxcut*grid_invspacing[ix]) + 1;
+			size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
+			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
+		}
+	
+		snew(relevant_grid_points,mx);
+		for (i=0;i<mx;i++)
+		{
+			snew(relevant_grid_points[i],DIM);
+		}
+	
+		// Loop over molecules.
+		for (i=0;i<isize0;i++)
+		{
+			for (m = 0;m<n_chged_atoms;m++)
 			{
-				bin_ind0[ix] = roundf(xi[ix]*grid_invspacing[ix]);
-				if (bin_ind0[ix] == gridsize[ix]){bin_ind0[ix]=0;}
-				if (bin_ind0[ix] == -1){bin_ind0[ix]=gridsize[ix]-1;}
-			}
+				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
+				copy_rvec(x[ind0],xi);
+				charge = top->atoms.atom[ind0].q;
 
-			// Now find out which grid points should be checked.
-			for (ix=0;ix<DIM;ix++)
-			{
-				for (j=0;j<size_nearest_grid_points[ix];j++)
+				// Work out what the closest grid point is to this molecule.
+				for (ix=0;ix<DIM;ix++)
 				{
-					relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
-					if (relevant_grid_points[j][ix] >= gridsize[ix]){relevant_grid_points[j][ix] -= gridsize[ix];}
-					if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += gridsize[ix];}
+					bin_ind0[ix] = roundf(xi[ix]*grid_invspacing[ix]);
+					if (bin_ind0[ix] == gridsize[ix]){bin_ind0[ix]=0;}
+					if (bin_ind0[ix] == -1){bin_ind0[ix]=gridsize[ix]-1;}
 				}
-			}
-
-			for (ix=0;ix < size_nearest_grid_points[XX];ix++)
-			{
-				ind_x = relevant_grid_points[ix][XX];
-				Kern->rspace_grid[XX] = ind_x * grid_spacing[XX];
-				for (iy=0;iy < size_nearest_grid_points[YY];iy++)
+	
+				// Now find out which grid points should be checked.
+				for (ix=0;ix<DIM;ix++)
 				{
-					ind_y = relevant_grid_points[iy][YY];
-					Kern->rspace_grid[YY] = ind_y * grid_spacing[YY];
-					for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
+					for (j=0;j<size_nearest_grid_points[ix];j++)
 					{
-						ind_z = relevant_grid_points[iz][ZZ];
-						Kern->rspace_grid[ZZ] = ind_z * grid_spacing[ZZ];
-						pbc_dx(pbc,xi,Kern->rspace_grid,dx);
-						dx2 = norm2(dx);
-						if (dx2<=dxcut2)
+						relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
+						if (relevant_grid_points[j][ix] >= gridsize[ix]){relevant_grid_points[j][ix] -= gridsize[ix];}
+						if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += gridsize[ix];}
+					}
+				}
+	
+				for (ix=0;ix < size_nearest_grid_points[XX];ix++)
+				{
+					ind_x = relevant_grid_points[ix][XX];
+					Kern->rspace_grid[XX] = ind_x * grid_spacing[XX];
+					for (iy=0;iy < size_nearest_grid_points[YY];iy++)
+					{
+						ind_y = relevant_grid_points[iy][YY];
+						Kern->rspace_grid[YY] = ind_y * grid_spacing[YY];
+						for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
 						{
-							// Calculate electric field correction terms.
-							invdx2 = 1.0/dx2;
-							dx2s = dx2 * sigma_vals[2];
-							dx2b = dx2 * sigma_vals[3];
-							ef0 = sigma_vals[0]*exp(-dx2s) - sigma_vals[1]*exp(-dx2b);
-							ef0*=2.0/ M_PI;
-							invdx = sqrt(invdx2);
-							dxs = sqrt(dx2s);
-							dxb = sqrt(dx2b);
-							ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
-							ef0 *= invdx2;
-							Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
-							Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
-							Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
+							ind_z = relevant_grid_points[iz][ZZ];
+							Kern->rspace_grid[ZZ] = ind_z * grid_spacing[ZZ];
+							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
+							dx2 = norm2(dx);
+							if (dx2<=dxcut2)
+							{
+								// Calculate electric field correction terms.
+								invdx2 = 1.0/dx2;
+								dx2s = dx2 * sigma_vals[2];
+								dx2b = dx2 * sigma_vals[3];
+								ef0 = sigma_vals[0]*exp(-dx2s) - sigma_vals[1]*exp(-dx2b);
+								ef0*=2.0/ M_PI;
+								invdx = sqrt(invdx2);
+								dxs = sqrt(dx2s);
+								dxb = sqrt(dx2b);
+								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
+								ef0 *= invdx2;
+								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
+								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
+								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
+							}
 						}
 					}
 				}
 			}
 		}
+
 	}
 
 }
@@ -4067,7 +4074,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0;
-		static real							 smallkappa = 1.0, ecorrcut;
+		static real							 smallkappa = -1.0, ecorrcut;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
