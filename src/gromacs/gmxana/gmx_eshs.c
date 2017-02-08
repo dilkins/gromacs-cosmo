@@ -2636,12 +2636,6 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	// 2: 1/small_sigma^2
 	// 3: 1/big_sigma^2
 
-	for (ix=0;ix<grid[XX];ix++){for (iy=0;iy<grid[YY];iy++){for (iz=0;iz<grid[ZZ];iz++){
-/*	fprintf(stderr,"BEFORE: %f\n",Kern->quantity_on_grid_x[ix][iy][iz]);
-	fprintf(stderr,"BEFORE: %f\n",Kern->quantity_on_grid_y[ix][iy][iz]);
-	fprintf(stderr,"BEFORE: %f\n",Kern->quantity_on_grid_z[ix][iy][iz]);*/
-	}}}
-
 	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
 	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
 	// program.
@@ -2663,24 +2657,24 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
 		}
 
-		fprintf(stderr,"Maximum grid spacing = %i\n",mx);
-		fprintf(stderr,"Number of grid points = %i %i %i\n",gridsize[0],gridsize[1],gridsize[2]);
-		fprintf(stderr,"Other number = %i %i %i\n",grid[0],grid[1],grid[2]);
-		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_invspacing[0],grid_invspacing[1],grid_invspacing[2]);
-		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_spacing[0],grid_spacing[1],grid_spacing[2]);
-		for (ix=0;ix<DIM;ix++)
-		{
-			half_size_grid_points[ix] = gridsize[ix]/2 - 1;
-			size_nearest_grid_points[ix] = gridsize[ix];
-		}
-//		exit(0);
+//		fprintf(stderr,"Maximum grid spacing = %i\n",mx);
+//		fprintf(stderr,"Number of grid points = %i %i %i\n",gridsize[0],gridsize[1],gridsize[2]);
+//		fprintf(stderr,"Other number = %i %i %i\n",grid[0],grid[1],grid[2]);
+//		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_invspacing[0],grid_invspacing[1],grid_invspacing[2]);
+//		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_spacing[0],grid_spacing[1],grid_spacing[2]);
+
+//		for (ix=0;ix<DIM;ix++)
+//		{
+//			half_size_grid_points[ix] = gridsize[ix]/2 - 1;
+//			size_nearest_grid_points[ix] = gridsize[ix];
+//		}
 	
 		snew(relevant_grid_points,mx);
 		for (i=0;i<mx;i++)
 		{
 			snew(relevant_grid_points[i],DIM);
 		}
-
+/*
 		// For each molecule, loop over all grid points (just for testing purposes.)
 		for (n=0;n<isize0;n++)
 		{
@@ -2700,8 +2694,8 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 							Kern->rspace_grid[ZZ] = iz * grid_spacing[ZZ];
 							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
 							dx2 = norm2(dx);
-//							if (dx2<=dxcut2)
-//							{
+							if (dx2<=dxcut2)
+							{
 								// Calculate electric field correction terms.
 								invdx2 = 1.0/dx2;
 								dx2s = dx2 * sigma_vals[2];
@@ -2713,24 +2707,22 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 								dxb = sqrt(dx2b);
 								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
 								ef0 *= charge*invdx2;
-								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];//*invvol;
-								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];//*invvol;
-								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];//*invvol;
-//							}
+								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
+								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
+								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
+							}
 						}
 					}
 				}
 			}
 		}
+*/
 
-//		fprintf(stderr,"INVVOL=%f\n",invvol);
-//		exit(0);
-	
 
-/*
 		// Loop over molecules.
 		for (n=0;n<isize0;n++)
 		{
+			fprintf(stderr,"molecule %i of %i\n",n,isize0);
 			for (m = 0;m<n_chged_atoms;m++)
 			{
 				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
@@ -2748,7 +2740,6 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 				// Now find out which grid points should be checked.
 				for (ix=0;ix<DIM;ix++)
 				{
-//					fprintf(stderr,"HERE %i %i\n",ix,size_nearest_grid_points[ix]);
 					for (j=0;j<size_nearest_grid_points[ix];j++)
 					{
 						relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
@@ -2777,31 +2768,25 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 								invdx2 = 1.0/dx2;
 								dx2s = dx2 * sigma_vals[2];
 								dx2b = dx2 * sigma_vals[3];
-								ef0 = sigma_vals[0]*exp(-dx2s) - sigma_vals[1]*exp(-dx2b);
+								ef0 = sigma_vals[1]*exp(-1.0*dx2b) - sigma_vals[0]*exp(-1.0*dx2s);
 								ef0 *= scfc;
 								invdx = sqrt(invdx2);
 								dxs = sqrt(dx2s);
 								dxb = sqrt(dx2b);
-								ef0 -= invdx*( gmx_erf(dxs) - gmx_erf(dxb));
+								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
 								ef0 *= charge*invdx2;
-								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX]*invvol;
-								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY]*invvol;
-								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ]*invvol;
+								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
+								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
+								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ];
 							}
 						}
 					}
 				}
 			}
 		}
-*/
+
 
 	}
-
-	for (ix=0;ix<grid[XX];ix++){for (iy=0;iy<grid[YY];iy++){for (iz=0;iz<grid[ZZ];iz++){
-/*	fprintf(stderr,"AFTER: %i %i %i %f\n",ix,iy,iz,Kern->quantity_on_grid_x[ix][iy][iz]);
-	fprintf(stderr,"AFTER: %i %i %i %f\n",ix,iy,iz,Kern->quantity_on_grid_y[ix][iy][iz]);
-	fprintf(stderr,"AFTER: %i %i %i %f\n",ix,iy,iz,Kern->quantity_on_grid_z[ix][iy][iz]);*/
-	}}}
 
 }
 
@@ -4149,7 +4134,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0;
-		static real							 smallkappa = -1.0, ecorrcut;
+		static real							 kappa2 = -1.0, ecorrcut;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -4190,7 +4175,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
-        { "-smallkappa", FALSE, etREAL, {&smallkappa}, "small kappa for real-space correction."},
+        { "-kappa2", FALSE, etREAL, {&kappa2}, "large kappa for real-space correction."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -4312,9 +4297,9 @@ int gmx_eshs(int argc, char *argv[])
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
-		sigma_vals[0] = smallkappa;
+		sigma_vals[0] = kappa2;
 		sigma_vals[1] = kappa;
-		sigma_vals[2] = smallkappa*smallkappa;
+		sigma_vals[2] = kappa2*kappa2;
 		sigma_vals[3] = kappa*kappa;
 
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
