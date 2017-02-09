@@ -2625,16 +2625,19 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 	int ix,iy,iz,m,i,j,ind0,n,size_near2;
 	int ind_x, ind_y, ind_z, mx;
 	rvec dx,xi;
-	real charge,dx2,ef0,invdx2,dx2s,dx2b,dxs,dxb,invdx;
+	real charge,dx2,ef0,invdx2,dx2s,dx2b,dxs,dxb,invdx,scfc;
 	int *bin_ind0;
   int **relevant_grid_points,*half_size_grid_points,*size_nearest_grid_points;
-	static real scfc = 2.0 / sqrt(M_PI);
+
+	scfc = 2.0 / sqrt(M_PI);
 
 	// Note: sigma_vals should be a 4-d array:
-	// 0: 1/small_sigma
-	// 1: 1/big_sigma
-	// 2: 1/small_sigma^2
-	// 3: 1/big_sigma^2
+	// 0: kappa2
+	// 1: kappa
+	// 2: kappa2^2
+	// 3: kappa^2
+	// kappa is the value that we use for PME calculations, and kappa2 is the value that we would like
+	// to use for the output electric field.
 
 	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
 	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
@@ -2674,10 +2677,11 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		{
 			snew(relevant_grid_points[i],DIM);
 		}
-/*
+/**/
 		// For each molecule, loop over all grid points (just for testing purposes.)
 		for (n=0;n<isize0;n++)
 		{
+			fprintf(stderr,"molecule %i of %i\n",n,isize0);
 			for (m=0;m<n_chged_atoms;m++)
 			{
 				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m];
@@ -2694,8 +2698,8 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 							Kern->rspace_grid[ZZ] = iz * grid_spacing[ZZ];
 							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
 							dx2 = norm2(dx);
-							if (dx2<=dxcut2)
-							{
+//							if (dx2<=dxcut2)
+//							{
 								// Calculate electric field correction terms.
 								invdx2 = 1.0/dx2;
 								dx2s = dx2 * sigma_vals[2];
@@ -2710,14 +2714,14 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
 								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
 								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
-							}
+//							}
 						}
 					}
 				}
 			}
 		}
-*/
-
+/**/
+/*
 
 		// Loop over molecules.
 		for (n=0;n<isize0;n++)
@@ -2784,7 +2788,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 				}
 			}
 		}
-
+*/
 
 	}
 
@@ -4293,7 +4297,7 @@ int gmx_eshs(int argc, char *argv[])
 		{
 			if (bx<box[i][i]){bx = box[i][i];}
 		}
-		ecorrcut = bx * 0.5;
+		ecorrcut = bx * 0.5 * 0.1;
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
