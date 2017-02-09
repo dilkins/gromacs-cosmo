@@ -72,9 +72,11 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                    gmx_bool bPBC, int nbinq, int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
                    real bmzxx, real bmzyy, real bmzzz,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv)
+                   const output_env_t oenv, const int nthr)
 {
-    t_trxstatus   *status;
+    t_trxstatus   *status, **trxin;
+    t_trxframe     *fr;
+    gmx_bool       bHaveFrame;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
     int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces;
@@ -105,8 +107,30 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     invgamma = 1.0/nbingamma;
     invnormfac = invsize0*invgamma/3.0;
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
-    
-    fprintf(stderr,"\nnumber of atoms %d\n",natoms);
+
+    if (nthr > 1)
+    {
+       snew(fr, nthr);
+       snew(trxin,nthr); 
+    }
+
+    for (j = 0; j < nthr; j++)
+    {
+       read_first_frame(oenv, &trxin[j],fnTRX, &fr[j],TRX_READ_X) ;
+    }
+
+    for (i = 0; i <nthr; i++)
+    {
+      for (j = 0; j < i; j++)
+      {
+          bHaveFrame=read_next_frame(oenv, trxin[i], &fr[i]);
+      }
+    }
+
+    fprintf(stderr,"next x %f %f %f\n time %f\n",fr[0].x[0][0],fr[0].x[0][1],fr[0].x[0][2],fr[0].time);
+    fprintf(stderr,"next x %f %f %f\n time %f\n",fr[1].x[0][0],fr[1].x[0][1],fr[1].x[0][2],fr[1].time);
+
+
 
     /* initialize some handy things */
     if (ePBC == -1)
@@ -241,45 +265,55 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
         fprintf(stderr,"use sumexp method, compute the 729 elements of the tensor containing orientational correlations of the molecules\n");
         do
         {
-            // Must init pbc every step because of pressure coupling 
-            copy_mat(box, box_pbc);
-            if (top != NULL)
+            for (nt = 0; nt < nthr; nt++)
             {
-                gmx_rmpbc(gpbc, natoms, box, x);
-            }
-            set_pbc(&pbc, ePBCrdf, box_pbc);
-            invvol      = 1/det(box_pbc);
-            invvol_sum += invvol;
-            for (g = 0; g < ng; g++)
-            {
-                Allocate_scattering_amplitude( nfaces, nbintheta, nbingamma, nbinq,  &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
-                for (i = 0; i < isize0; i++)
-                {
-                    ind0  = mols->index[molindex[g][i]];
-                    copy_rvec(x[ind0], xi);
-                    pbc_dx(&pbc, xi, x[ind0+1], x01);
-                    pbc_dx(&pbc, xi, x[ind0+2], x02);
-                    //this function computes cos_scattering_ampl and sin_scattering_ampl and the incoherent term
-                    //summed up over the molecules
-                    Projected_Scattering_Amplitude(nfaces, nbintheta, nbingamma, nbinq,
-                                                   xi, x01, x02, arr_qvec_faces,
-                                                   vec_pout_theta_gamma, vec_pin_theta_gamma, 
-                                                   onsite_term, cos_scattering_ampl, sin_scattering_ampl,
-                                                   &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
-                }
-                // this function computes tot_tensor_squared += cos_scattering_ampl(i,j,k)*cos_scattering_ampl(iprime,jprime,kprime) + 
-                // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
-                // and also incoh_tensor_squared += incoherent_term
-                // the sum runs over frames
-                Scattering_Intensity_t(nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec,
-                                       onsite_term, cos_scattering_ampl, sin_scattering_ampl,
-                                       tot_tensor_squared, incoh_tensor_squared,
-                                       &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
-                Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
+               // Must init pbc every step because of pressure coupling 
+               copy_mat(box, box_pbc);
+               if (top != NULL)
+               {
+                   gmx_rmpbc(gpbc, natoms, fr[0].box, fr[0].x);
+               }
+               set_pbc(&pbc, ePBCrdf, box_pbc);
+               invvol      = 1/det(box_pbc);
+               invvol_sum += invvol;
+               for (g = 0; g < ng; g++)
+               {
+                   Allocate_scattering_amplitude( nfaces, nbintheta, nbingamma, nbinq,  &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
+                   for (i = 0; i < isize0; i++)
+                   {
+                       ind0  = mols->index[molindex[g][i]];
+                       copy_rvec(fr[0].x[ind0], xi);
+                       pbc_dx(&pbc, xi, fr[0].x[ind0+1], x01);
+                       pbc_dx(&pbc, xi, fr[0].x[ind0+2], x02);
+                       //this function computes cos_scattering_ampl and sin_scattering_ampl and the incoherent term
+                       //summed up over the molecules
+                       Projected_Scattering_Amplitude(nfaces, nbintheta, nbingamma, nbinq,
+                                                      xi, x01, x02, arr_qvec_faces,
+                                                      vec_pout_theta_gamma, vec_pin_theta_gamma, 
+                                                      onsite_term, cos_scattering_ampl, sin_scattering_ampl,
+                                                      &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
+                   }
+                   // this function computes tot_tensor_squared += cos_scattering_ampl(i,j,k)*cos_scattering_ampl(iprime,jprime,kprime) + 
+                   // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
+                   // and also incoh_tensor_squared += incoherent_term
+                   // the sum runs over frames
+                   Scattering_Intensity_t(nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec,
+                                          onsite_term, cos_scattering_ampl, sin_scattering_ampl,
+                                          tot_tensor_squared, incoh_tensor_squared,
+                                          &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
+                   Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
+               }
             }
             nframes++;
+            do
+            {
+               bHaveFrame = read_next_frame(oenv, trxin[nt], &fr[nt]);
+               k++
+            }
+            while(bHaveFrame || k < nthr);
+            //read_next_x(oenv, status, &t, x, box)
         }
-        while (read_next_x(oenv, status, &t, x, box));
+        while (bHaveFrame);
     }
 
     if (fnTIMEEVOLTENSOR)
@@ -1025,7 +1059,7 @@ int gmx_fitbeta(int argc, char *argv[])
     static gmx_bool    bPBC = TRUE;
     static real        pout_angle = 0.0 , pin_angle = 0.0;
     static real        bmzxx = 5.7 , bmzyy = 10.9 , bmzzz = 31.6 ;
-    static int         ngroups = 1, nbintheta = 10, nbingamma = 2 , nbinq = 10 ;
+    static int         ngroups = 1, nbintheta = 10, nbingamma = 2 , nbinq = 10, nthr = 1;
 
     static const char *methodt[] = { NULL, "sumexp" ,NULL }; 
 
@@ -1047,6 +1081,8 @@ int gmx_fitbeta(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups to compute RDFs around a central group" },
+        { "-nthr",       FALSE, etINT, {&nthr},
+          "number of openMP threads" },
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX;
@@ -1119,7 +1155,7 @@ int gmx_fitbeta(int argc, char *argv[])
            methodt[0],  bPBC, nbinq,
            nbintheta, nbingamma, pin_angle, pout_angle,
            bmzxx, bmzyy, bmzzz, 
-           gnx, grpindex, grpname, ngroups, oenv);
+           gnx, grpindex, grpname, ngroups, oenv,nthr);
 
     return 0;
 }
