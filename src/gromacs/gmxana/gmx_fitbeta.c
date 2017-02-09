@@ -308,7 +308,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
             do
             {
                bHaveFrame = read_next_frame(oenv, trxin[nt], &fr[nt]);
-               k++
+               k++;
             }
             while(bHaveFrame || k < nthr);
             //read_next_x(oenv, status, &t, x, box)
