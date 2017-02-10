@@ -2726,7 +2726,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		// Loop over molecules.
 		for (n=0;n<isize0;n++)
 		{
-			fprintf(stderr,"molecule %i of %i\n",n,isize0);
+//			fprintf(stderr,"molecule %i of %i\n",n,isize0);
 			for (m = 0;m<n_chged_atoms;m++)
 			{
 				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
@@ -4138,7 +4138,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0;
-		static real							 kappa2 = -1.0, ecorrcut;
+		static real							 kappa2 = -1.0, ecorrcut = -1.0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -4180,6 +4180,7 @@ int gmx_eshs(int argc, char *argv[])
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
         { "-kappa2", FALSE, etREAL, {&kappa2}, "large kappa for real-space correction."},
+				{ "-ecorrcut", FALSE, etREAL, {&ecorrcut}, "cutoff length for electric field correction."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -4290,15 +4291,24 @@ int gmx_eshs(int argc, char *argv[])
     fprintf(stderr," Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
-		// TODO: the chosen value for the electrostatic cutoff should be reviewed.
-		fprintf(stderr,"VALUE EXPERIMENTALLY CHOSEN FOR ECORRCUT (0.3 * BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!\n");
-		real bx = 0.0;
-		int i;
-		for (i=0;i<DIM;i++)
+		if (ecorrcut < 0.0)
 		{
-			if (bx<box[i][i]){bx = box[i][i];}
+			// No cutoff length has been chosen for the electric field correction term. We will choose one here.
+			ecorrcut = 1.5 * (sqrt(1.0/kappa) + sqrt(1.0/kappa2));
+			fprintf(stderr,"Electric field cutoff chosen: %f nm\n",ecorrcut);
+			exit(0);
 		}
-		ecorrcut = bx * 0.5 * 0.6;
+
+//		// TODO: the chosen value for the electrostatic cutoff should be reviewed.
+//		fprintf(stderr,"VALUE EXPERIMENTALLY CHOSEN FOR ECORRCUT (0.3 * BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!\n");
+//		real bx = 0.0;
+//		int i;
+//		for (i=0;i<DIM;i++)
+//		{
+//			if (bx<box[i][i]){bx = box[i][i];}
+//		}
+//		ecorrcut = bx * 0.5 * 0.6;
+//		ecorrcut = 1.120944;
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
