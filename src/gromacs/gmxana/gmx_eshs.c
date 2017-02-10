@@ -2648,7 +2648,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		// We don't free and re-initialize Kern->quantity_on_grid_XYZ,
 		// because we're going to append to our previous values.
 	
-  	snew(bin_ind0,DIM);
+		snew(bin_ind0,DIM);
 		snew(half_size_grid_points,DIM);
 		snew(size_nearest_grid_points,DIM);
 
@@ -2677,7 +2677,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		{
 			snew(relevant_grid_points[i],DIM);
 		}
-/**/
+/*
 		// For each molecule, loop over all grid points (just for testing purposes.)
 		for (n=0;n<isize0;n++)
 		{
@@ -2698,8 +2698,8 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 							Kern->rspace_grid[ZZ] = iz * grid_spacing[ZZ];
 							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
 							dx2 = norm2(dx);
-//							if (dx2<=dxcut2)
-//							{
+							if (dx2<=dxcut2)
+							{
 								// Calculate electric field correction terms.
 								invdx2 = 1.0/dx2;
 								dx2s = dx2 * sigma_vals[2];
@@ -2714,14 +2714,14 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
 								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
 								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
-//							}
+							}
 						}
 					}
 				}
 			}
 		}
 /**/
-/*
+/**/
 
 		// Loop over molecules.
 		for (n=0;n<isize0;n++)
@@ -2788,7 +2788,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 				}
 			}
 		}
-*/
+/**/
 
 	}
 
@@ -4291,13 +4291,14 @@ int gmx_eshs(int argc, char *argv[])
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
 		// TODO: the chosen value for the electrostatic cutoff should be reviewed.
-		fprintf(stderr,"VALUE CHOSEN FOR ECORRCUT (HALF BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!\n");
+		fprintf(stderr,"VALUE EXPERIMENTALLY CHOSEN FOR ECORRCUT (0.3 * BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!\n");
 		real bx = 0.0;
-		for (int i=0;i<DIM;i++)
+		int i;
+		for (i=0;i<DIM;i++)
 		{
 			if (bx<box[i][i]){bx = box[i][i];}
 		}
-		ecorrcut = bx * 0.5 * 0.1;
+		ecorrcut = bx * 0.5 * 0.6;
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
