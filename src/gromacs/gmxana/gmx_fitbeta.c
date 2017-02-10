@@ -266,7 +266,6 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
               arr_qvec_faces, tot_tensor_squared,incoh_tensor_squared)\
         private(tid,i,ind0,k,invvol,invvol_sum,box_pbc,onsite_term,cos_scattering_ampl,sin_scattering_ampl,xi,x01,x02) 
         {
-        //for (nt = 0; nt < nthreads; nt++)
             nframes    = 0;
             invvol_sum = 0;
             do
@@ -301,14 +300,13 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
                // and also incoh_tensor_squared += incoherent_term
                // the sum runs over frames
-               Scattering_Intensity_t(tid, nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec, 
+               Scattering_Intensity_t(tid, nfaces, fr[tid].time ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec, 
                                       onsite_term, cos_scattering_ampl, sin_scattering_ampl,
                                       tot_tensor_squared, incoh_tensor_squared,
                                       &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
                Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
                k = 0;
                nframes++;
-               fprintf(stderr,"\n scatt %f tid %d time %f\n",tot_tensor_squared[tid*nfaces][0][0][0][0][0][0][0][0],tid,fr[tid].time);
                do
                {
                   bHaveFrame = read_next_frame(oenv, trxin[tid], &fr[tid]);
@@ -317,7 +315,6 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                while(bHaveFrame && k < nthreads);
             }
             while (bHaveFrame);
-            //read_next_x(oenv, status, &t, x, box)
         }
     }
 
@@ -1093,7 +1090,7 @@ int gmx_fitbeta(int argc, char *argv[])
     static gmx_bool    bPBC = TRUE;
     static real        pout_angle = 0.0 , pin_angle = 0.0;
     static real        bmzxx = 5.7 , bmzyy = 10.9 , bmzzz = 31.6 ;
-    static int         ngroups = 1, nbintheta = 10, nbingamma = 2 , nbinq = 10, nthreads = -1;
+    static int         ngroups = 1, nbintheta = 10, nbingamma = 2 , nbinq = 10, nthreads = 1;
 
     static const char *methodt[] = { NULL, "sumexp" ,NULL }; 
 
@@ -1119,7 +1116,7 @@ int gmx_fitbeta(int argc, char *argv[])
           "number of openMP threads" },
     };
 #define NPA asize(pa)
-    const char        *fnTPS, *fnNDX;
+    const char        *fnTPS, *fnNDX, *fnOEV;
     output_env_t       oenv;
     int           *gnx;
     int            nFF[2];
@@ -1158,6 +1155,18 @@ int gmx_fitbeta(int argc, char *argv[])
 
     fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
+    fnOEV = opt2fn_null("-oev", NFILE, fnm);
+
+   if (fnOEV && nthreads > 1)
+   {
+      gmx_fatal(FARGS, "time evolution tensor only implemented for serial version\n");
+   }
+
+   if ( nthreads < 1)
+   {
+      gmx_fatal(FARGS, "use a number of threads larger than 0, for serial use nt = 1\n");
+   }
+
 
     gmx_omp_set_num_threads(nthreads);
 
