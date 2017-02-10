@@ -62,6 +62,7 @@
 #include "gmx_ana.h"
 #include "hyperpol.h"
 #include "names.h"
+#include "gromacs/utility/gmxomp.h"
 
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
@@ -72,14 +73,14 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                    gmx_bool bPBC, int nbinq, int nbintheta, int nbingamma ,real pin_angle, real pout_angle ,
                    real bmzxx, real bmzyy, real bmzzz,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, const int nthr)
+                   const output_env_t oenv, int nthreads)
 {
     t_trxstatus   *status, **trxin;
     t_trxframe     *fr;
     gmx_bool       bHaveFrame;
     char           outf1[STRLEN], outf2[STRLEN];
     char           title[STRLEN], gtitle[STRLEN], refgt[30];
-    int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces;
+    int            g, natoms, i, j, k, qq, n, c, tt, rr, nframes, nfaces, nt, tid;
     real           qnorm, maxq, gamma = 0.0 ;
     int            max_i, isize0, ind0;
     real           *********onsite_term, *******cos_scattering_ampl, *******sin_scattering_ampl;
@@ -108,29 +109,28 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     invnormfac = invsize0*invgamma/3.0;
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
 
-    if (nthr > 1)
+    if (nthreads > 0)
     {
-       snew(fr, nthr);
-       snew(trxin,nthr); 
+       snew(fr, nthreads);
+       snew(trxin,nthreads); 
     }
 
-    for (j = 0; j < nthr; j++)
+
+//insert openmp instructions here
+//here we read tid frames for each thread
+#ifdef GMX_OPENMP
+    #pragma omp parallel shared(trxin,fr) private(tid,j)
     {
-       read_first_frame(oenv, &trxin[j],fnTRX, &fr[j],TRX_READ_X) ;
+       tid = gmx_omp_get_thread_num();
+       read_first_frame(oenv, &trxin[tid],fnTRX, &fr[tid],TRX_READ_X) ;
+      #pragma omp barrier
+        for (j = 0; j < tid; j++)
+        {
+            bHaveFrame=read_next_frame(oenv, trxin[tid], &fr[tid]);
+        }
+      #pragma omp barrier
     }
-
-    for (i = 0; i <nthr; i++)
-    {
-      for (j = 0; j < i; j++)
-      {
-          bHaveFrame=read_next_frame(oenv, trxin[i], &fr[i]);
-      }
-    }
-
-    fprintf(stderr,"next x %f %f %f\n time %f\n",fr[0].x[0][0],fr[0].x[0][1],fr[0].x[0][2],fr[0].time);
-    fprintf(stderr,"next x %f %f %f\n time %f\n",fr[1].x[0][0],fr[1].x[0][1],fr[1].x[0][2],fr[1].time);
-
-
+#endif
 
     /* initialize some handy things */
     if (ePBC == -1)
@@ -171,7 +171,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
         snew(vec_pin_theta_gamma, nfaces);
         snew(theta_vec, nbintheta);
 
-        // this loop is to get the scattering wave-vector and polarization vectors for different faces of the cube
+        // this loop is to get the scattering wave-vector and polarization vectors for different faces of the simulation box
         printf("\n----INITIALIZING DIRECTION OF SCATTERED WAVE VECTOR: q=kout-2kin------------------------------\n");
         printf("----q=(2pi/L)*(Nx,Ny,Nz), where Nx, Ny and Nz are integers-------------------------------------\n");
         printf("----COMPUTE THE POLARIZATION VECTORS AT DIFFERENT SCATTERING ANGLES THETA.---------------------\n");
@@ -201,7 +201,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                   {
                       //theta is the angle between the outcoming wave-vector and the scattered wave-vector
                       //the experimental_theta is the angle between the incoming and outcoming wave-vectors and it is twice this value
-                      theta_vec[tt] = ( tt< nbintheta*0.5 ) ? /*5.0/(6.0*2.0)*/ 0.5*M_PI*(-1.0 + tt*2.0/nbintheta) : /*5.0/(6.0*2.0)**/ 0.5*M_PI*(-1.0 + 2.0/nbintheta + tt*2.0/nbintheta) ;
+                      theta_vec[tt] = ( tt< nbintheta*0.5 ) ?  0.5*M_PI*(-1.0 + tt*2.0/nbintheta) : 0.5*M_PI*(-1.0 + 2.0/nbintheta + tt*2.0/nbintheta) ;
                       // we get very close to ±90 degrees because kin and kout -> infinity at theta=±90 degrees
                       theta_vec[0] = 0.5*M_PI*(-1.0)*0.999;
                       theta_vec[nbintheta-1] = 0.5*M_PI*(-1.0 + 2.0/nbintheta + (nbintheta-1)*2.0/nbintheta)*0.999 ;
@@ -242,12 +242,10 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
            printf("wave_vec %f %f %f\n", arr_qvec_faces[rr][0][XX], arr_qvec_faces[rr][0][YY], arr_qvec_faces[rr][0][ZZ]);
         }
     
-    Allocate_Scattering_Intensity(nfaces,  nbintheta,  nbinq,
+    Allocate_Scattering_Intensity(nfaces,  nbintheta,  nbinq, nthreads,
                                   &tot_tensor_squared, &incoh_tensor_squared);
     }
     
-    nframes    = 0;
-    invvol_sum = 0;
     if (bPBC && (NULL != top))
     {
         gpbc = gmx_rmpbc_init(&top->idef, ePBC, natoms);
@@ -263,58 +261,74 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
     if (method[0] == 's')
     {
         fprintf(stderr,"use sumexp method, compute the 729 elements of the tensor containing orientational correlations of the molecules\n");
-        do
+        #pragma omp parallel \
+        shared(trxin,fr,natoms,nfaces,nbintheta,nbinq,nbingamma,vec_pin_theta_gamma,vec_pout_theta_gamma,\
+              arr_qvec_faces, tot_tensor_squared,incoh_tensor_squared)\
+        private(tid,i,ind0,k,invvol,invvol_sum,box_pbc,onsite_term,cos_scattering_ampl,sin_scattering_ampl,xi,x01,x02) 
         {
-            for (nt = 0; nt < nthr; nt++)
+        //for (nt = 0; nt < nthreads; nt++)
+            nframes    = 0;
+            invvol_sum = 0;
+            do
             {
+               tid = gmx_omp_get_thread_num();
                // Must init pbc every step because of pressure coupling 
-               copy_mat(box, box_pbc);
+               copy_mat(fr[tid].box, box_pbc);
                if (top != NULL)
                {
-                   gmx_rmpbc(gpbc, natoms, fr[0].box, fr[0].x);
+                   gmx_rmpbc(gpbc, natoms, fr[tid].box, fr[tid].x);
                }
+               fprintf(stderr,"\n time %f x %f tid %d\n",fr[tid].time, fr[tid].x[0][0], tid);
                set_pbc(&pbc, ePBCrdf, box_pbc);
                invvol      = 1/det(box_pbc);
                invvol_sum += invvol;
-               for (g = 0; g < ng; g++)
+               Allocate_scattering_amplitude( nfaces, nbintheta, nbingamma, nbinq,  &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
+               for (i = 0; i < isize0; i++)
                {
-                   Allocate_scattering_amplitude( nfaces, nbintheta, nbingamma, nbinq,  &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
-                   for (i = 0; i < isize0; i++)
-                   {
-                       ind0  = mols->index[molindex[g][i]];
-                       copy_rvec(fr[0].x[ind0], xi);
-                       pbc_dx(&pbc, xi, fr[0].x[ind0+1], x01);
-                       pbc_dx(&pbc, xi, fr[0].x[ind0+2], x02);
-                       //this function computes cos_scattering_ampl and sin_scattering_ampl and the incoherent term
-                       //summed up over the molecules
-                       Projected_Scattering_Amplitude(nfaces, nbintheta, nbingamma, nbinq,
-                                                      xi, x01, x02, arr_qvec_faces,
-                                                      vec_pout_theta_gamma, vec_pin_theta_gamma, 
-                                                      onsite_term, cos_scattering_ampl, sin_scattering_ampl,
-                                                      &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
-                   }
-                   // this function computes tot_tensor_squared += cos_scattering_ampl(i,j,k)*cos_scattering_ampl(iprime,jprime,kprime) + 
-                   // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
-                   // and also incoh_tensor_squared += incoherent_term
-                   // the sum runs over frames
-                   Scattering_Intensity_t(nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec,
-                                          onsite_term, cos_scattering_ampl, sin_scattering_ampl,
-                                          tot_tensor_squared, incoh_tensor_squared,
-                                          &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
-                   Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
+                   ind0  = mols->index[molindex[0][i]];
+                   copy_rvec(fr[tid].x[ind0], xi);
+                   pbc_dx(&pbc, xi, fr[tid].x[ind0+1], x01);
+                   pbc_dx(&pbc, xi, fr[tid].x[ind0+2], x02);
+                   //this function computes cos_scattering_ampl and sin_scattering_ampl and the incoherent term
+                   //summed up over the molecules
+                   Projected_Scattering_Amplitude(nfaces, nbintheta, nbingamma, nbinq,
+                                                  xi, x01, x02, arr_qvec_faces,
+                                                  vec_pout_theta_gamma, vec_pin_theta_gamma, 
+                                                  onsite_term, cos_scattering_ampl, sin_scattering_ampl,
+                                                  &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
                }
+               // this function computes tot_tensor_squared += cos_scattering_ampl(i,j,k)*cos_scattering_ampl(iprime,jprime,kprime) + 
+               // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
+               // and also incoh_tensor_squared += incoherent_term
+               // the sum runs over frames
+               Scattering_Intensity_t(tid, nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec, 
+                                      onsite_term, cos_scattering_ampl, sin_scattering_ampl,
+                                      tot_tensor_squared, incoh_tensor_squared,
+                                      &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
+               Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
+               k = 0;
+               nframes++;
+               fprintf(stderr,"\n scatt %f tid %d time %f\n",tot_tensor_squared[tid*nfaces][0][0][0][0][0][0][0][0],tid,fr[tid].time);
+               do
+               {
+                  bHaveFrame = read_next_frame(oenv, trxin[tid], &fr[tid]);
+                  k++;
+               }
+               while(bHaveFrame && k < nthreads);
             }
-            nframes++;
-            do
-            {
-               bHaveFrame = read_next_frame(oenv, trxin[nt], &fr[nt]);
-               k++;
-            }
-            while(bHaveFrame || k < nthr);
+            while (bHaveFrame);
             //read_next_x(oenv, status, &t, x, box)
         }
-        while (bHaveFrame);
     }
+
+
+/*    real   tot_tens= 0.0;
+    for (i = 0; i < nthreads; i++)
+    {
+        tot_tens += tot_tensor_squared[i*nfaces][0][0][0][0][0][0][0][0];
+    }
+    fprintf(stderr,"\n tot_tens %f\n",tot_tens);
+*/
 
     if (fnTIMEEVOLTENSOR)
     {
@@ -331,10 +345,9 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
 
     sfree(x);
 
-    /* Average volume */
-    invvol = invvol_sum/nframes;
+   
  
-    Print_tensors( nbintheta,    nframes, invgamma, theta_vec, nbinq, arr_qvec_faces,
+    Print_tensors( nthreads, nfaces, nbintheta,    nframes, invgamma, theta_vec, nbinq, arr_qvec_faces,
                   tot_tensor_squared, incoh_tensor_squared,  fnTENSOR, fnINCTENSOR, fnQSWIPE, grpname ,oenv);
  
     if (fnTHETA)
@@ -345,7 +358,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                                 fnTHETA, grpname, oenv);
     }
 
-    Free_Scattering_Intensity( nfaces, nbintheta,
+    Free_Scattering_Intensity(nthreads, nfaces, nbintheta,
                               tot_tensor_squared, incoh_tensor_squared); 
 
 }
@@ -468,15 +481,15 @@ void Print_scattering_pattern(const int nt,  const int nframes, const real invga
      }
 }
 
-void Print_tensors(const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, 
+void Print_tensors(const int nthreads, const int nfaces, const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, 
                    rvec **arr_qvec_faces, real *********tot_tensor_squared, 
                    real *********incoh_tensor_squared, const char *fnTENSOR, 
                    const char *fnINCTENSOR , const char *fnQSWIPE, char **grpname ,const output_env_t oenv)
 {
-    int pm, qm, sm, ppm, qpm, spm, qq;
+    int pm, qm, sm, ppm, qpm, spm, qq, it;
     int rr, tt, thetain;
     char refgt[30],str[80],thetastr[80],strin[80];
-    real theta;
+    real theta, tot_tensor_norm, incoh_tensor_norm;
     FILE *fpn, *fpp, *fq, *fqinc;
 
     fpn = xvgropen(fnTENSOR, "<Scat_ampl_ijk*Scatt_ampl_lmn>", " ", " ", oenv);
@@ -511,14 +524,24 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                              {
                                  for (qq = 0; qq < 1; qq++)
                                  {
-                                    fprintf(fpn, "%10g ",(tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
-                                                        + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
-                                                        tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
+                                    tot_tensor_norm = 0.0;
+                                    incoh_tensor_norm = 0.0;
+                                    for (it = 0; it < nthreads; it++)
+                                    {
+                                        tot_tensor_norm += tot_tensor_squared[it*nfaces + 1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                                        + tot_tensor_squared[it*nfaces + 3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
+                                                        tot_tensor_squared[it*nfaces+ 5][tt][pm][qm][sm][ppm][qpm][spm][qq] ;
+                                        if (fnINCTENSOR)
+                                        {
+                                            incoh_tensor_norm += incoh_tensor_squared[it*nfaces + 1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                                               + incoh_tensor_squared[it*nfaces + 3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
+                                                                 incoh_tensor_squared[it*nfaces + 5][tt][pm][qm][sm][ppm][qpm][spm][qq];
+                                        }
+                                    }
+                                    fprintf(fpn, "%10g ",tot_tensor_norm/(nframes*3.0)*invgamma);
                                     if (fnINCTENSOR)
                                     {
-                                       fprintf(fpp, "%10g ",(incoh_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
-                                                        + incoh_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
-                                                        incoh_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
+                                       fprintf(fpp, "%10g ", incoh_tensor_norm/nframes/3.0*invgamma);
                                     }
                                  }
                              }
@@ -529,9 +552,9 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
         }
         fprintf(fpn, "\n");
         if (fnINCTENSOR)
-           {
-              fprintf(fpp, "\n");
-           }
+        {
+            fprintf(fpp, "\n");
+        }
     }
     gmx_ffclose(fpn);
     if (fnINCTENSOR)
@@ -567,7 +590,6 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
            {
                fprintf(fq, "%10g ",norm(arr_qvec_faces[1][qq]));
                fprintf(fqinc, "%10g ",norm(arr_qvec_faces[1][qq]));
-
                for (pm = 0; pm < DIM; pm++)
                {
                    for (qm = 0; qm < DIM; qm++)
@@ -580,14 +602,20 @@ void Print_tensors(const int nt,  const int nframes, const real invgamma, real *
                                 {
                                     for (spm = 0; spm < DIM; spm++)
                                     {
-                                        fprintf(fq, "   %10g", (tot_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
-                                                             + tot_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
-                                                              tot_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma); 
+                                        tot_tensor_norm = 0.0;
+                                        incoh_tensor_norm = 0.0;
+                                        for (it = 0; it < nthreads; it++)
+                                        {
+                                            tot_tensor_norm += tot_tensor_squared[it*nfaces + 1][tt][pm][qm][sm][ppm][qpm][spm][qq] +
+                                                               tot_tensor_squared[it*nfaces + 3][tt][pm][qm][sm][ppm][qpm][spm][qq] +
+                                                               tot_tensor_squared[it*nfaces + 5][tt][pm][qm][sm][ppm][qpm][spm][qq];
 
-                                        fprintf(fqinc, "   %10g", (incoh_tensor_squared[1][tt][pm][qm][sm][ppm][qpm][spm][qq]
-                                                             + incoh_tensor_squared[3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
-                                                              incoh_tensor_squared[5][tt][pm][qm][sm][ppm][qpm][spm][qq])/(nframes*3.0)*invgamma);
-
+                                            incoh_tensor_norm += incoh_tensor_squared[it*nfaces +1][tt][pm][qm][sm][ppm][qpm][spm][qq]
+                                                              + incoh_tensor_squared[it*nfaces +3][tt][pm][qm][sm][ppm][qpm][spm][qq]+
+                                                              incoh_tensor_squared[it*nfaces +5][tt][pm][qm][sm][ppm][qpm][spm][qq]; 
+                                        }
+                                        fprintf(fq, "   %10g", tot_tensor_norm/(nframes*3.0)*invgamma);
+                                        fprintf(fqinc, "  %10g",incoh_tensor_norm/(nframes*3.0)*invgamma); 
                                     }
                                 }
                             }
@@ -850,7 +878,7 @@ void Free_scattering_amplitude(const int nf, const int nt, const int nga, real *
 }
 
 
-void Scattering_Intensity_t(const int nf, real time, const int nt, const int nga, const int nq,
+void Scattering_Intensity_t(int tid, const int nf, real time, const int nt, const int nga, const int nq,
                                const real inversenorm, const real inversesize,  const  real *theta_vec,
                                real *********Incoh_term, real *******Cos_scatt_ampl, real *******Sin_scatt_ampl,
                                real  *********tot_tensor_squared,      real *********incoh_tensor_squared,
@@ -911,8 +939,8 @@ void Scattering_Intensity_t(const int nf, real time, const int nt, const int nga
                                          {
                                            tot_temp = (Cos_scatt_ampl[rr][tt][c][pm][qm][sm][qq]*Cos_scatt_ampl[rr][tt][c][ppm][qpm][spm][qq] + 
                                                        Sin_scatt_ampl[rr][tt][c][pm][qm][sm][qq]*Sin_scatt_ampl[rr][tt][c][ppm][qpm][spm][qq])*inversesize;
-                                           tot_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm][qq]  +=  tot_temp;
-                                           incoh_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm][qq]  +=  Incoh_term[rr][tt][c][pm][qm][sm][ppm][qpm][spm]*inversesize;
+                                           tot_tensor_squared[tid*nf + rr][tt][pm][qm][sm][ppm][qpm][spm][qq]  +=  tot_temp;
+                                           incoh_tensor_squared[tid*nf + rr][tt][pm][qm][sm][ppm][qpm][spm][qq]  +=  Incoh_term[rr][tt][c][pm][qm][sm][ppm][qpm][spm]*inversesize;
                                          }
                                     
                                      }
@@ -935,105 +963,111 @@ void Scattering_Intensity_t(const int nf, real time, const int nt, const int nga
 
 }
 
-void Allocate_Scattering_Intensity(const int nf, const int nt,  const int nq,
+void Allocate_Scattering_Intensity(const int nf, const int nt,  const int nq, const int nthreads,
                                real **********tot_tensor_squared_addr, real **********incoh_tensor_squared_addr)
 {
-    int rr, tt, qq;
+    int rr, tt, qq, itt;
     int pm, qm, sm;
     int ppm, qpm, spm;
     real *********tot_tensor_squared, *********incoh_tensor_squared;
 
-    snew(tot_tensor_squared, nf);
-    snew(incoh_tensor_squared, nf);
-    for (rr = 0; rr < nf; rr++)
+    snew(tot_tensor_squared, nf*nthreads);
+    snew(incoh_tensor_squared, nf*nthreads);
+    for (itt = 0; itt < nthreads; itt++)
     {
-        snew(tot_tensor_squared[rr], nt);
-        snew(incoh_tensor_squared[rr], nt);
-        for (tt = 0; tt < nt; tt++ )
-        {
-            snew(tot_tensor_squared[rr][tt], DIM);
-            snew(incoh_tensor_squared[rr][tt], DIM);
-            for (pm = 0; pm < DIM; pm++)
-            {
-                snew(tot_tensor_squared[rr][tt][pm], DIM);
-                snew(incoh_tensor_squared[rr][tt][pm], DIM);
-                for (qm = 0; qm < DIM; qm++)
-                {
-                    snew(tot_tensor_squared[rr][tt][pm][qm], DIM);
-                    snew(incoh_tensor_squared[rr][tt][pm][qm], DIM);
-                    for (sm = 0; sm < DIM; sm++)
-                    {
-                         snew(tot_tensor_squared[rr][tt][pm][qm][sm], DIM);
-                         snew(incoh_tensor_squared[rr][tt][pm][qm][sm], DIM);
-                         for (ppm = 0; ppm < DIM; ppm++)
-                         {
-                             snew(tot_tensor_squared[rr][tt][pm][qm][sm][ppm], DIM);
-                             snew(incoh_tensor_squared[rr][tt][pm][qm][sm][ppm], DIM);
-                             for (qpm = 0; qpm < DIM; qpm++)
-                             {
-                                 snew(tot_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm], DIM);
-                                 snew(incoh_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm], DIM);
-                                 for (spm = 0; spm < DIM; spm++)
-                                 {
-                                     snew(tot_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm], nq);
-                                     snew(incoh_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm], nq);
-                                 }
-                             }
-                         }
-                    }
-                }
-            }
-        }
+       for (rr = 0; rr < nf; rr++)
+       {
+           snew(tot_tensor_squared[itt*nf + rr], nt);
+           snew(incoh_tensor_squared[itt*nf + rr], nt);
+           for (tt = 0; tt < nt; tt++ )
+           {
+               snew(tot_tensor_squared[itt*nf + rr][tt], DIM);
+               snew(incoh_tensor_squared[itt*nf + rr][tt], DIM);
+               for (pm = 0; pm < DIM; pm++)
+               {
+                   snew(tot_tensor_squared[itt*nf + rr][tt][pm], DIM);
+                   snew(incoh_tensor_squared[itt*nf + rr][tt][pm], DIM);
+                   for (qm = 0; qm < DIM; qm++)
+                   {
+                       snew(tot_tensor_squared[itt*nf + rr][tt][pm][qm], DIM);
+                       snew(incoh_tensor_squared[itt*nf + rr][tt][pm][qm], DIM);
+                       for (sm = 0; sm < DIM; sm++)
+                       {
+                            snew(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm], DIM);
+                            snew(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm], DIM);
+                            for (ppm = 0; ppm < DIM; ppm++)
+                            {
+                                snew(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm], DIM);
+                                snew(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm], DIM);
+                                for (qpm = 0; qpm < DIM; qpm++)
+                                {
+                                    snew(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm], DIM);
+                                    snew(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm], DIM);
+                                    for (spm = 0; spm < DIM; spm++)
+                                    {
+                                        snew(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm][spm], nq);
+                                        snew(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm][spm], nq);
+                                    }
+                                }
+                            }
+                       }
+                   }
+               }
+           }
+       }
     }
     *tot_tensor_squared_addr = tot_tensor_squared;
     *incoh_tensor_squared_addr = incoh_tensor_squared;
 }
 
-void Free_Scattering_Intensity(const int nf, const int nt,
+void Free_Scattering_Intensity(const int nthreads, const int nf, const int nt,
                                real *********tot_tensor_squared, real *********incoh_tensor_squared)
 {
-    int rr, tt;
+    int rr, tt, itt;
     int pm, qm, sm;
     int ppm, qpm, spm;
-    for (rr = 0; rr < nf; rr++)
+    for (itt = 0; itt < nthreads; itt++)
     {
-        for (tt = 0; tt < nt; tt++ )
-        {
-            for (pm = 0; pm < DIM; pm++)
-            {
-                for (qm = 0; qm < DIM; qm++)
-                {
-                    for (sm = 0; sm < DIM; sm++)
-                    {
-                         for (ppm = 0; ppm < DIM; ppm++)
-                         {
-                             for (qpm = 0; qpm < DIM; qpm++)
-                             {
-                                 for (spm = 0; spm < DIM; spm++)
-                                 {
-                                     sfree(tot_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm]);
-                                     sfree(incoh_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm][spm]);
-                                 }
-                                 sfree(tot_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm]);
-                                 sfree(incoh_tensor_squared[rr][tt][pm][qm][sm][ppm][qpm]);
-                             }
-                             sfree(tot_tensor_squared[rr][tt][pm][qm][sm][ppm]);
-                             sfree(incoh_tensor_squared[rr][tt][pm][qm][sm][ppm]);
-                         }
-                         sfree(tot_tensor_squared[rr][tt][pm][qm][sm]);
-                         sfree(incoh_tensor_squared[rr][tt][pm][qm][sm]);
-                    }
-                    sfree(tot_tensor_squared[rr][tt][pm][qm]);
-                    sfree(incoh_tensor_squared[rr][tt][pm][qm]);
-                }
-                sfree(tot_tensor_squared[rr][tt][pm]);
-                sfree(incoh_tensor_squared[rr][tt][pm]);
-            }
-            sfree(tot_tensor_squared[rr][tt]);
-            sfree(incoh_tensor_squared[rr][tt]);
-        }
-        sfree(tot_tensor_squared[rr]);
-        sfree(incoh_tensor_squared[rr]);
+       for (rr = 0; rr < nf; rr++)
+       {
+           for (tt = 0; tt < nt; tt++ )
+           {
+               for (pm = 0; pm < DIM; pm++)
+               {
+                   for (qm = 0; qm < DIM; qm++)
+                   {
+                       for (sm = 0; sm < DIM; sm++)
+                       {
+                            for (ppm = 0; ppm < DIM; ppm++)
+                            {
+                                for (qpm = 0; qpm < DIM; qpm++)
+                                {
+                                    for (spm = 0; spm < DIM; spm++)
+                                    {
+                                        sfree(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm][spm]);
+                                        sfree(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm][spm]);
+                                    }
+                                    sfree(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm]);
+                                    sfree(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm][qpm]);
+                                }
+                                sfree(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm]);
+                                sfree(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm][ppm]);
+                            }
+                            sfree(tot_tensor_squared[itt*nf + rr][tt][pm][qm][sm]);
+                            sfree(incoh_tensor_squared[itt*nf + rr][tt][pm][qm][sm]);
+                       }
+                       sfree(tot_tensor_squared[itt*nf + rr][tt][pm][qm]);
+                       sfree(incoh_tensor_squared[itt*nf + rr][tt][pm][qm]);
+                   }
+                   sfree(tot_tensor_squared[itt*nf + rr][tt][pm]);
+                   sfree(incoh_tensor_squared[itt*nf + rr][tt][pm]);
+               }
+               sfree(tot_tensor_squared[itt*nf + rr][tt]);
+               sfree(incoh_tensor_squared[itt*nf + rr][tt]);
+           }
+           sfree(tot_tensor_squared[itt*nf + rr]);
+           sfree(incoh_tensor_squared[itt*nf + rr]);
+       }
     }
     sfree(tot_tensor_squared);
     sfree(incoh_tensor_squared);
@@ -1059,7 +1093,7 @@ int gmx_fitbeta(int argc, char *argv[])
     static gmx_bool    bPBC = TRUE;
     static real        pout_angle = 0.0 , pin_angle = 0.0;
     static real        bmzxx = 5.7 , bmzyy = 10.9 , bmzzz = 31.6 ;
-    static int         ngroups = 1, nbintheta = 10, nbingamma = 2 , nbinq = 10, nthr = 1;
+    static int         ngroups = 1, nbintheta = 10, nbingamma = 2 , nbinq = 10, nthreads = -1;
 
     static const char *methodt[] = { NULL, "sumexp" ,NULL }; 
 
@@ -1081,7 +1115,7 @@ int gmx_fitbeta(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Without PBC the maximum range will be three times the largest box edge." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups to compute RDFs around a central group" },
-        { "-nthr",       FALSE, etINT, {&nthr},
+        { "-nt",       FALSE, etINT, {&nthreads},
           "number of openMP threads" },
     };
 #define NPA asize(pa)
@@ -1112,6 +1146,8 @@ int gmx_fitbeta(int argc, char *argv[])
     int            ePBC;
     int            k, natoms;
     matrix         box;
+
+    nthreads = gmx_omp_get_max_threads();
     
     npargs = asize(pa);
     if (!parse_common_args(&argc, argv, PCA_CAN_VIEW | PCA_CAN_TIME | PCA_BE_NICE,
@@ -1122,6 +1158,8 @@ int gmx_fitbeta(int argc, char *argv[])
 
     fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
+
+    gmx_omp_set_num_threads(nthreads);
 
     if (!fnTPS && !fnNDX)
     {
@@ -1155,7 +1193,7 @@ int gmx_fitbeta(int argc, char *argv[])
            methodt[0],  bPBC, nbinq,
            nbintheta, nbingamma, pin_angle, pout_angle,
            bmzxx, bmzyy, bmzzz, 
-           gnx, grpindex, grpname, ngroups, oenv,nthr);
+           gnx, grpindex, grpname, ngroups, oenv,nthreads);
 
     return 0;
 }
