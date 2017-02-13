@@ -78,7 +78,6 @@ extern void double_sum(t_pbc *pbc,real *beta,rvec *x,int n,real rmax2,rvec *qvec
 extern void Projected_Scattering_Amplitude(const int nf, const int nt, const int nga, const int nq,
      const rvec xi, const rvec xv2, const rvec xv3,  rvec **arr_scatt_wave_vec,
      rvec ***pout_theta_gamma, rvec ***pin_theta_gamma,
-     real *********Onsite_term, real *******Cos_scatt_ampl, real *******Sin_scatt_ampl, 
      real **********Onsite_term_addr, real ********Cos_scatt_ampl_addr, real ********Sin_scatt_ampl_addr); 
 
 extern void Allocate_scattering_amplitude(const int nf, const int nt, const int nga, const int nq, real **********Incoh_term_addr, real ********Cos_scatt_ampl_addr, real ********Sin_scatt_ampl_addr);
