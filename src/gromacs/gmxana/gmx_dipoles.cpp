@@ -741,7 +741,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                    int  *gkatom,  int skip,
                    gmx_bool bSlab,    int nslices,
                    const char *axtitle, const char *slabfn,
-                   const output_env_t oenv)
+                   const output_env_t oenv, int do_zproj)
 {
     const char *leg_mtot[] = {
         "M\\sx \\N",
@@ -778,7 +778,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     };
 #define NLEGADIP asize(leg_adip)
 
-    FILE         *outdd, *outmtot, *outaver, *outeps, *caver = NULL;
+    FILE         *z_projection, *outdd, *outmtot, *outaver, *outeps, *caver = NULL;
     FILE         *dip3d = NULL, *adip = NULL;
     rvec         *x, *dipole = NULL, mu_t, quad, *dipsp = NULL;
     t_gkrbin     *gkrbin = NULL;
@@ -901,6 +901,8 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                        "Time (ps)", "", oenv);
     outaver = xvgropen(out_aver, "Total dipole moment",
                        "Time (ps)", "D", oenv);
+    z_projection = fopen("z_projection.dat", "w");  
+
     if (bSlab)
     {
         idim = axtitle[0] - 'X';
@@ -1029,6 +1031,8 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     /* Start while loop over frames */
     t0     = t;
     teller = 0;
+
+
     do
     {
         if (bCorr && (teller >= nframes))
@@ -1075,8 +1079,11 @@ static void do_dip(t_topology *top, int ePBC, real volume,
             gmx_rmpbc(gpbc, natom, box, x);
 
             /* Begin loop of all molecules in frame */
+
+
             for (n = 0; (n < ncos); n++)
-            {
+            {   
+
                 for (i = 0; (i < gnx[n]); i++)
                 {
                     int ind0, ind1;
@@ -1085,6 +1092,13 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                     ind1  = mols->index[molindex[n][i]+1];
 
                     mol_dip(ind0, ind1, x, atom, dipole[i]);
+                    
+                    if  (do_zproj == 1)
+                    {
+                        fprintf(z_projection, "%f\t %f\t %f\n", x[i][ZZ], 
+                                               dipole[i][ZZ]/norm(dipole[i]), 
+                                           pow(dipole[i][ZZ]/norm(dipole[i]),2.0) );  
+                    }
                     gmx_stats_add_point(mulsq, 0, norm(dipole[i]), 0, 0);
                     gmx_stats_add_point(muframelsq, 0, norm(dipole[i]), 0, 0);
                     if (bSlab)
@@ -1185,6 +1199,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
                                     ncolour, ind0, i);
                         }
                     }
+
                 } /* End loop of all molecules in frame */
 
                 if (dip3d)
@@ -1341,6 +1356,7 @@ static void do_dip(t_topology *top, int ePBC, real volume,
     gmx_ffclose(outmtot);
     gmx_ffclose(outaver);
     gmx_ffclose(outeps);
+    gmx_ffclose(z_projection);
 
     if (fnadip)
     {
@@ -1546,6 +1562,9 @@ int gmx_dipoles(int argc, char *argv[])
     int            nslices    = 10; /* nr of slices defined       */
     int            skip       = 0, nFA = 0, nFB = 0, ncos = 1;
     int            nlevels    = 20, ndegrees = 90;
+    int		   do_zproj   = 0;
+
+
     output_env_t   oenv;
     t_pargs        pa[] = {
         { "-mu",       FALSE, etREAL, {&mu_aver},
@@ -1581,7 +1600,9 @@ int gmx_dipoles(int argc, char *argv[])
         { "-nlevels",  FALSE, etINT, {&nlevels},
           "Number of colors in the cmap output" },
         { "-ndegrees", FALSE, etINT, {&ndegrees},
-          "Number of divisions on the [IT]y[it]-axis in the cmap output (for 180 degrees)" }
+          "Number of divisions on the [IT]y[it]-axis in the cmap output (for 180 degrees)" },
+        { "-zproj", FALSE, etINT, {&do_zproj},
+          "Print out molecular dipoles projection along z?"}
     };
     int           *gnx;
     int            nFF[2];
@@ -1693,7 +1714,7 @@ int gmx_dipoles(int argc, char *argv[])
            opt2fn("-cmap", NFILE, fnm), rcmax,
            bQuad, bMU,     opt2fn("-en", NFILE, fnm),
            gnx, grpindex, mu_max, mu_aver, epsilonRF, temp, nFF, skip,
-           bSlab, nslices, axtitle, opt2fn("-slab", NFILE, fnm), oenv);
+           bSlab, nslices, axtitle, opt2fn("-slab", NFILE, fnm), oenv, do_zproj);
 
     do_view(oenv, opt2fn("-o", NFILE, fnm), "-autoscale xy -nxy");
     do_view(oenv, opt2fn("-eps", NFILE, fnm), "-autoscale xy -nxy");
