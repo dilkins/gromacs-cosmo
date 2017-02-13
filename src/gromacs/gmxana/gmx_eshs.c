@@ -2659,74 +2659,16 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 			size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
 			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
 		}
-
-//		fprintf(stderr,"Maximum grid spacing = %i\n",mx);
-//		fprintf(stderr,"Number of grid points = %i %i %i\n",gridsize[0],gridsize[1],gridsize[2]);
-//		fprintf(stderr,"Other number = %i %i %i\n",grid[0],grid[1],grid[2]);
-//		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_invspacing[0],grid_invspacing[1],grid_invspacing[2]);
-//		fprintf(stderr,"values = %f : %f %f %f\n",dxcut,grid_spacing[0],grid_spacing[1],grid_spacing[2]);
-
-//		for (ix=0;ix<DIM;ix++)
-//		{
-//			half_size_grid_points[ix] = gridsize[ix]/2 - 1;
-//			size_nearest_grid_points[ix] = gridsize[ix];
-//		}
 	
 		snew(relevant_grid_points,mx);
 		for (i=0;i<mx;i++)
 		{
 			snew(relevant_grid_points[i],DIM);
 		}
-/*
-		// For each molecule, loop over all grid points (just for testing purposes.)
-		for (n=0;n<isize0;n++)
-		{
-			fprintf(stderr,"molecule %i of %i\n",n,isize0);
-			for (m=0;m<n_chged_atoms;m++)
-			{
-				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m];
-				copy_rvec(x[ind0],xi);
-				charge = top->atoms.atom[ind0].q;
-				for (ix=0;ix<grid[XX];ix++)
-				{
-					for (iy=0;iy<grid[YY];iy++)
-					{
-						for (iz=0;iz<grid[ZZ];iz++)
-						{
-							Kern->rspace_grid[XX] = ix * grid_spacing[XX];
-							Kern->rspace_grid[YY] = iy * grid_spacing[YY];
-							Kern->rspace_grid[ZZ] = iz * grid_spacing[ZZ];
-							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
-							dx2 = norm2(dx);
-							if (dx2<=dxcut2)
-							{
-								// Calculate electric field correction terms.
-								invdx2 = 1.0/dx2;
-								dx2s = dx2 * sigma_vals[2];
-								dx2b = dx2 * sigma_vals[3];
-								ef0 = sigma_vals[1]*exp(-1.0*dx2b) - sigma_vals[0]*exp(-1.0*dx2s);
-								ef0 *= scfc;
-								invdx = sqrt(invdx2);
-								dxs = sqrt(dx2s);
-								dxb = sqrt(dx2b);
-								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
-								ef0 *= charge*invdx2;
-								Kern->quantity_on_grid_x[ix][iy][iz] += ef0 * dx[XX];
-								Kern->quantity_on_grid_y[ix][iy][iz] += ef0 * dx[YY];
-								Kern->quantity_on_grid_z[ix][iy][iz] += ef0 * dx[ZZ];
-							}
-						}
-					}
-				}
-			}
-		}
-/**/
-/**/
 
 		// Loop over molecules.
 		for (n=0;n<isize0;n++)
 		{
-//			fprintf(stderr,"molecule %i of %i\n",n,isize0);
 			for (m = 0;m<n_chged_atoms;m++)
 			{
 				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
@@ -2788,7 +2730,6 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 				}
 			}
 		}
-/**/
 
 	}
 
@@ -4294,21 +4235,11 @@ int gmx_eshs(int argc, char *argv[])
 		if (ecorrcut < 0.0)
 		{
 			// No cutoff length has been chosen for the electric field correction term. We will choose one here.
-			ecorrcut = 1.5 * (sqrt(1.0/kappa) + sqrt(1.0/kappa2));
+			ecorrcut = 1.1 * (sqrt(1.0/kappa) + sqrt(1.0/kappa2));
 			fprintf(stderr,"Electric field cutoff chosen: %f nm\n",ecorrcut);
-			exit(0);
-		}
-
-//		// TODO: the chosen value for the electrostatic cutoff should be reviewed.
-//		fprintf(stderr,"VALUE EXPERIMENTALLY CHOSEN FOR ECORRCUT (0.3 * BOX LENGTH). THIS PART OF THE PROGRAM SHOULD BE CHECKED BEFORE MERGING!\n");
-//		real bx = 0.0;
-//		int i;
-//		for (i=0;i<DIM;i++)
-//		{
-//			if (bx<box[i][i]){bx = box[i][i];}
-//		}
-//		ecorrcut = bx * 0.5 * 0.6;
 //		ecorrcut = 1.120944;
+//		The above value (in nm) was suitable. This is given fairly well by the formula above.
+		}
 
 		real *sigma_vals;
 		snew(sigma_vals,4);
