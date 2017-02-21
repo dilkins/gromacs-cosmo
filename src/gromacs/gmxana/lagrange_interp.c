@@ -37,8 +37,7 @@ void polint(float xa[], float ya[], int n, float x, float *y, float *dy)
 }
 
 
-void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,
-float x2, float *y, float *dy)
+void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,float x2, float *y, float *dy)
 {
 	int j;
 	float *ymtmp;
@@ -50,36 +49,28 @@ float x2, float *y, float *dy)
 	free_vector(ymtmp,1,m);
 }
 
-void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int l, int m, int n, float x1, float x2, float x3, float *y, float *dy)
+void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int d1, int d2, int d3, float x1, float x2, float x3, float *y, float *dy)
 {
-	int j,k;
-	float **ya;
-//	float **ymtmp;
 
-//??	for (j=1;j<=l;j++)
-	for (k=0;k<n;k++)
+	float **squarevals,ytmp;
+	int i;
+
+	snew(squarevals,d1);
+	for (i=0;i<d1;i++)
 	{
-		// First take cuts in the z direction. For this value of l, we create a square. This square
-		// will have x1 and x2 coordinates, and will have an array **ya, which we can pass into polin2.
-		for (i=0;i<l;i++)
-		{
-			for (j=0;j<m;j++)
-			{
-				ya[i][j] = yb[i][j][k];
-			}
-		}
-		polin2(x1a,x2a,ya,l,m,x1,x2,&ymtmp[j],dy);
+		snew(squarevals[i],d2);
 	}
 
-
-
-	for (j=1;j<=l;j++)
+	for (i=1;i<=d1;i++)
 	{
-		ymtmp = vector(1,m);
-		for (k=1;k<=m;k++)
+		for (j=1;j<=d1;j++)
 		{
-			polint(x3a,ya[j][k],n,x3,&ymtmp[k],dy);
+			// We have chosen a given set of (x,y) values; now we interpolate along the z direction.
+			polint(x3a,yb[i][j],d3,x3,squarevals[i-1][j-1],dy);
 		}
 	}
-	
+
+	// Now, given a square that contains some values, we can just do 2d interpolation on it.
+	polin2(x1a,x2a,squarevals,d1,d2,x1,x2,&y,&dy);
+
 }
