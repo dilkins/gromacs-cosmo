@@ -235,6 +235,11 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 
 int index_wrap(int idx, int wrap);
 
+void polint(float xa[], float ya[], int n, float x, float *y, float *dy);
+
+void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,
+float x2, float *y, float *dy);
+
 #ifdef __cplusplus
 }
 #endif
