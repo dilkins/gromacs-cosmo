@@ -258,11 +258,6 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
       fprintf(fptime, "@ subtitle \"%s%s - %s\"\n", grpname[0], refgt, grpname[1]);
     }
 
-    real  begin = clock();
-
-    real  begin_iloop, end_iloop;
-    real  scatt_loop, end_scatt;
-
     if (method[0] == 's')
     {
         fprintf(stderr,"use sumexp method, compute the 729 elements of the tensor containing orientational correlations of the molecules\n");
@@ -270,7 +265,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
         shared(trxin,fr,natoms,nfaces,nbintheta,nbinq,nbingamma,vec_pin_theta_gamma,vec_pout_theta_gamma,\
               arr_qvec_faces, tot_tensor_squared,incoh_tensor_squared)\
         private(tid,i,j,ind0,k,invvol,invvol_sum,box_pbc,onsite_term,cos_scattering_ampl,sin_scattering_ampl,xi,x01,x02,x,t,\
-               bHaveFrame,xt01,xt02, begin_iloop, end_iloop) 
+               bHaveFrame,xt01,xt02) 
         {
             nframes    = 0;
             invvol_sum = 0;
@@ -278,7 +273,6 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
             {
                tid = gmx_omp_get_thread_num();
                copy_mat(fr[tid].box, box_pbc);
-//               fprintf(stderr,"\n time %f x %f tid %d\n",fr[tid].time, fr[tid].x[0][0], tid);
                copy_rvec(fr[tid].x[ind0], xi);
                memcpy(x01,xi,sizeof(x01));
                set_pbc(&pbc, ePBCrdf, box_pbc);
@@ -286,7 +280,6 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                invvol_sum += invvol;
                t = fr[tid].time;
                Allocate_scattering_amplitude( nfaces, nbintheta, nbingamma, nbinq,  &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
-               begin_iloop = clock();
                for (i = 0; i < isize0; i++)
                {
                    ind0  = mols->index[molindex[0][i]];
@@ -302,20 +295,17 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                                                   vec_pout_theta_gamma, vec_pin_theta_gamma, 
                                                   &onsite_term, &cos_scattering_ampl, &sin_scattering_ampl);
                }
-               end_iloop = clock();
 
                // this function computes tot_tensor_squared += cos_scattering_ampl(i,j,k)*cos_scattering_ampl(iprime,jprime,kprime) + 
                // sin_scattering_ampl(i,j,k)*sin_scattering_ampl(iprime,jprime,kprime) +
                // and also incoh_tensor_squared += incoherent_term
                // the sum runs over frames
-               scatt_loop = clock();
 
                Scattering_Intensity_t(tid, nfaces, t ,nbintheta,  nbingamma ,nbinq, invnormfac, invsize0, theta_vec, 
                                       onsite_term, cos_scattering_ampl, sin_scattering_ampl,
                                       tot_tensor_squared, incoh_tensor_squared,
                                       &tot_tensor_squared, &incoh_tensor_squared, fnTIMEEVOLTENSOR, fptime);          
                Free_scattering_amplitude(nfaces, nbintheta, nbingamma, onsite_term, cos_scattering_ampl, sin_scattering_ampl);
-               end_scatt = clock();
 
                k = 0;
                nframes++;
@@ -330,7 +320,6 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
         }
     }
 
-    real end = clock();
 
     if (fnTIMEEVOLTENSOR)
     {
@@ -349,7 +338,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
 
    
  
-    Print_tensors( nthreads, nfaces, nbintheta,    nframes, invgamma, theta_vec, nbinq, arr_qvec_faces,
+    Print_tensors( nthreads, nbintheta,    nframes, invgamma, theta_vec, nbinq, arr_qvec_faces,
                   tot_tensor_squared, incoh_tensor_squared,  fnTENSOR, fnINCTENSOR, fnQSWIPE, grpname ,oenv);
  
     if (fnTHETA)
@@ -360,7 +349,7 @@ static void do_fitbeta(t_topology *top, /*const char *fnNDX, const char *fnTPS,*
                                 fnTHETA, grpname, oenv);
     }
 
-    Free_Scattering_Intensity(nthreads, nfaces, nbintheta,
+    Free_Scattering_Intensity(nfaces, nbintheta,
                               tot_tensor_squared, incoh_tensor_squared); 
 
 }
@@ -483,7 +472,7 @@ void Print_scattering_pattern(const int nt,  const int nframes, const real invga
      }
 }
 
-void Print_tensors(const int nthreads, const int nfaces, const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, 
+void Print_tensors(const int nthreads, const int nt,  const int nframes, const real invgamma, real *theta_vec ,int nbinq, 
                    rvec **arr_qvec_faces, real *********tot_tensor_squared, 
                    real *********incoh_tensor_squared, const char *fnTENSOR, 
                    const char *fnINCTENSOR , const char *fnQSWIPE, char **grpname ,const output_env_t oenv)
@@ -1036,7 +1025,7 @@ void Allocate_Scattering_Intensity(const int nf, const int nt,  const int nq, co
     *incoh_tensor_squared_addr = incoh_tensor_squared;
 }
 
-void Free_Scattering_Intensity(const int nthreads, const int nf, const int nt,
+void Free_Scattering_Intensity(const int nf, const int nt,
                                real *********tot_tensor_squared, real *********incoh_tensor_squared)
 {
     int rr, tt, itt;
