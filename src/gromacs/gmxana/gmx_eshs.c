@@ -3144,13 +3144,13 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 		j++;
 	 }
 	 j = 1;
-	 for (i=bin_indy0-npoints-1;i<bin_indx0+npoints;i++)
+	 for (i=bin_indy0-npoints-1;i<bin_indy0+npoints;i++)
 	 {
 		x2a[j] = Kern->grid_spacing[YY]*index_wrap(i,ir->nky);
 		j++;
 	 }
          j = 1;
-         for (i=bin_indy0-npoints-1;i<bin_indx0+npoints;i++)
+         for (i=bin_indz0-npoints-1;i<bin_indz0+npoints;i++)
          {
                 x3a[j] = Kern->grid_spacing[ZZ]*index_wrap(i,ir->nkz);
                 j++;
