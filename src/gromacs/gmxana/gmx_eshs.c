@@ -91,7 +91,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, real eps)
+                   const output_env_t oenv, real eps, real *sigma_vals, real ecorrcut)
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
@@ -135,6 +135,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     int           *chged_atom_indexes, n_chged_atoms;
     real	   rr2, rnorm,fac,beta;
     rvec	   xj, deltar;
+    real ecorrcut2;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -148,6 +149,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     nfaces = 6;
     invsize0 = 1.0/isize0;
     invgamma = 1.0/nbingamma;
+    ecorrcut2 = ecorrcut*ecorrcut;
     natoms = read_first_x(oenv, &status, fnTRX, &t, &x, box);
     // need to know the index of oxygen atoms in a molecule and of the hydrogens
     // also need to know the number of oxygen and hydrogens in each molecule
@@ -663,6 +665,12 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                        chged_atom_indexes,n_chged_atoms,
                                        gridsize, grid_spacing, interp_order, x, isize0, FT_pair_pot, &Emean,eps);
                    fprintf(stderr,"computed electric field with spme\n");
+                   calc_efield_correction(SKern_E, ir, top, &pbc, box, invvol, mols, molindex,
+                                       chged_atom_indexes, n_chged_atoms,
+                                       gridsize, grid_spacing, grid_invspacing, x, isize0, sigma_vals, ecorrcut,
+                                       ecorrcut2, gridsize);
+                   fprintf(stderr,"computed real-space correction to electric field\n");
+
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
                 }
                 for (i = 0; i < isize0; i++)
@@ -2606,6 +2614,127 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
      }
 }
 
+void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc *pbc, 
+                          matrix box, real invvol, t_block *mols, int  *molindex[],
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing, rvec grid_invspacing,
+                         rvec *x, int isize0, real *sigma_vals,real dxcut, real dxcut2, int *gridsize)
+{
+	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
+	// using a different cutoff radius.
+
+	int ix,iy,iz,m,i,j,ind0,n,size_near2;
+	int ind_x, ind_y, ind_z, mx;
+	rvec dx,xi;
+	real charge,dx2,ef0,invdx2,dx2s,dx2b,dxs,dxb,invdx,scfc;
+	int *bin_ind0;
+  int **relevant_grid_points,*half_size_grid_points,*size_nearest_grid_points;
+
+	scfc = 2.0 / sqrt(M_PI);
+
+	// Note: sigma_vals should be a 4-d array:
+	// 0: kappa2
+	// 1: kappa
+	// 2: kappa2^2
+	// 3: kappa^2
+	// kappa is the value that we use for PME calculations, and kappa2 is the value that we would like
+	// to use for the output electric field.
+
+	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
+	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
+	// program.
+	if (sigma_vals[0] > 0.0)
+	{
+	
+		// We don't free and re-initialize Kern->quantity_on_grid_XYZ,
+		// because we're going to append to our previous values.
+	
+		snew(bin_ind0,DIM);
+		snew(half_size_grid_points,DIM);
+		snew(size_nearest_grid_points,DIM);
+
+		mx = 0;
+		for (ix=0;ix<DIM;ix++)
+		{
+			half_size_grid_points[ix] = floor(dxcut*grid_invspacing[ix]) + 1;
+			size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
+			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
+		}
+	
+		snew(relevant_grid_points,mx);
+		for (i=0;i<mx;i++)
+		{
+			snew(relevant_grid_points[i],DIM);
+		}
+
+		// Loop over molecules.
+		for (n=0;n<isize0;n++)
+		{
+			for (m = 0;m<n_chged_atoms;m++)
+			{
+				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
+				copy_rvec(x[ind0],xi);
+				charge = top->atoms.atom[ind0].q;
+
+				// Work out what the closest grid point is to this molecule.
+				for (ix=0;ix<DIM;ix++)
+				{
+					bin_ind0[ix] = roundf(xi[ix]*grid_invspacing[ix]);
+					if (bin_ind0[ix] == gridsize[ix]){bin_ind0[ix]=0;}
+					if (bin_ind0[ix] == -1){bin_ind0[ix]=gridsize[ix]-1;}
+				}
+	
+				// Now find out which grid points should be checked.
+				for (ix=0;ix<DIM;ix++)
+				{
+					for (j=0;j<size_nearest_grid_points[ix];j++)
+					{
+						relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
+						if (relevant_grid_points[j][ix] >= gridsize[ix]){relevant_grid_points[j][ix] -= gridsize[ix];}
+						if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += gridsize[ix];}
+					}
+				}
+	
+				for (ix=0;ix < size_nearest_grid_points[XX];ix++)
+				{
+					ind_x = relevant_grid_points[ix][XX];
+					Kern->rspace_grid[XX] = ind_x * grid_spacing[XX];
+					for (iy=0;iy < size_nearest_grid_points[YY];iy++)
+					{
+						ind_y = relevant_grid_points[iy][YY];
+						Kern->rspace_grid[YY] = ind_y * grid_spacing[YY];
+						for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
+						{
+							ind_z = relevant_grid_points[iz][ZZ];
+							Kern->rspace_grid[ZZ] = ind_z * grid_spacing[ZZ];
+							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
+							dx2 = norm2(dx);
+							if (dx2<=dxcut2)
+							{
+								// Calculate electric field correction terms.
+								invdx2 = 1.0/dx2;
+								dx2s = dx2 * sigma_vals[2];
+								dx2b = dx2 * sigma_vals[3];
+								ef0 = sigma_vals[1]*exp(-1.0*dx2b) - sigma_vals[0]*exp(-1.0*dx2s);
+								ef0 *= scfc;
+								invdx = sqrt(invdx2);
+								dxs = sqrt(dx2s);
+								dxb = sqrt(dx2b);
+								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
+								ef0 *= charge*invdx2;
+								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
+								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
+								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ];
+							}
+						}
+					}
+				}
+			}
+		}
+
+	}
+
+}
+
 void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
                        t_block *mols, int  *molindex[], int atom_id0, int nspecies ,int isize0, rvec *x,
                        real std_dev_dens, real inv_std_dev_dens, rvec grid_invspacing, int *gridsize, rvec grid_spacing)
@@ -3086,7 +3215,7 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
                         snew(mK[i][j],grid[2]/2 + 1);
 		}
 	}
-        fprintf(stderr,"allocated potential and matrixes\n");
+        fprintf(stderr,"allocated potential and matrices\n");
 	snew(Bmatr,kmax+1);
 	for (i = 0;i <= kmax; i++)
 	{
@@ -3950,6 +4079,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0;
+		static real							 kappa2 = -1.0, ecorrcut = -1.0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -3989,7 +4119,9 @@ int gmx_eshs(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Always use, results without PBC not tested." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
-	{ "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
+        { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
+        { "-kappa2", FALSE, etREAL, {&kappa2}, "large kappa for real-space correction."},
+				{ "-ecorrcut", FALSE, etREAL, {&ecorrcut}, "cutoff length for electric field correction."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -4100,6 +4232,22 @@ int gmx_eshs(int argc, char *argv[])
     fprintf(stderr," Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
+		if (ecorrcut < 0.0)
+		{
+			// No cutoff length has been chosen for the electric field correction term. We will choose one here.
+			ecorrcut = 1.1 * (sqrt(1.0/kappa) + sqrt(1.0/kappa2));
+			fprintf(stderr,"Electric field cutoff chosen: %f nm\n",ecorrcut);
+//		ecorrcut = 1.120944;
+//		The above value (in nm) was suitable. This is given fairly well by the formula above.
+		}
+
+		real *sigma_vals;
+		snew(sigma_vals,4);
+		sigma_vals[0] = kappa2;
+		sigma_vals[1] = kappa;
+		sigma_vals[2] = kappa2*kappa2;
+		sigma_vals[3] = kappa*kappa;
+
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
@@ -4107,6 +4255,6 @@ int gmx_eshs(int argc, char *argv[])
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut);
     return 0;
 }
