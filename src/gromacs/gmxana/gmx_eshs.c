@@ -3071,6 +3071,102 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 //     fprintf(stderr,"freed everything\n");  
 }
 
+void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
+{
+     int i, ix, iy, iz, d, ind0;
+     int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
+     real xd, yd, zd, sel_dist;
+     rvec delx, delxdeb, vec_t;
+
+     sfree(Kern->vec_interp_quant_grid);
+     snew(Kern->vec_interp_quant_grid,Kern->gridpoints);
+
+     for (i = 0; i < Kern->gridpoints; i++)
+     {
+
+
+         bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
+         bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
+         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+
+         if (bin_indx1 > ir->nkx-1)
+         {
+            bin_indx1 = 0;
+         }
+         if (bin_indz1 > ir->nkz-1)
+         {
+            bin_indz1 = 0;
+         }
+         if (bin_indy1 > ir->nky-1)
+         {
+            bin_indy1 = 0;
+         }
+
+         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : ir->nkx-1 ;
+         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : ir->nky-1 ;
+         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : ir->nkz-1 ;
+
+         Kern->rspace_grid[XX]=grid_spacing[XX]*bin_indx0;
+         Kern->rspace_grid[YY]=grid_spacing[YY]*bin_indy0;
+         Kern->rspace_grid[ZZ]=grid_spacing[ZZ]*bin_indz0;
+
+         pbc_dx(pbc,Kern->translgrid[i],Kern->rspace_grid,delx);
+
+         int npoints = 1;
+
+	 float *x1a,*x2a,*x3a,***efield_x,***efield_y,***efield_z;
+	 snew(x1a,2*npoints +1);
+	 snew(x2a,2*npoints +1);
+	 snew(x3a,2*npoints +1);
+	 snew(efield_x,2*npoints+1);
+	 snew(efield_y,2*npoints+1);
+	 snew(efield_z,2*npoints+1);
+	 for (i=0;i<2*npoints+1;i++)
+	 {
+	 	snew(efield_x[i],2*npoints+1);
+	 	snew(efield_y[i],2*npoints+1);
+	 	snew(efield_z[i],2*npoints+1);
+	 }
+	 for (i=0;i<2*npoints+1;i++)
+	 {
+		for (j=0;j<2*npoints+1;j++)
+		{
+			snew(efield_x[i][j],2*npoints+1);
+                        snew(efield_y[i][j],2*npoints+1);
+                        snew(efield_z[i][j],2*npoints+1);
+		}
+	 }
+
+	 j = 1;
+	 for (i=bin_indx0-npoints-1;i<bin_indx0+npoints;i++)
+	 {
+	 	x1a[j] = Kern->grid_spacing[XX]*index_wrap(i,ir->nkx);
+		j++;
+	 }
+	 j = 1;
+	 for (i=bin_indy0-npoints-1;i<bin_indx0+npoints;i++)
+	 {
+		x2a[j] = Kern->grid_spacing[YY]*index_wrap(i,ir->nky);
+		j++;
+	 }
+         j = 1;
+         for (i=bin_indy0-npoints-1;i<bin_indx0+npoints;i++)
+         {
+                x3a[j] = Kern->grid_spacing[ZZ]*index_wrap(i,ir->nkz);
+                j++;
+         }
+	 
+
+         xd = fabs(delx[XX])*grid_invspacing[XX];
+         yd = fabs(delx[YY])*grid_invspacing[YY];
+         zd = fabs(delx[ZZ])*grid_invspacing[ZZ];
+
+
+
+         copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
+
+}
+
 void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
 {
      int i, ix, iy, iz, d, ind0;

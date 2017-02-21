@@ -1,5 +1,7 @@
 // From Numerical Recipes in C.
 #include <math.h>
+#include "gromacs/utility/smalloc.h"
+
 #include "nrutil.h"
 void polint(float xa[], float ya[], int n, float x, float *y, float *dy)
 {
@@ -49,28 +51,28 @@ void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,float x
 	free_vector(ymtmp,1,m);
 }
 
-void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int d1, int d2, int d3, float x1, float x2, float x3, float *y, float *dy)
+void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float x1, float x2, float x3, float *y, float *dy)
 {
 
-	float **squarevals,ytmp;
-	int i;
+	float **xysqr,ytmp;
+	int i,j;
 
-	snew(squarevals,d1);
-	for (i=0;i<d1;i++)
+	snew(xysqr,npts+1);
+	for (i=0;i<npts+1;i++)
 	{
-		snew(squarevals[i],d2);
+		snew(xysqr[i],npts+1);
 	}
 
-	for (i=1;i<=d1;i++)
+	for (i=1;i<=npts;i++)
 	{
-		for (j=1;j<=d1;j++)
+		for (j=1;j<=npts;j++)
 		{
 			// We have chosen a given set of (x,y) values; now we interpolate along the z direction.
-			polint(x3a,yb[i][j],d3,x3,squarevals[i-1][j-1],dy);
+			polint(x3a,yb[i][j],npts,x3,&xysqr[i][j],dy);
 		}
 	}
 
 	// Now, given a square that contains some values, we can just do 2d interpolation on it.
-	polin2(x1a,x2a,squarevals,d1,d2,x1,x2,&y,&dy);
+	polin2(x1a,x2a,xysqr,npts,npts,x1,x2,y,dy);
 
 }
