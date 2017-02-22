@@ -93,7 +93,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, real eps, real *sigma_vals, real ecorrcut)
+                   const output_env_t oenv, real eps, real *sigma_vals, real ecorrcut, int legendre_npoints)
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
@@ -3073,7 +3073,7 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 //     fprintf(stderr,"freed everything\n");  
 }
 
-void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
+void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean, int npoints)
 {
      int i, j, k, l, ix, iy, iz, d, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -3114,7 +3114,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 
          pbc_dx(pbc,Kern->translgrid[i],Kern->rspace_grid,delx);
 
-         int npoints = 1;
+//         int npoints = 1;
 
 					// Get a list of the points that we will be using for interpolation.
 				  int *xlist,*ylist,*zlist;
@@ -4218,7 +4218,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05;
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
-    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0;
+    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0, legendre_npoints = 1;
 		static real							 kappa2 = -1.0, ecorrcut = -1.0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
@@ -4262,6 +4262,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
         { "-kappa2", FALSE, etREAL, {&kappa2}, "large kappa for real-space correction."},
 				{ "-ecorrcut", FALSE, etREAL, {&ecorrcut}, "cutoff length for electric field correction."},
+			  { "-legen_order", FALSE, etINT, {&legendre_npoints}, "Order to use for Legendre interpolation of electric field onto molecular grid."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -4395,6 +4396,6 @@ int gmx_eshs(int argc, char *argv[])
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut, legendre_npoints);
     return 0;
 }
