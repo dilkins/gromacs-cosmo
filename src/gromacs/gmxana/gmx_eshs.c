@@ -72,6 +72,8 @@
 #include "mtop_util.h"
 #include "typedefs.h"
 #include "force.h"
+#include "nrutil.h"
+#include "lagrange_interp.c"
 
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
@@ -3121,9 +3123,9 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 					snew (zlist,2*npoints+1);
 					for (j=1;j<=2*npoints;j++)
 					{
-						xlist[j] = index_wrap(bin_indx0 - npoints + j - 1,ir->nkx);
-						ylist[j] = index_wrap(bin_indy0 - npoints + j - 1,ir->nky);
-						zlist[j] = index_wrap(bin_indz0 - npoints + j - 1,ir->nkz);
+						xlist[j] = index_wrap(bin_indx1 - npoints + j - 1,ir->nkx);
+						ylist[j] = index_wrap(bin_indy1 - npoints + j - 1,ir->nky);
+						zlist[j] = index_wrap(bin_indz1 - npoints + j - 1,ir->nkz);
 					}
 
 					// Get arrays of the x1, x2, x3 values, as floats. We will take the spatial grid to start from 1.0, and go to the decimal version of
@@ -3159,9 +3161,19 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 					}
 
 					// Finally, in terms of the coordinates chosen, what is the point on which we wish to interpolate the electric field?
-					
+					float x1,x2,x3;
+					x1 = (Kern->translgrid[i][XX] * grid_invspacing[XX]) - (float)floor(Kern->translgrid[i][XX] * grid_invspacing[XX]) + (float)npoints;
+					x2 = (Kern->translgrid[i][YY] * grid_invspacing[YY]) - (float)floor(Kern->translgrid[i][YY] * grid_invspacing[YY]) + (float)npoints;
+					x3 = (Kern->translgrid[i][ZZ] * grid_invspacing[ZZ]) - (float)floor(Kern->translgrid[i][ZZ] * grid_invspacing[ZZ]) + (float)npoints;
 
-//Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz0]
+					// Now do the three interpolations.
+					float dy;
+//					polin3(x1a,x2a,x3a,efield_x,2*npoints,x1,x2,x3,vec_t[XX],&dy);
+//					polin3(x1a,x2a,x3a,efield_y,2*npoints,x1,x2,x3,vec_t[YY],&dy);
+//					polin3(x1a,x2a,x3a,efield_z,2*npoints,x1,x2,x3,vec_t[ZZ],&dy);
+					copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
+
+					testfunc();
 
 /*
 	 float *x1a,*x2a,*x3a;
