@@ -3073,7 +3073,7 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 
 void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
 {
-     int i, ix, iy, iz, d, ind0;
+     int i, j, k, l, ix, iy, iz, d, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
      real xd, yd, zd, sel_dist;
      rvec delx, delxdeb, vec_t;
@@ -3114,28 +3114,60 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 
          int npoints = 1;
 
-	 float *x1a,*x2a,*x3a,***efield_x,***efield_y,***efield_z;
+					// Get a list of the points that we will be using for interpolation.
+				  int *xlist,*ylist,*zlist;
+					snew (xlist,2*npoints+1);
+					snew (ylist,2*npoints+1);
+					snew (zlist,2*npoints+1);
+					for (j=1;j<=2*npoints;j++)
+					{
+						xlist[j] = index_wrap(bin_indx0 - npoints + j - 1,ir->nkx);
+						ylist[j] = index_wrap(bin_indy0 - npoints + j - 1,ir->nky);
+						zlist[j] = index_wrap(bin_indz0 - npoints + j - 1,ir->nkz);
+					}
+
+					// Get arrays of the x1, x2, x3 values, as floats. We will take the spatial grid to start from 1.0, and go to the decimal version of
+					// 2*npoints. This will avoid any potential unpleasantness with periodic boundary conditions (wherein the actual coordinates of the
+					// grid points might have a discontinuity).
+					float *x1a,*x2a,*x3a;
+					snew(x1a,2*npoints+1);
+					snew(x2a,2*npoints+1);
+					snew(x3a,2*npoints+1);
+					for (j=1;j<=2*npoints;j++)
+					{
+						x1a[j] = (float)j;
+						x2a[j] = (float)j;
+						x3a[j] = (float)j;
+					}
+
+					// Now get an array of the electric field components on the grid points.
+					float ***efield_x, ***efield_y, ***efield_z;
+					snew(efield_x,2*npoints+1);snew(efield_y,2*npoints+1);snew(efield_z,2*npoints+1);
+					for (j=0;j<2*npoints+1;j++){snew(efield_x[j],2*npoints+1);snew(efield_y[j],2*npoints+1);snew(efield_z[j],2*npoints+1);}
+					for (j=0;j<2*npoints+1;j++){for (k=0;k<2*npoints+1;k++){snew(efield_x[j][k],2*npoints+1);snew(efield_y[j][k],2*npoints+1);snew(efield_z[j][k],2*npoints+1);}}
+					for (j=1;j<=2*npoints;j++)
+					{
+						for (k=1;k<=2*npoints;k++)
+						{
+							for (l=1;l<=2*npoints;l++)
+							{
+								efield_x[j][k][l] = Kern->quantity_on_grid_x[xlist[j]][ylist[k]][zlist[l]];
+								efield_y[j][k][l] = Kern->quantity_on_grid_y[xlist[j]][ylist[k]][zlist[l]];
+								efield_z[j][k][l] = Kern->quantity_on_grid_z[xlist[j]][ylist[k]][zlist[l]];
+							}
+						}
+					}
+
+					// Finally, in terms of the coordinates chosen, what is the point on which we wish to interpolate the electric field?
+					
+
+//Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz0]
+
+/*
+	 float *x1a,*x2a,*x3a;
 	 snew(x1a,2*npoints +1);
 	 snew(x2a,2*npoints +1);
 	 snew(x3a,2*npoints +1);
-	 snew(efield_x,2*npoints+1);
-	 snew(efield_y,2*npoints+1);
-	 snew(efield_z,2*npoints+1);
-	 for (i=0;i<2*npoints+1;i++)
-	 {
-	 	snew(efield_x[i],2*npoints+1);
-	 	snew(efield_y[i],2*npoints+1);
-	 	snew(efield_z[i],2*npoints+1);
-	 }
-	 for (i=0;i<2*npoints+1;i++)
-	 {
-		for (j=0;j<2*npoints+1;j++)
-		{
-			snew(efield_x[i][j],2*npoints+1);
-                        snew(efield_y[i][j],2*npoints+1);
-                        snew(efield_z[i][j],2*npoints+1);
-		}
-	 }
 
 	 j = 1;
 	 for (i=bin_indx0-npoints-1;i<bin_indx0+npoints;i++)
@@ -3155,7 +3187,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
                 x3a[j] = Kern->grid_spacing[ZZ]*index_wrap(i,ir->nkz);
                 j++;
          }
-	 
+*/
 
          xd = fabs(delx[XX])*grid_invspacing[XX];
          yd = fabs(delx[YY])*grid_invspacing[YY];
@@ -3164,7 +3196,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 
 
          copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
-
+	}
 }
 
 void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
