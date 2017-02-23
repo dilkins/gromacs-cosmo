@@ -45,7 +45,6 @@
 #include "gromacs/random/random.h"
 #include "coulomb.h"
 #include "gromacs/math/gmxcomplex.h"
-#include "types/inputrec.h"
 #include "complex.h"
 
 
@@ -123,9 +122,15 @@ typedef struct {
   int      gridcenter; //index of the grid that is taken as reference of the potential or field;
   real     kerndev;
   int      ndataset; //number of points used to train the kernel
-  rvec     rspace_grid; // a point in the global grid that fills all unit cell
+  real     gl_grid_spacing;  //spacing in the global grid
+  int      gl_nx;  //number of points in the global grid along x
+  int      gl_ny;  //number of points along y in the global grid
+  int      gl_nz;  //number of points along z in the global grid
+  int     *gl_grid_size; // array containing gl_nx,gl_ny,gl_nz
+  real     gl_invspacing; // array containing 1/gl_grid_spacing
+  rvec     gl_grid_point; // a point in the global grid 
   real  ***quantity_on_grid; //scalar quantity computed on the global grid, i.e. density
-  real  ***quantity_on_grid_x,***quantity_on_grid_y,***quantity_on_grid_z ; // vector quantities computed on global grid, i.e. electric field
+  real  ***quantity_on_grid_x, ***quantity_on_grid_y, ***quantity_on_grid_z ; // vector quantities computed on global grid, i.e. electric field
   real    *interp_quant_grid; // interpolated quantity from the global onto local grid (i.e. density)
   rvec    *vec_interp_quant_grid; // interpolated vector quantity from the global onto local grid (i.e. electric field)
   real    *weights; // weigh the density based on the distance from central atom
@@ -168,7 +173,8 @@ void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, t_topology *top, t_block *mols, int 
 
 
 //compute molecular beta using a scalar kernel
-void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, int kern_order, real *betamean, real ****betamol);
+void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,  t_Kern *SKern_Esr,
+                     int kern_order, real *betamean, real ****betamol);
 //switching function to bring a function smoothly from a given value to zero
 void switch_fn(real r_dist, real electrostatic_cutoff, real rmax, real inv_width, real *sw_coeff);
 
@@ -185,24 +191,24 @@ void calc_ft_beta_corr( t_pbc *pbc, t_block *mols, int  *molindex[],
 void calc_cosdirmat(const char *fnREFMOL, t_topology *top, int molsize,  int ind0, rvec *xref, rvec *xmol, matrix *cosdirmat, matrix *invcosdirmat, rvec *xvec, rvec *yvec, rvec *zvec);
 
 
-void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, int ePBC, matrix box, matrix cosdirmat, rvec xi);
+void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, t_Kern *SKern_Esr,int ePBC, matrix box, matrix cosdirmat, rvec xi);
 
 //build global grid in real space used for the calculation of the density and electrostatic potential
 //for the specific case of the scalar kernel
-void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir,  rvec *grid_spacing, rvec *grid_invspacing, gmx_bool bEFIELD, gmx_bool bALLOC, int **gridsize);
+void initialize_free_quantities_on_grid(t_Kern *Kern,real grid_spacing, matrix box, gmx_bool bEFIELD,  gmx_bool bALLOC);
 //compute the density using the scalar kernel
-void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
+void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc, 
                        t_block *mols, int  *molindex[], int atom_id0, int nspecies ,int isize0, rvec *x,
-                       real std_dev_dens, real inv_std_dev_dens, rvec grid_invspacing, int *gridsize, rvec grid_spacing);
+                       real std_dev_dens, real inv_std_dev_dens);
 
 //function to interpolate linearly the density from points in the global real space grid
 //to the points of the local grid centred on the molecule, whose position is xi
-void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec xi, rvec grid_invspacing, rvec grid_spacing);
+void trilinear_interpolation_kern(t_Kern *Kern,  t_pbc *pbc, rvec xi);
 
-void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean);
+void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean);
 
 
-void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, int interp_order, rvec grid_spacing, rvec Emean);
+//void bspline_efield(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, int interp_order, rvec grid_spacing, rvec Emean);
 
 //read in the reference molecule, used to compute the direction cosine matrix
 void read_reference_mol(const char *fnREFMOL, rvec **xref);
@@ -222,16 +228,17 @@ real Bspline(real x,int n);
 long long combi(int n,int k);
 
 void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_factor, int fwbck);
-void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2);
-void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,  
+void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2);
+void calculate_spme_efield(t_Kern *Kern, t_topology *top,  
                           matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
+                         int *chged_atom_indexes, int n_chged_atoms,
                          int interp_order, rvec *x, int isize0,
                          t_complex ***FT_pair_pot, rvec *Emean, real eps);
-void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc *pbc, 
+
+void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc, 
                           matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing, rvec grid_invspacing,
-                         rvec *x, int isize0, real *sigma_vals, real dxcut, real dxcut2, int *gridsize);
+                         int *chged_atom_indexes, int n_chged_atoms, 
+                         rvec *x, int isize0, real *sigma_vals, real dxcut, real dxcut2);
 
 int index_wrap(int idx, int wrap);
 
@@ -241,7 +248,7 @@ void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,float x
 
 void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float x1, float x2, float x3, float y, float *dy);
 
-void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean, int npoints);
+void vec_lagrange_interpolation_kern(t_Kern *Kern,  t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean, int npoints);
 
 #ifdef __cplusplus
 }

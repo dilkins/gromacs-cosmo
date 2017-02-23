@@ -76,7 +76,7 @@
 #define ANG2NM 0.1
 #define AU2VNM 5.14220652e2
 
-static void do_shscorr(t_topology *top,  const char *fnTRX,
+/*static void do_shscorr(t_topology *top,  const char *fnTRX,
                    const char *fnSFACT, const char *fnTHETA, const real angle_corr,
                    const char *fnVCOEFF, const char *fnVGRD, const char *fnVINP,
                    const char *fnRGRDO, const char *fnCOEFFO,
@@ -366,7 +366,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 	if (kern[0] != 'n'){fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");}
 
-/*******************************MOLECULAR-FRAME BETA************************************************************************************************************/
 
 	// Initialize molecular-frame beta tensor
 	snew(beta_mol,DIM);
@@ -388,7 +387,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	beta_mol[2][2][2] = 1.0;
 	// DMW: This should be changed later on!
 
-/*******************************K-VECTORS***********************************************************************************************************************/
 
 	// We want to find all (nx,ny,nz) values such that nx^2 + ny^2 + nz^2 <= nmax^2.
 	// Firstly, allocate an array to hold all of these values.
@@ -654,7 +652,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	// We now have a certain number of q vectors, along with the U and V vectors corresponding to
 	// them, for a certain number of scattering planes each.
 
-/**************************INITIALIZE ARRAYS DEPENDING ON NUMBER OF FRAMES**************************************************************************************/
 
 	// Find number of frames.
 	nframes = 0;
@@ -675,7 +672,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		snew(beta_lab[i],isize0);
 	}
 
-/**************************INITIALIZE ARRAYS USED TO CALCULATE INTENSITIES**************************************************************************************/
 
 	snew(ct,n2max2+1);
 	snew(st,n2max2+1);
@@ -688,8 +684,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	snew(intens_incoh,n2max2+1);
 	snew(num_count,n2max2+1);
 
-/**************************READ FRAMES IN AND FILL ARRAYS*******************************************************************************************************/
-/**************************CALCULATE INTENSITY******************************************************************************************************************/
 
 	// Coefficients for sine and cosine arrays.
 	for (j=0;j<3;j++)
@@ -839,7 +833,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 		}
     } while (read_next_x(oenv,status,&t,x,box));
-/****************************************************************** PRINT OUT ********************************************************************************************/
 
 	// Now we have the intensity for each type of scattering, averaged over frames and
 	// values of gamma; we have the average intensity for each possible modulus |q|.
@@ -856,7 +849,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	}
 	gmx_ffclose(fpn);
 
-/*    fpn = xvgropen("cohrt_intensity.out", "S(q)", "q [1/nm]", "S(q)", oenv);
     fprintf(fpn, "@type xy\n");
 	for (qq=0;qq<n2max2+1;qq++)
 	{
@@ -876,9 +868,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			fprintf(fpn, "%10g %10g\n",sqrt(qq)*qnorm,intens_incoh[qq]*invsize0/num_count[qq]);
 		}
 	}
-	gmx_ffclose(fpn);*/
+	gmx_ffclose(fpn);
+
 }
-/****************************************************************** MAIN SUBROUTINE **************************************************************************************/
+*/
  
 int gmx_shscorr(int argc, char *argv[])
 {
@@ -1051,7 +1044,7 @@ int gmx_shscorr(int argc, char *argv[])
 	if (n2max < nmax){n2max=nmax;}
 	if (skip < 0){skip = 2*nmax;}
 
-    do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
+/*    do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
@@ -1059,5 +1052,6 @@ int gmx_shscorr(int argc, char *argv[])
            kern_order, std_dev_dens, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
            electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip);
+*/
     return 0;
 }

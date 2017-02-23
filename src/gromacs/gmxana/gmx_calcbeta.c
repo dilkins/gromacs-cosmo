@@ -78,7 +78,7 @@
 
 
 
-
+/*
 static void do_calcbeta(t_topology *top,  const char *fnTRX,
                    const char *fnBETA,
                    const char *fnVCOEFF, const char *fnVGRD,
@@ -227,7 +227,6 @@ static void do_calcbeta(t_topology *top,  const char *fnTRX,
 //           fprintf(flog, "hard core smoothening parameter = %f\n", core_term);
 //           if (ir->nkx > 0 && ir->nky > 0 && ir->nkz > 0)
 //           {
-              /* Mark fourier_spacing as not used */
 //              ir->fourier_spacing = 0;
 //           }
 //           else if (ir->nkx != 0 && ir->nky != 0 && ir->nkz != 0)
@@ -282,7 +281,6 @@ static void do_calcbeta(t_topology *top,  const char *fnTRX,
 
     max_i = isize[0];
 
-    /*allocate memory for beta in lab frame and initialize beta in mol frame*/
 
     snew(x_i1, max_i);
     nframes    = 0;
@@ -351,7 +349,7 @@ static void do_calcbeta(t_topology *top,  const char *fnTRX,
                                                      grid_invspacing, grid_spacing, Emean);
                     //fprintf(stderr,"finished interpolation E kern\n");
 
-                    calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, kern_order, betamean, &beta_mol);
+//                    calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, kern_order, betamean, &beta_mol);
 
                     //char abc[10]="abcdefghij";
                     //fwrite(abc,sizeof(abc[10]),sizeof(abc)/sizeof(abc[0]),fBETA);
@@ -391,7 +389,6 @@ static void do_calcbeta(t_topology *top,  const char *fnTRX,
     fclose(fBETA);
     sfree(x);
 
-    /* Average volume */
     invvol = invvol_sum/nframes;
 
     for (i = 0; i < DIM; i++)
@@ -450,6 +447,8 @@ static void do_calcbeta(t_topology *top,  const char *fnTRX,
         
    } 
 }
+
+*/
 
  
 int gmx_calcbeta(int argc, char *argv[])
@@ -584,11 +583,12 @@ int gmx_calcbeta(int argc, char *argv[])
     fprintf(stderr,"Start indexing the atoms to each molecule\n");
     dipole_atom2mol(&gnx[0], grpindex[0], &(top->mols));
 
-    do_calcbeta(top, ftp2fn(efTRX, NFILE, fnm),
+/*    do_calcbeta(top, ftp2fn(efTRX, NFILE, fnm),
            opt2fn("-o", NFILE, fnm),
            fnVCOEFF, fnVGRD, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnREFMOL, methodt[0], kernt[0], bPBC, 
            kern_order, std_dev_dens, fspacing, 
            kappa, interp_order, kmax,  gnx, grpindex, grpname, ngroups, oenv, eps);
+*/
     return 0;
 }

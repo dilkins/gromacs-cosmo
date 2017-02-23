@@ -334,7 +334,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
            fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
            fprintf(stderr,"number of fourier components for spme is 4pi/3 * the cube of %d\n",kmax);
-           setup_ewald_pair_potential(Skern_E,interp_order,kmax,&FT_pair_pot,invkappa2);
+           setup_ewald_pair_potential(SKern_E,interp_order,kmax,&FT_pair_pot,invkappa2);
            fprintf(stderr,"ewald pair potential has been set-up\n");
         
         }
@@ -715,6 +715,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                                           Emean);
                         vec_trilinear_interpolation_kern(SKern_Esr, &pbc, invcosdirmat, xi,
                                                           Emean);
+               
 
 
 //                        vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
@@ -2519,7 +2520,7 @@ void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *
 }
 
   
-void initialize_free_quantities_on_grid(t_Kern *Kern, grid_spacing, matrix box, gmx_bool bEFIELD,  gmx_bool bALLOC)
+void initialize_free_quantities_on_grid(t_Kern *Kern, real grid_spacing, matrix box, gmx_bool bEFIELD,  gmx_bool bALLOC)
 {
      int ix, iy, iz;
 
@@ -2603,7 +2604,7 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, grid_spacing, matrix box, 
 
 void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc, 
                           matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid,
+                         int *chged_atom_indexes, int n_chged_atoms, 
                          rvec *x, int isize0, real *sigma_vals,real dxcut, real dxcut2)
 {
 	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
@@ -2763,13 +2764,13 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
   }
   sfree(Kern->quantity_on_grid);
 
-  snew(Kern->quantity_on_grid,);
+  snew(Kern->quantity_on_grid,Kern->gl_nx);
   for (ix = 0; ix < Kern->gl_nx; ix++)
   {
       snew(Kern->quantity_on_grid[ix], Kern->gl_ny);
       for (iy = 0; iy < Kern->gl_ny ; iy ++)
       {
-        snew(Kern->quantity_on_grid[ix][iy], Kern_->gl_nz);
+        snew(Kern->quantity_on_grid[ix][iy], Kern->gl_nz);
       }
   }
 
@@ -3166,7 +3167,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirm
 	}
 }
 
-void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean)
+void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean)
 {
      int i, ix, iy, iz, d, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -3277,16 +3278,23 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
 // functions to compute the long range electrostatic potential from David Wilkins
 //
 
-void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2)
+void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2)
 {
 	real ***pair_potential,***Bmatr,***Mmatr;
 	real **bx,**by,**bz, pi, expfac, scalfac, tpi;
 	t_complex ***pK, ***mK;
 	real fx, fy, fz, ***cx, ***cy, ***cz, *cx_temp, *cy_temp, *cz_temp,c, s, f, arg, arg_mult;
 	int i,j,k,m, kx, ky, kz, k2;
+        int *grid;
         
 
+        snew(grid,DIM);
+
 	pi = M_PI ;
+
+        grid[0] = Kern->gl_nx; 
+        grid[1] = Kern->gl_ny;
+        grid[2] = Kern->gl_nz;
 
 	// Initialize pair potential matrix, M and B matrices.
 	snew(pair_potential,grid[0]);
@@ -3649,9 +3657,9 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
 
 }
 
-void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
+void calculate_spme_efield(t_Kern *Kern, t_topology *top,
                          matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid,
+                         int *chged_atom_indexes, int n_chged_atoms,
                          int interp_order, rvec *x, int isize0,
                          t_complex ***FT_pair_pot, rvec *Emean, real eps)
 {
@@ -3665,14 +3673,15 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         t_complex ****qF, ****convF, ***convF_z, ***qF_z, ***convF_y, ***qF_y, ***convF_x, ***qF_x;
         int n, i, j, k, m, d,points[3], kk1, kk2, kk3, idx;
         int ix, iy;
-        int ind0;
+        int ind0, *grid;
         rvec xi, invbox, du;
         rvec ***Qmatr,bsplcoeff, d_bsplcoeff;
 	rvec dielectric;
 
+        snew(grid,DIM);
         invbox[XX] =1.0/ box[XX][XX]; invbox[YY] = 1.0/box[YY][YY]; invbox[ZZ] = 1.0/box[ZZ][ZZ];
-        mult_fac = pow(invvol/(grid_spacing*grid_spacing*grid_spacing),1.0/3.0);
-        for (ix = 0; ix < ; ix++)
+        mult_fac = pow(invvol/(Kern->gl_grid_spacing*Kern->gl_grid_spacing*Kern->gl_grid_spacing),1.0/3.0);
+        for (ix = 0; ix < Kern->gl_nx; ix++)
         {
             for (iy = 0; iy < Kern->gl_ny ; iy ++)
             {
@@ -3688,10 +3697,10 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         sfree(Kern->quantity_on_grid_y);
         sfree(Kern->quantity_on_grid_z);
 
-        snew(Kern->quantity_on_grid_x,);
-        snew(Kern->quantity_on_grid_y,);
-        snew(Kern->quantity_on_grid_z,);
-        for (ix = 0; ix < ; ix++)
+        snew(Kern->quantity_on_grid_x,Kern->gl_nx);
+        snew(Kern->quantity_on_grid_y,Kern->gl_nx);
+        snew(Kern->quantity_on_grid_z,Kern->gl_nx);
+        for (ix = 0; ix < Kern->gl_nx ; ix++)
         {
             snew(Kern->quantity_on_grid_x[ix], Kern->gl_ny);
             snew(Kern->quantity_on_grid_y[ix], Kern->gl_ny);
@@ -3903,6 +3912,7 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
 			}
 		}
 	}
+        sfree(grid);
 
 
 //        (*Emean)[XX] /=(grid[0]*grid[1]*grid[2]);
