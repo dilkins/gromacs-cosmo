@@ -89,7 +89,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   int qbin, int nbinq, int kern_order, real std_dev_dens, real fspacing,
+                   int qbin, int nbinq, int kern_order, real std_dev_dens, real pme_spacing, real realspacing,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
@@ -118,13 +118,11 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     t_Kern        *SKern_rho_O = NULL;
     t_Kern        *SKern_rho_H = NULL;
     t_Kern        *SKern_E = NULL;
+    t_Kern        *SKern_Esr = NULL;
     t_Ion         *Cation=NULL, *Anion=NULL;
-    t_inputrec    *ir=NULL;
     t_complex   ***FT_pair_pot;
     matrix         box, box_pbc;
-    rvec           grid_spacing, grid_invspacing;
     real           inv_std_dev_dens, dens_deb, inv_tot_npoints_local_grid;
-    int            *gridsize;
     int            ePBC = -1, ePBCrdf = -1;
     int            nplots = 1;
     t_block       *mols = NULL;
@@ -231,7 +229,9 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     {
        fprintf(stderr,"about to initialize scalar kernel \n");
        SKern_E = (t_Kern *)calloc(1,sizeof(t_Kern));
+       SKern_Esr = (t_Kern *)calloc(1,sizeof(t_Kern));
        readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_E);
+       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_Esr);
        fprintf(stderr,"scalar kernel coefficients for the electric field read\n");
        SKern_rho_O = (t_Kern *)calloc(1,sizeof(t_Kern));
        readKern(fnCOEFFO, fnRGRDO, NULL, kern_order, std_dev_dens, 0, xref, TRUE, NULL,SKern_rho_O);
@@ -322,42 +322,19 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
         }
         if (kern[0] == 's')
         {
-           ir=(t_inputrec *)calloc(1,sizeof(t_inputrec));
-           ir->nkx = roundf(box[XX][XX]/fspacing); ir->nky = roundf(box[YY][YY]/fspacing); ir->nkz = roundf(box[ZZ][ZZ]/fspacing); ir->fourier_spacing = fspacing;
-//           fprintf(flog,"Compute the intensity using ewald sums\n"); 
-//           fprintf(flog, "screening kappa parameter used in ewald = %f\n", kappa);
-//           fprintf(flog, "hard core smoothening parameter = %f\n", core_term);
-//           if (ir->nkx > 0 && ir->nky > 0 && ir->nkz > 0)
-//           {
-              /* Mark fourier_spacing as not used */
-//              ir->fourier_spacing = 0;
-//           }
-//           else if (ir->nkx != 0 && ir->nky != 0 && ir->nkz != 0)
-//           {
-//               gmx_fatal(FARGS, "Some of the Fourier grid sizes are set, but all of them need to be set.");
-//           }
-//           printf("about to build grid\n");
-//           max_spacing = calc_grid(flog, box, ir->fourier_spacing,
-//                                &(ir->nkx), &(ir->nky), &(ir->nkz));
 
-           fprintf(stderr,"f spacing %f\n",ir->fourier_spacing);
-           fprintf(stderr,"make the grid\n");
-           snew(gridsize, DIM);
-           initialize_free_quantities_on_grid(SKern_rho_O, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize); 
-           initialize_free_quantities_on_grid(SKern_rho_H, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize);
-           initialize_free_quantities_on_grid(SKern_E, ir, &grid_spacing, &grid_invspacing, TRUE, TRUE, &gridsize);
+           initialize_free_quantities_on_grid(SKern_rho_O,  realspacing,box,FALSE, TRUE); 
+           initialize_free_quantities_on_grid(SKern_rho_H,  realspacing, box, FALSE, TRUE);
+           initialize_free_quantities_on_grid(SKern_E, pme_spacing, box, TRUE, TRUE);
+           initialize_free_quantities_on_grid(SKern_Esr, realspacing, box, TRUE, TRUE);
            inv_std_dev_dens = 0.5/(std_dev_dens*std_dev_dens);
            fprintf(stderr,"grid made and quantities on global grid allocated\n");
            fprintf(stderr,"initialize ewald pair potential\n");
            invkappa2 = 1.0/(sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*kappa*kappa);
-           //invkappa2=1.0/(kappa*kappa);
-           //kmax is the upper limit in the summation over wave-vectors in the reciprocal term of spme
-           //kmax is defined as kmax=int(walpha*max(box_lengths))
-           //walpha=pi/rcut and rcut =min(box_lengths)*min(0.5,1.2*natoms^(-1/6))
-           //kmax = (int)(max(max(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*M_PI/(min(min(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*min(0.5,1.2*pow(natoms,-1.0/6.0))));
+
            fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
            fprintf(stderr,"number of fourier components for spme is 4pi/3 * the cube of %d\n",kmax);
-           setup_ewald_pair_potential(gridsize,interp_order,kmax,&FT_pair_pot,invkappa2);
+           setup_ewald_pair_potential(Skern_E,interp_order,kmax,&FT_pair_pot,invkappa2);
            fprintf(stderr,"ewald pair potential has been set-up\n");
         
         }
@@ -654,23 +631,23 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    fprintf(stderr,"put atoms in box\n");
                    put_atoms_in_box(ePBC, box, natoms, x);
                    fprintf(stderr,"about to compute density on a grid\n");
-                   calc_dens_on_grid(SKern_rho_O, ir, &pbc,  mols, molindex, 
+                   calc_dens_on_grid(SKern_rho_O,  &pbc,  mols, molindex, 
                                      atom_id_0, nspecies_0, isize0, x, std_dev_dens,
-                                     inv_std_dev_dens, grid_invspacing, gridsize,grid_spacing);
+                                     inv_std_dev_dens);
                    fprintf(stderr,"computed O dens\n");
-                   calc_dens_on_grid(SKern_rho_H, ir, &pbc,
+                   calc_dens_on_grid(SKern_rho_H,  &pbc,
                                      mols, molindex, atom_id_1, nspecies_1, isize0, x, std_dev_dens,
-                                     inv_std_dev_dens, grid_invspacing, gridsize, grid_spacing);
+                                     inv_std_dev_dens);
                    fprintf(stderr,"computed H dens\n");
                    
-                   calculate_spme_efield(SKern_E, ir, top, box, invvol, mols, molindex,
+                   calculate_spme_efield(SKern_E,  top, box, invvol, mols, molindex,
                                        chged_atom_indexes,n_chged_atoms,
-                                       gridsize, grid_spacing, interp_order, x, isize0, FT_pair_pot, &Emean,eps);
+                                       interp_order, x, isize0, FT_pair_pot, &Emean,eps);
                    fprintf(stderr,"computed electric field with spme\n");
-                   calc_efield_correction(SKern_E, ir, top, &pbc, box, invvol, mols, molindex,
+                   calc_efield_correction(SKern_Esr, top, &pbc, box, invvol, mols, molindex,
                                        chged_atom_indexes, n_chged_atoms,
-                                       gridsize, grid_spacing, grid_invspacing, x, isize0, sigma_vals, ecorrcut,
-                                       ecorrcut2, gridsize);
+                                       x, isize0, sigma_vals, ecorrcut,
+                                       ecorrcut2);
                    fprintf(stderr,"computed real-space correction to electric field\n");
 
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
@@ -695,18 +672,18 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                     else if (kern[0] == 's' )
                     {
 
-                        rotate_local_grid_points(SKern_rho_O, SKern_rho_H, SKern_E, ePBC, box, cosdirmat, xi );
+                        rotate_local_grid_points(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, ePBC, box, cosdirmat, xi );
                         //fprintf(stderr,"finished rotating and translating grid\n");
-                        trilinear_interpolation_kern(SKern_rho_O, ir, &pbc, xi, grid_invspacing, grid_spacing);
+                        trilinear_interpolation_kern(SKern_rho_O,  &pbc, xi);
                         //fprintf(stderr,"finished interpolation O kern\n");
-                        trilinear_interpolation_kern(SKern_rho_H, ir, &pbc, xi, grid_invspacing, grid_spacing);
+                        trilinear_interpolation_kern(SKern_rho_H,  &pbc, xi);
                         //fprintf(stderr,"finished interpolation H kern\n");
-                        if (debug)
-                        {
+//                        if (debug)
+//                        {
                               //vec_trilinear_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
-//                                                         grid_invspacing, grid_spacing, Emean);
-                            bspline_efield(SKern_E, ir, &pbc, invcosdirmat, xi,
-                                           grid_invspacing, interp_order, grid_spacing, Emean);
+//                                                         Kern->gl_invspacing, grid_spacing, Emean);
+//                            bspline_efield(SKern_E, ir, &pbc, invcosdirmat, xi,
+//                                           Kern->gl_invspacing, interp_order, grid_spacing, Emean);
 
 
 			    // Now loop over all other molecules and find the real-space electric field at this position.
@@ -730,18 +707,21 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                             printf("force electrostatic %d %f %f %f\n",i,SKern_E->vec_interp_quant_grid[0][0],
                                              SKern_E->vec_interp_quant_grid[0][1],SKern_E->vec_interp_quant_grid[0][2]);
 */
-                        }
-                        else
-                        {
+//                        }
+//                        else
+//                        {
 
-                        vec_trilinear_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
-                                                         grid_invspacing, grid_spacing, Emean);
-//												vec_lagrange_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
-//																												 grid_invspacing, grid_spacing, Emean, legendre_npoints);
-                        }
+                        vec_trilinear_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi,
+                                                          Emean);
+                        vec_trilinear_interpolation_kern(SKern_Esr, &pbc, invcosdirmat, xi,
+                                                          Emean);
+
+
+//                        vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
+//                        }
                         //fprintf(stderr,"finished interpolation E kern\n");
 
-                        calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, kern_order, betamean, &beta_mol);
+                        calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, betamean, &beta_mol);
                         
 /*                        if (debug)
                         {
@@ -1327,10 +1307,11 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     sfree(mu_ind_mols);
     if (kern[0] == 's')
     {
-        initialize_free_quantities_on_grid(SKern_rho_O, ir, &grid_spacing,&grid_invspacing, FALSE, FALSE, &gridsize);
-        initialize_free_quantities_on_grid(SKern_rho_H, ir, &grid_spacing,&grid_invspacing, FALSE, FALSE, &gridsize);
-        initialize_free_quantities_on_grid(SKern_E, ir, &grid_spacing, &grid_invspacing, TRUE, FALSE, &gridsize);
-        sfree(gridsize);
+        initialize_free_quantities_on_grid(SKern_rho_O, realspacing, box, FALSE, FALSE);
+        initialize_free_quantities_on_grid(SKern_rho_H, realspacing, box, FALSE, FALSE);
+        initialize_free_quantities_on_grid(SKern_E, pme_spacing ,box,TRUE, FALSE);
+        initialize_free_quantities_on_grid(SKern_Esr, realspacing, box, TRUE, FALSE);
+
         fprintf(stderr,"quantities computed on global grid freed\n");
         for ( i = 0; i< SKern_E->ndataset; i++)
         {
@@ -1812,7 +1793,7 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
 }
 
 
-void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, int kern_order, real *betamean, real ****betamol)
+void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, t_Kern *SKern_Esr, int kern_order, real *betamean, real ****betamol)
 {
      int gr_ind, a, b, c, kern_ind;
      real feature_vec, feature_vec_x, feature_vec_y, feature_vec_z;
@@ -1836,9 +1817,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             ind_ex = DIM*(gr_ind + SKern_E->gridpoints*kern_ind) + XX;
             ind_ey = ind_ex + YY;
             ind_ez = ind_ex + ZZ;
-            feature_vec_x = pow(SKern_E->vec_interp_quant_grid[gr_ind][XX] - SKern_E->meanquant[ind_ex], kern_ind+1);
-            feature_vec_y = pow(SKern_E->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_ey], kern_ind+1);
-            feature_vec_z = pow(SKern_E->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_ez], kern_ind+1);
+            feature_vec_x = pow(SKern_E->vec_interp_quant_grid[gr_ind][XX] +  SKern_Esr->vec_interp_quant_grid[gr_ind][XX] - SKern_E->meanquant[ind_ex], kern_ind+1);
+            feature_vec_y = pow(SKern_E->vec_interp_quant_grid[gr_ind][YY] +  SKern_Esr->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_ey], kern_ind+1);
+            feature_vec_z = pow(SKern_E->vec_interp_quant_grid[gr_ind][ZZ] +  SKern_Esr->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_ez], kern_ind+1);
             
 /*
             printf("index of coeff %d\n", ind_ex);
@@ -2512,7 +2493,7 @@ void calc_cosdirmat(const char *fnREFMOL, t_topology *top, int molsize,  int ind
 */
 }
 
-void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, int ePBC, matrix box, matrix cosdirmat,rvec xi)
+void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, t_Kern *SKern_Esr, int ePBC, matrix box, matrix cosdirmat,rvec xi)
 {
   int gr_ind;
    
@@ -2531,55 +2512,55 @@ void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *
 //     rvec_add(xi,SKern_E->grid[gr_ind],SKern_E->translgrid[gr_ind]);
      rvec_add(xi,SKern_E->rotgrid[gr_ind],SKern_E->translgrid[gr_ind]);
      put_atoms_in_box(ePBC, box, 1, &SKern_E->translgrid[gr_ind]);
+     copy_rvec(SKern_E->translgrid[gr_ind],SKern_Esr->translgrid[gr_ind]);
+
 //     printf("X %f %f %f\n",10.0*SKern_E->translgrid[gr_ind][XX], 10.0*SKern_E->translgrid[gr_ind][YY], 10.0*SKern_E->translgrid[gr_ind][ZZ]);
   }
 }
 
   
-void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid_spacing, rvec *grid_invspacing, gmx_bool bEFIELD,  gmx_bool bALLOC, int **gridsize)
+void initialize_free_quantities_on_grid(t_Kern *Kern, grid_spacing, matrix box, gmx_bool bEFIELD,  gmx_bool bALLOC)
 {
      int ix, iy, iz;
 
      if (bALLOC)
      {
-        (*grid_invspacing)[XX] = 1.0/ir->fourier_spacing;
-        (*grid_invspacing)[YY] = 1.0/ir->fourier_spacing;
-        (*grid_invspacing)[ZZ] = 1.0/ir->fourier_spacing;
-   
-        (*grid_spacing)[XX] = ir->fourier_spacing;
-        (*grid_spacing)[YY] = ir->fourier_spacing;
-        (*grid_spacing)[ZZ] = ir->fourier_spacing;
-   
-        srenew(*gridsize,DIM);
-        (*gridsize)[XX] = ir->nkx; (*gridsize)[YY] = ir->nky; (*gridsize)[ZZ] = ir->nkz;     
-   
+        Kern->gl_grid_spacing = grid_spacing;
+        Kern->gl_invspacing = 1.0/grid_spacing;
+        Kern->gl_nx = roundf(box[XX][XX]/grid_spacing); 
+        Kern->gl_ny = roundf(box[YY][YY]/grid_spacing);
+        Kern->gl_nz =  roundf(box[ZZ][ZZ]/grid_spacing);
+
+        snew(Kern->gl_grid_size,DIM);
+        Kern->gl_grid_size[XX]= Kern->gl_nx; Kern->gl_grid_size[YY]= Kern->gl_ny; Kern->gl_grid_size[ZZ]= Kern->gl_nz;
+         
         if (!bEFIELD)
         {
-           snew(Kern->quantity_on_grid,ir->nkx);
-           for (ix = 0; ix < ir->nkx; ix++)
+           snew(Kern->quantity_on_grid,Kern->gl_nx);
+           for (ix = 0; ix < Kern->gl_nx; ix++)
            {
-               snew(Kern->quantity_on_grid[ix], ir->nky);
-               for (iy = 0; iy < ir->nky ; iy ++)
+               snew(Kern->quantity_on_grid[ix], Kern->gl_ny);
+               for (iy = 0; iy < Kern->gl_ny ; iy ++)
                {
-                  snew(Kern->quantity_on_grid[ix][iy], ir->nkz);
+                  snew(Kern->quantity_on_grid[ix][iy], Kern->gl_nz);
                }
            }
         }
         else
         {
-           snew(Kern->quantity_on_grid_x,ir->nkx);
-           snew(Kern->quantity_on_grid_y,ir->nkx);
-           snew(Kern->quantity_on_grid_z,ir->nkx);
-           for (ix = 0; ix < ir->nkx; ix++)
+           snew(Kern->quantity_on_grid_x,Kern->gl_nx);
+           snew(Kern->quantity_on_grid_y,Kern->gl_nx);
+           snew(Kern->quantity_on_grid_z,Kern->gl_nx);
+           for (ix = 0; ix < Kern->gl_nx; ix++)
            {
-               snew(Kern->quantity_on_grid_x[ix], ir->nky);
-               snew(Kern->quantity_on_grid_y[ix], ir->nky);
-               snew(Kern->quantity_on_grid_z[ix], ir->nky);
-               for (iy = 0; iy < ir->nky ; iy ++)
+               snew(Kern->quantity_on_grid_x[ix], Kern->gl_ny);
+               snew(Kern->quantity_on_grid_y[ix], Kern->gl_ny);
+               snew(Kern->quantity_on_grid_z[ix], Kern->gl_ny);
+               for (iy = 0; iy < Kern->gl_ny ; iy ++)
                {
-                  snew(Kern->quantity_on_grid_x[ix][iy], ir->nkz);
-                  snew(Kern->quantity_on_grid_y[ix][iy], ir->nkz);
-                  snew(Kern->quantity_on_grid_z[ix][iy], ir->nkz);
+                  snew(Kern->quantity_on_grid_x[ix][iy], Kern->gl_nz);
+                  snew(Kern->quantity_on_grid_y[ix][iy], Kern->gl_nz);
+                  snew(Kern->quantity_on_grid_z[ix][iy], Kern->gl_nz);
                }
            }     
         }
@@ -2588,9 +2569,9 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
      {
         if (!bEFIELD)
         {
-           for (ix = 0; ix < ir->nkx; ix++)
+           for (ix = 0; ix < Kern->gl_nx; ix++)
            {
-               for (iy = 0; iy < ir->nky ; iy ++)
+               for (iy = 0; iy < Kern->gl_ny ; iy ++)
                {
                   sfree(Kern->quantity_on_grid[ix][iy]);
                }
@@ -2600,9 +2581,9 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
         }
         else
         {
-           for (ix = 0; ix < ir->nkx; ix++)
+           for (ix = 0; ix < Kern->gl_nx; ix++)
            {
-               for (iy = 0; iy < ir->nky ; iy ++)
+               for (iy = 0; iy < Kern->gl_ny ; iy ++)
                {
                   sfree(Kern->quantity_on_grid_x[ix][iy]);
                   sfree(Kern->quantity_on_grid_y[ix][iy]);
@@ -2617,12 +2598,13 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, t_inputrec *ir, rvec *grid
            sfree(Kern->quantity_on_grid_z);
         }
      }
+     sfree(Kern->gl_grid_size);
 }
 
-void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc *pbc, 
+void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc, 
                           matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing, rvec grid_invspacing,
-                         rvec *x, int isize0, real *sigma_vals,real dxcut, real dxcut2, int *gridsize)
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid,
+                         rvec *x, int isize0, real *sigma_vals,real dxcut, real dxcut2)
 {
 	// Calculate (in real space) the correction to the reciprocal-space part of the electric field,
 	// using a different cutoff radius.
@@ -2660,7 +2642,7 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 		mx = 0;
 		for (ix=0;ix<DIM;ix++)
 		{
-			half_size_grid_points[ix] = floor(dxcut*grid_invspacing[ix]) + 1;
+			half_size_grid_points[ix] = floor(dxcut*Kern->gl_invspacing) + 1;
 			size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
 			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
 		}
@@ -2683,9 +2665,9 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 				// Work out what the closest grid point is to this molecule.
 				for (ix=0;ix<DIM;ix++)
 				{
-					bin_ind0[ix] = roundf(xi[ix]*grid_invspacing[ix]);
-					if (bin_ind0[ix] == gridsize[ix]){bin_ind0[ix]=0;}
-					if (bin_ind0[ix] == -1){bin_ind0[ix]=gridsize[ix]-1;}
+					bin_ind0[ix] = roundf(xi[ix]*Kern->gl_invspacing);
+					if (bin_ind0[ix] == Kern->gl_grid_size[ix]){bin_ind0[ix]=0;}
+					if (bin_ind0[ix] == -1){bin_ind0[ix]=Kern->gl_grid_size[ix]-1;}
 				}
 	
 				// Now find out which grid points should be checked.
@@ -2694,24 +2676,24 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 					for (j=0;j<size_nearest_grid_points[ix];j++)
 					{
 						relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
-						if (relevant_grid_points[j][ix] >= gridsize[ix]){relevant_grid_points[j][ix] -= gridsize[ix];}
-						if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += gridsize[ix];}
+						if (relevant_grid_points[j][ix] >= Kern->gl_grid_size[ix]){relevant_grid_points[j][ix] -= Kern->gl_grid_size[ix];}
+						if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += Kern->gl_grid_size[ix];}
 					}
 				}
 	
 				for (ix=0;ix < size_nearest_grid_points[XX];ix++)
 				{
 					ind_x = relevant_grid_points[ix][XX];
-					Kern->rspace_grid[XX] = ind_x * grid_spacing[XX];
+					Kern->gl_grid_point[XX] = ind_x * Kern->gl_grid_spacing;
 					for (iy=0;iy < size_nearest_grid_points[YY];iy++)
 					{
 						ind_y = relevant_grid_points[iy][YY];
-						Kern->rspace_grid[YY] = ind_y * grid_spacing[YY];
+						Kern->gl_grid_point[YY] = ind_y * Kern->gl_grid_spacing;
 						for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
 						{
 							ind_z = relevant_grid_points[iz][ZZ];
-							Kern->rspace_grid[ZZ] = ind_z * grid_spacing[ZZ];
-							pbc_dx(pbc,xi,Kern->rspace_grid,dx);
+							Kern->gl_grid_point[ZZ] = ind_z * Kern->gl_grid_spacing;
+							pbc_dx(pbc,xi,Kern->gl_grid_point,dx);
 							dx2 = norm2(dx);
 							if (dx2<=dxcut2)
 							{
@@ -2726,9 +2708,9 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 								dxb = sqrt(dx2b);
 								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
 								ef0 *= charge*invdx2;
-								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
-								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
-								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ];
+								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] = ef0 * dx[XX];
+								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] = ef0 * dx[YY];
+								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] = ef0 * dx[ZZ];
 							}
 						}
 					}
@@ -2740,9 +2722,9 @@ void calc_efield_correction(t_Kern *Kern, t_inputrec *ir, t_topology *top, t_pbc
 
 }
 
-void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
+void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
                        t_block *mols, int  *molindex[], int atom_id0, int nspecies ,int isize0, rvec *x,
-                       real std_dev_dens, real inv_std_dev_dens, rvec grid_invspacing, int *gridsize, rvec grid_spacing)
+                       real std_dev_dens, real inv_std_dev_dens)
 {
   int   m, i, j, ix, iy, iz, ind0;
   int   ind_x, ind_y, ind_z;
@@ -2752,19 +2734,17 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
   int  *bin_ind_std;
   int  *bin_indmax;
   int  *bin_indmin;
-//  int  *rspace_gridsize;
+//  int  *rspace_Kern->gl_grid_size;
   int   size_nearest_grid_points, half_size_grid_points;
 //  real  ***dens_deb;
   int **relevant_grid_points;
 
-  size_nearest_grid_points = roundf(std_dev_dens*12.0*grid_invspacing[XX]);
+  size_nearest_grid_points = roundf(std_dev_dens*12.0*Kern->gl_invspacing);
   half_size_grid_points = roundf(size_nearest_grid_points*0.5);
   snew(bin_ind0,DIM);
   snew(bin_ind_std,DIM);
   snew(bin_indmax,DIM);
   snew(bin_indmin,DIM);
-
-//  rspace_gridsize[XX] = ir->nkx  ; rspace_gridsize[YY] = ir->nky  ; rspace_gridsize[ZZ] = ir->nkz  ;
 
   snew(relevant_grid_points,size_nearest_grid_points);
   for (i = 0; i < size_nearest_grid_points; i++)
@@ -2773,9 +2753,9 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
   }
 
 
-  for (ix = 0; ix < ir->nkx; ix++)
+  for (ix = 0; ix < Kern->gl_nx; ix++)
   {
-      for (iy = 0; iy < ir->nky ; iy ++)
+      for (iy = 0; iy < Kern->gl_ny ; iy ++)
       {
         sfree(Kern->quantity_on_grid[ix][iy]);
       }
@@ -2783,16 +2763,13 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
   }
   sfree(Kern->quantity_on_grid);
 
-  snew(Kern->quantity_on_grid,ir->nkx);
-  //snew(dens_deb,ir->nkx);
-  for (ix = 0; ix < ir->nkx; ix++)
+  snew(Kern->quantity_on_grid,);
+  for (ix = 0; ix < Kern->gl_nx; ix++)
   {
-      snew(Kern->quantity_on_grid[ix], ir->nky);
-  //    snew(dens_deb[ix],ir->nky);
-      for (iy = 0; iy < ir->nky ; iy ++)
+      snew(Kern->quantity_on_grid[ix], Kern->gl_ny);
+      for (iy = 0; iy < Kern->gl_ny ; iy ++)
       {
-        snew(Kern->quantity_on_grid[ix][iy], ir->nkz);
-   //     snew(dens_deb[ix][iy], ir->nkz);
+        snew(Kern->quantity_on_grid[ix][iy], Kern_->gl_nz);
       }
   }
 
@@ -2804,14 +2781,14 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
       {
          for (ix = 0; ix < DIM; ix ++)
          {
-            bin_ind0[ix] = roundf((x[ind0+m][ix] /*- 0.5*grid_spacing[ix]*/)*grid_invspacing[ix] );
-            if (bin_ind0[ix] == gridsize[ix])
+            bin_ind0[ix] = roundf((x[ind0+m][ix] )*Kern->gl_invspacing );
+            if (bin_ind0[ix] == Kern->gl_grid_size[ix])
             {
                bin_ind0[ix] = 0;
             }
             if (bin_ind0[ix] == -1)
             {
-               bin_ind0[ix] = gridsize[ix] -1 ;
+               bin_ind0[ix] = Kern->gl_grid_size[ix] -1 ;
             }
          }
          for ( j = 0; j < size_nearest_grid_points; j ++)
@@ -2819,13 +2796,13 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
             for (ix = 0; ix < DIM; ix ++)
             {
                relevant_grid_points[j][ix] = j - half_size_grid_points + bin_ind0[ix];
-       	       if (relevant_grid_points[j][ix] >= gridsize[ix])
+       	       if (relevant_grid_points[j][ix] >= Kern->gl_grid_size[ix])
                {
-                  relevant_grid_points[j][ix] -= gridsize[ix];
+                  relevant_grid_points[j][ix] -= Kern->gl_grid_size[ix];
                }
                if (relevant_grid_points[j][ix] < 0)
                {
-                  relevant_grid_points[j][ix] += gridsize[ix];
+                  relevant_grid_points[j][ix] += Kern->gl_grid_size[ix];
                }
             }
          } 
@@ -2833,16 +2810,16 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
          for (ix = 0; ix < size_nearest_grid_points; ix++)
          {
              ind_x = relevant_grid_points[ix][XX];
-             Kern->rspace_grid[XX]=ind_x*grid_spacing[XX];
+             Kern->gl_grid_point[XX]=ind_x*Kern->gl_grid_spacing;
              for (iy = 0; iy < size_nearest_grid_points ; iy ++)
              {
                 ind_y = relevant_grid_points[iy][YY];
-                Kern->rspace_grid[YY]=ind_y*grid_spacing[YY];
+                Kern->gl_grid_point[YY]=ind_y*Kern->gl_grid_spacing;
                 for (iz = 0; iz < size_nearest_grid_points ; iz ++)
                 {
                    ind_z = relevant_grid_points[iz][ZZ];
-                   Kern->rspace_grid[ZZ]=ind_z*grid_spacing[ZZ];  
-                   pbc_dx(pbc,x[ind0+m],Kern->rspace_grid,dx);
+                   Kern->gl_grid_point[ZZ]=ind_z*Kern->gl_grid_spacing;  
+                   pbc_dx(pbc,x[ind0+m],Kern->gl_grid_point,dx);
                    Kern->quantity_on_grid[ind_x][ind_y][ind_z] += exp(-inv_std_dev_dens*norm2(dx)) ;
                 }   
              }
@@ -2862,7 +2839,7 @@ void calc_dens_on_grid(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc,
   sfree(relevant_grid_points);
 }
 
-void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec xi, rvec grid_invspacing, rvec grid_spacing)
+void trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, rvec xi)
 {
      int i, ix, iy, iz, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -2874,37 +2851,38 @@ void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec
 
      for (i = 0; i < Kern->gridpoints; i++)
      {
-         bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
-         bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
-         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
-         if (bin_indx1 > ir->nkx-1)
+         bin_indx1 = ceil((Kern->translgrid[i][XX] )*Kern->gl_invspacing );
+         bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
+         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing );
+         if (bin_indx1 > Kern->gl_nx-1)
          {
             bin_indx1 = 0;
          }
-         if (bin_indz1 > ir->nkz-1)
+         if (bin_indz1 > Kern->gl_nz-1)
          {
             bin_indz1 = 0;
          }
-         if (bin_indy1 > ir->nky-1)
+         if (bin_indy1 > Kern->gl_ny-1)
          {
             bin_indy1 = 0;
          }
 
-         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : ir->nkx-1 ; 
-         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : ir->nky-1 ;
-         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : ir->nkz-1 ;
+         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : Kern->gl_nx -1 ; 
+         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : Kern->gl_ny-1 ;
+         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : Kern->gl_nz-1 ;
 
-         Kern->rspace_grid[XX]=grid_spacing[XX]*bin_indx0;
-         Kern->rspace_grid[YY]=grid_spacing[YY]*bin_indy0;
-         Kern->rspace_grid[ZZ]=grid_spacing[ZZ]*bin_indz0;
+         Kern->gl_grid_point[XX]=Kern->gl_grid_spacing*bin_indx0;
+         Kern->gl_grid_point[YY]=Kern->gl_grid_spacing*bin_indy0;
+         Kern->gl_grid_point[ZZ]=Kern->gl_grid_spacing*bin_indz0;
 
-         pbc_dx(pbc,Kern->translgrid[i],Kern->rspace_grid,delx);
+         pbc_dx(pbc,Kern->translgrid[i],Kern->gl_grid_point,delx);
 
-         xd = fabs(delx[XX])*grid_invspacing[XX];
-         yd = fabs(delx[YY])*grid_invspacing[YY];
-         zd = fabs(delx[ZZ])*grid_invspacing[ZZ];
+         xd = fabs(delx[XX])*Kern->gl_invspacing;
+         yd = fabs(delx[YY])*Kern->gl_invspacing;
+         zd = fabs(delx[ZZ])*Kern->gl_invspacing;
 
          pbc_dx(pbc,xi,Kern->translgrid[i],delx);
+
 
          Kern->interp_quant_grid[i] = Kern->quantity_on_grid[bin_indx0][bin_indy0][bin_indz0]*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
                                      Kern->quantity_on_grid[bin_indx1][bin_indy0][bin_indz0]*xd*(1 - yd)*(1 - zd) +
@@ -2915,12 +2893,12 @@ void trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, rvec
                                      Kern->quantity_on_grid[bin_indx1][bin_indy1][bin_indz0]*xd*yd*(1 - zd) +
                                      Kern->quantity_on_grid[bin_indx1][bin_indy1][bin_indz1]*xd*yd*zd;
          Kern->interp_quant_grid[i] *= Kern->weights[i];
-//         Kern->interp_quant_grid[i] -= Kern->selfterm[i];
      }
 }
 
 
-void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, int interp_order, rvec grid_spacing, rvec Emean)
+/*
+void bspline_efield(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, int interp_order, rvec grid_spacing, rvec Emean)
 {
      int i, a, b, c, kk1, kk2, kk3;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -2930,108 +2908,80 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
      sfree(Kern->vec_interp_quant_grid);
      snew(Kern->vec_interp_quant_grid,Kern->gridpoints);
 
-     snew(Ematr_x,ir->nkx);
-     snew(Ematr_y,ir->nkx);
-     snew(Ematr_z,ir->nkx);
+     snew(Ematr_x,Kern->gl_nx);
+     snew(Ematr_y,Kern->gl_nx);
+     snew(Ematr_z,Kern->gl_nx);
 
-     for (a = 0; a < ir->nkx; a++)
+     for (a = 0; a < Kern->gl_nx; a++)
      {
-         snew(Ematr_x[a],ir->nky);
-         snew(Ematr_y[a],ir->nky);
-         snew(Ematr_z[a],ir->nky);
-         for (b = 0; b < ir->nky; b++)
+         snew(Ematr_x[a],Kern->gl_ny);
+         snew(Ematr_y[a],Kern->gl_ny);
+         snew(Ematr_z[a],Kern->gl_ny);
+         for (b = 0; b < Kern->gl_ny; b++)
          {
-             snew(Ematr_x[a][b],ir->nkz);
-             snew(Ematr_y[a][b],ir->nkz);
-             snew(Ematr_z[a][b],ir->nkz);
+             snew(Ematr_x[a][b],Kern->gl_nz);
+             snew(Ematr_y[a][b],Kern->gl_nz);
+             snew(Ematr_z[a][b],Kern->gl_nz);
          }
      }
 
      for (i = 0; i < Kern->gridpoints; i++)
      {
 
-         bin_indx0 = floor((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
-         bin_indy0 = floor((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
-         bin_indz0 = floor((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+         bin_indx0 = floor((Kern->translgrid[i][XX] )*Kern->gl_invspacing[XX] );
+         bin_indy0 = floor((Kern->translgrid[i][YY] )*Kern->gl_invspacing[YY] );
+         bin_indz0 = floor((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing[ZZ] );
 
-         if (bin_indx0 == ir->nkx  )
+         if (bin_indx0 == Kern->gl_nx  )
          {
             bin_indx0 = 0;
          }
-         if (bin_indy0 == ir->nky )
+         if (bin_indy0 == Kern->gl_ny )
          {
             bin_indy0 = 0;
          }
-         if (bin_indz0 == ir->nkz )
+         if (bin_indz0 == Kern->gl_nz )
          {
             bin_indz0 = 0;
          }
 
-/*         fprintf(stderr,"binx %d biny %d binz %d NEW i %d\n",bin_indx0, bin_indy0, bin_indz0,i);
-
-
-         bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
-         bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
-         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
-
-         if (bin_indx1 > ir->nkx-1)
-         {
-            bin_indx1 = 0;
-         }
-         if (bin_indz1 > ir->nkz-1)
-         {
-            bin_indz1 = 0;
-         }
-         if (bin_indy1 > ir->nky-1)
-         {
-            bin_indy1 = 0;
-         }
-
-         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : ir->nkx-1 ;
-         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : ir->nky-1 ;
-         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : ir->nkz-1 ;
-         
-         fprintf(stderr,"binx %d biny %d binz %d\n",bin_indx0, bin_indy0, bin_indz0);
-
-*/
          vec_t[XX] = 0.0;
          vec_t[YY] = 0.0;
          vec_t[ZZ] = 0.0;
        
          for (a = bin_indx0 - interp_order +1; a <= bin_indx0 + interp_order; a++)
          {
-             du[XX] = Kern->translgrid[i][XX]*grid_invspacing[XX] -a;
-             kk1 = index_wrap(a,ir->nkx);
+             du[XX] = Kern->translgrid[i][XX]*Kern->gl_invspacing[XX] -a;
+             kk1 = index_wrap(a,Kern->gl_nx);
              bsplcoeff[XX] = Bspline(du[XX],interp_order);
              for (b = bin_indy0 - interp_order + 1; b <= bin_indy0 + interp_order; b++)
              {
-                 du[YY] = Kern->translgrid[i][YY]*grid_invspacing[YY]  -b;
-                 kk2 = index_wrap(b,ir->nky);
+                 du[YY] = Kern->translgrid[i][YY]*Kern->gl_invspacing[YY]  -b;
+                 kk2 = index_wrap(b,Kern->gl_ny);
                  bsplcoeff[YY] = Bspline(du[YY],interp_order);
                  for (c = bin_indz0 - interp_order + 1; c <= bin_indz0 + interp_order; c++)
                  {
-                     du[ZZ] = Kern->translgrid[i][ZZ]*grid_invspacing[ZZ] -c;
-                     kk3 = index_wrap(c,ir->nkz);
+                     du[ZZ] = Kern->translgrid[i][ZZ]*Kern->gl_invspacing[ZZ] -c;
+                     kk3 = index_wrap(c,Kern->gl_nz);
                      bsplcoeff[ZZ] = Bspline(du[ZZ],interp_order);
                      
                      vec_t[XX] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_x[kk1][kk2][kk3]-Emean[XX]);
                      vec_t[YY] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_y[kk1][kk2][kk3]-Emean[YY]);
                      vec_t[ZZ] += bsplcoeff[ZZ]*bsplcoeff[YY]*bsplcoeff[XX]*(Kern->quantity_on_grid_z[kk1][kk2][kk3]-Emean[ZZ]);
-//                     printf("vec_t %d %d %d %f %f %f\n",a,b,c,vec_t[XX],vec_t[YY],vec_t[ZZ]);
                      
                  }
              }
          }
 	 
-         /*for (a = bin_indx0 - interp_order +1; a <= bin_indx0 + interp_order; a++)
+         for (a = bin_indx0 - interp_order +1; a <= bin_indx0 + interp_order; a++)
          {
-                kk1 = index_wrap(a,ir->nkx);
+                kk1 = index_wrap(a,);
 		for (b = bin_indy0 - interp_order + 1; b <= bin_indy0 + interp_order; b++) 
                 {
-                        kk2 = index_wrap(b,ir->nky);
+                        kk2 = index_wrap(b,Kern->gl_ny);
 			for (c = bin_indz0 - interp_order + 1; c <= bin_indz0 + interp_order; c++)
                         {
-                                kk3 = index_wrap(c,ir->nkz);
+                                kk3 = index_wrap(c,Kern->gl_nz);
 				vec_t[XX] += Ematr_x[kk1][kk2][kk3];
 				vec_t[YY] += Ematr_y[kk1][kk2][kk3];
 				vec_t[ZZ] += Ematr_z[kk1][kk2][kk3];
@@ -3039,7 +2989,7 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 			}
 		}	
 	 }
-         */
+         
 //         mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
 	// Instead of rotating the electric field into the "molecular frame", here we leave it in the lab frame;
 	// it's assumed that we're going to have only one grid point at the position of the oxygen atom, and thus
@@ -3051,15 +3001,15 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
         printf("four_grid_espl %f %f\n",grid_spacing[ZZ]*bin_indz0,Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ]);
      }
 
-     for ( i = 0; i < ir->nkz-1; i++)
+     for ( i = 0; i < Kern->gl_nz-1; i++)
      {
          printf("grid_efield_z %f %f\n",grid_spacing[ZZ]*i,Kern->quantity_on_grid_z[0][0][i]);
      }
 
 
-     for (a = 0; a < ir->nkx; a++)
+     for (a = 0; a < ; a++)
      {
-         for (b = 0; b < ir->nky; b++)
+         for (b = 0; b < Kern->gl_ny; b++)
          {
              sfree(Ematr_x[a][b]);
              sfree(Ematr_y[a][b]);
@@ -3076,7 +3026,9 @@ void bspline_efield(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirma
 //     fprintf(stderr,"freed everything\n");  
 }
 
-void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean, int npoints)
+*/
+
+void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean, int npoints)
 {
      int i, j, k, l, ix, iy, iz, d, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -3090,32 +3042,32 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
      {
 
 
-         bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
-         bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
-         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+         bin_indx1 = ceil((Kern->translgrid[i][XX] )*Kern->gl_invspacing);
+         bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
+         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing );
 
-         if (bin_indx1 > ir->nkx-1)
+         if (bin_indx1 > -1)
          {
             bin_indx1 = 0;
          }
-         if (bin_indz1 > ir->nkz-1)
+         if (bin_indz1 > Kern->gl_nz-1)
          {
             bin_indz1 = 0;
          }
-         if (bin_indy1 > ir->nky-1)
+         if (bin_indy1 > Kern->gl_ny-1)
          {
             bin_indy1 = 0;
          }
 
-         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : ir->nkx-1 ;
-         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : ir->nky-1 ;
-         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : ir->nkz-1 ;
+         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : Kern->gl_nx-1 ;
+         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : Kern->gl_ny-1 ;
+         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : Kern->gl_nz-1 ;
 
-         Kern->rspace_grid[XX]=grid_spacing[XX]*bin_indx0;
-         Kern->rspace_grid[YY]=grid_spacing[YY]*bin_indy0;
-         Kern->rspace_grid[ZZ]=grid_spacing[ZZ]*bin_indz0;
+         Kern->gl_grid_point[XX]=Kern->gl_grid_spacing*bin_indx0;
+         Kern->gl_grid_point[YY]=Kern->gl_grid_spacing*bin_indy0;
+         Kern->gl_grid_point[ZZ]=Kern->gl_grid_spacing*bin_indz0;
 
-         pbc_dx(pbc,Kern->translgrid[i],Kern->rspace_grid,delx);
+         pbc_dx(pbc,Kern->translgrid[i],Kern->gl_grid_point,delx);
 
 //         int npoints = 1;
 
@@ -3126,9 +3078,9 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 					snew (zlist,2*npoints+1);
 					for (j=1;j<=2*npoints;j++)
 					{
-						xlist[j] = index_wrap(bin_indx1 - npoints + j - 1,ir->nkx);
-						ylist[j] = index_wrap(bin_indy1 - npoints + j - 1,ir->nky);
-						zlist[j] = index_wrap(bin_indz1 - npoints + j - 1,ir->nkz);
+						xlist[j] = index_wrap(bin_indx1 - npoints + j - 1,Kern->gl_nx);
+						ylist[j] = index_wrap(bin_indy1 - npoints + j - 1,Kern->gl_ny);
+						zlist[j] = index_wrap(bin_indz1 - npoints + j - 1,Kern->gl_nz);
 					}
 
 					// Get arrays of the x1, x2, x3 values, as floats. We will take the spatial grid to start from 1.0, and go to the decimal version of
@@ -3165,9 +3117,9 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 
 					// Finally, in terms of the coordinates chosen, what is the point on which we wish to interpolate the electric field?
 					float x1,x2,x3;
-					x1 = (Kern->translgrid[i][XX] * grid_invspacing[XX]) - (float)floor(Kern->translgrid[i][XX] * grid_invspacing[XX]) + (float)npoints;
-					x2 = (Kern->translgrid[i][YY] * grid_invspacing[YY]) - (float)floor(Kern->translgrid[i][YY] * grid_invspacing[YY]) + (float)npoints;
-					x3 = (Kern->translgrid[i][ZZ] * grid_invspacing[ZZ]) - (float)floor(Kern->translgrid[i][ZZ] * grid_invspacing[ZZ]) + (float)npoints;
+					x1 = (Kern->translgrid[i][XX] * Kern->gl_invspacing) - (float)floor(Kern->translgrid[i][XX] * Kern->gl_invspacing) + (float)npoints;
+					x2 = (Kern->translgrid[i][YY] * Kern->gl_invspacing) - (float)floor(Kern->translgrid[i][YY] * Kern->gl_invspacing) + (float)npoints;
+					x3 = (Kern->translgrid[i][ZZ] * Kern->gl_invspacing) - (float)floor(Kern->translgrid[i][ZZ] * Kern->gl_invspacing) + (float)npoints;
 
 					// Now do the three interpolations.
 					float dy;
@@ -3187,26 +3139,26 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 	 j = 1;
 	 for (i=bin_indx0-npoints-1;i<bin_indx0+npoints;i++)
 	 {
-	 	x1a[j] = Kern->grid_spacing[XX]*index_wrap(i,ir->nkx);
+	 	x1a[j] = Kern->grid_spacing[XX]*index_wrap(i,);
 		j++;
 	 }
 	 j = 1;
 	 for (i=bin_indy0-npoints-1;i<bin_indy0+npoints;i++)
 	 {
-		x2a[j] = Kern->grid_spacing[YY]*index_wrap(i,ir->nky);
+		x2a[j] = Kern->grid_spacing[YY]*index_wrap(i,Kern->gl_ny);
 		j++;
 	 }
          j = 1;
          for (i=bin_indz0-npoints-1;i<bin_indz0+npoints;i++)
          {
-                x3a[j] = Kern->grid_spacing[ZZ]*index_wrap(i,ir->nkz);
+                x3a[j] = Kern->grid_spacing[ZZ]*index_wrap(i,Kern->gl_nz);
                 j++;
          }
 */
 
-         xd = fabs(delx[XX])*grid_invspacing[XX];
-         yd = fabs(delx[YY])*grid_invspacing[YY];
-         zd = fabs(delx[ZZ])*grid_invspacing[ZZ];
+         xd = fabs(delx[XX])*Kern->gl_invspacing;
+         yd = fabs(delx[YY])*Kern->gl_invspacing;
+         zd = fabs(delx[ZZ])*Kern->gl_invspacing;
 
 
 
@@ -3214,7 +3166,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, m
 	}
 }
 
-void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec grid_invspacing, rvec grid_spacing, rvec Emean)
+void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean)
 {
      int i, ix, iy, iz, d, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -3236,87 +3188,87 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_inputrec *ir, t_pbc *pbc, 
          }
 */
 
-         bin_indx1 = ceil((Kern->translgrid[i][XX] )*grid_invspacing[XX] );
-         bin_indy1 = ceil((Kern->translgrid[i][YY] )*grid_invspacing[YY] );
-         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*grid_invspacing[ZZ] );
+         bin_indx1 = ceil((Kern->translgrid[i][XX] )*Kern->gl_invspacing);
+         bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
+         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing);
 
-         if (bin_indx1 > ir->nkx-1)
+         if (bin_indx1 > -1)
          {
             bin_indx1 = 0;
          }
-         if (bin_indz1 > ir->nkz-1)
+         if (bin_indz1 > Kern->gl_nz-1)
          {
             bin_indz1 = 0;
          }
-         if (bin_indy1 > ir->nky-1)
+         if (bin_indy1 > Kern->gl_ny-1)
          {
             bin_indy1 = 0;
          }
 
-         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : ir->nkx-1 ;
-         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : ir->nky-1 ;
-         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : ir->nkz-1 ;
+         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : Kern->gl_nx-1 ;
+         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : Kern->gl_ny-1 ;
+         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : Kern->gl_nz-1 ;
 
-         Kern->rspace_grid[XX]=grid_spacing[XX]*bin_indx0;
-         Kern->rspace_grid[YY]=grid_spacing[YY]*bin_indy0;
-         Kern->rspace_grid[ZZ]=grid_spacing[ZZ]*bin_indz0;
+         Kern->gl_grid_point[XX]=Kern->gl_grid_spacing*bin_indx0;
+         Kern->gl_grid_point[YY]=Kern->gl_grid_spacing*bin_indy0;
+         Kern->gl_grid_point[ZZ]=Kern->gl_grid_spacing*bin_indz0;
 
-         pbc_dx(pbc,Kern->translgrid[i],Kern->rspace_grid,delx);
+         pbc_dx(pbc,Kern->translgrid[i],Kern->gl_grid_point,delx);
 
-         xd = fabs(delx[XX])*grid_invspacing[XX];
-         yd = fabs(delx[YY])*grid_invspacing[YY];
-         zd = fabs(delx[ZZ])*grid_invspacing[ZZ];
+         xd = fabs(delx[XX])*Kern->gl_invspacing;
+         yd = fabs(delx[YY])*Kern->gl_invspacing;
+         zd = fabs(delx[ZZ])*Kern->gl_invspacing;
 
 //         pbc_dx(pbc,xi,Kern->translgrid[i],delx);
 
-                                vec_t[XX] = (Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz0]-Emean[XX])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
-                                         (Kern->quantity_on_grid_x[bin_indx1][bin_indy0][bin_indz0]-Emean[XX])*xd*(1 - yd)*(1 - zd) +
-                                         (Kern->quantity_on_grid_x[bin_indx0][bin_indy1][bin_indz0]-Emean[XX])*(1.0 - xd)*yd*(1 - zd) +
-                                         (Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz1]-Emean[XX])*(1.0 - xd)*(1 - yd)*zd +
-                                         (Kern->quantity_on_grid_x[bin_indx1][bin_indy0][bin_indz1]-Emean[XX])*xd*(1 - yd)*zd +
-                                         (Kern->quantity_on_grid_x[bin_indx0][bin_indy1][bin_indz1]-Emean[XX])*(1 - xd)*yd*zd +
-                                         (Kern->quantity_on_grid_x[bin_indx1][bin_indy1][bin_indz0]-Emean[XX])*xd*yd*(1 - zd) +
-                                         (Kern->quantity_on_grid_x[bin_indx1][bin_indy1][bin_indz1]-Emean[XX])*xd*yd*zd;
-
-                                vec_t[YY] = (Kern->quantity_on_grid_y[bin_indx0][bin_indy0][bin_indz0]-Emean[YY])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
-                                         (Kern->quantity_on_grid_y[bin_indx1][bin_indy0][bin_indz0]-Emean[YY])*xd*(1 - yd)*(1 - zd) +
-                                         (Kern->quantity_on_grid_y[bin_indx0][bin_indy1][bin_indz0]-Emean[YY])*(1.0 - xd)*yd*(1 - zd) +
-                                         (Kern->quantity_on_grid_y[bin_indx0][bin_indy0][bin_indz1]-Emean[YY])*(1.0 - xd)*(1 - yd)*zd +
-                                         (Kern->quantity_on_grid_y[bin_indx1][bin_indy0][bin_indz1]-Emean[YY])*xd*(1 - yd)*zd +
-                                         (Kern->quantity_on_grid_y[bin_indx0][bin_indy1][bin_indz1]-Emean[YY])*(1 - xd)*yd*zd +
-                                         (Kern->quantity_on_grid_y[bin_indx1][bin_indy1][bin_indz0]-Emean[YY])*xd*yd*(1 - zd) +
-                                         (Kern->quantity_on_grid_y[bin_indx1][bin_indy1][bin_indz1]-Emean[YY])*xd*yd*zd;
-
-                                vec_t[ZZ] = (Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
-                                         (Kern->quantity_on_grid_z[bin_indx1][bin_indy0][bin_indz0]-Emean[ZZ])*xd*(1 - yd)*(1 - zd) +
-                                         (Kern->quantity_on_grid_z[bin_indx0][bin_indy1][bin_indz0]-Emean[ZZ])*(1.0 - xd)*yd*(1 - zd) +
-                                         (Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz1]-Emean[ZZ])*(1.0 - xd)*(1 - yd)*zd +
-                                         (Kern->quantity_on_grid_z[bin_indx1][bin_indy0][bin_indz1]-Emean[ZZ])*xd*(1 - yd)*zd +
-                                         (Kern->quantity_on_grid_z[bin_indx0][bin_indy1][bin_indz1]-Emean[ZZ])*(1 - xd)*yd*zd +
-                                         (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz0]-Emean[ZZ])*xd*yd*(1 - zd) +
-                                         (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1]-Emean[ZZ])*xd*yd*zd;
-
-//                                 mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
-              copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
+         vec_t[XX] = (Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz0]-Emean[XX])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
+                  (Kern->quantity_on_grid_x[bin_indx1][bin_indy0][bin_indz0]-Emean[XX])*xd*(1 - yd)*(1 - zd) +
+                  (Kern->quantity_on_grid_x[bin_indx0][bin_indy1][bin_indz0]-Emean[XX])*(1.0 - xd)*yd*(1 - zd) +
+                  (Kern->quantity_on_grid_x[bin_indx0][bin_indy0][bin_indz1]-Emean[XX])*(1.0 - xd)*(1 - yd)*zd +
+                  (Kern->quantity_on_grid_x[bin_indx1][bin_indy0][bin_indz1]-Emean[XX])*xd*(1 - yd)*zd +
+                  (Kern->quantity_on_grid_x[bin_indx0][bin_indy1][bin_indz1]-Emean[XX])*(1 - xd)*yd*zd +
+                  (Kern->quantity_on_grid_x[bin_indx1][bin_indy1][bin_indz0]-Emean[XX])*xd*yd*(1 - zd) +
+                  (Kern->quantity_on_grid_x[bin_indx1][bin_indy1][bin_indz1]-Emean[XX])*xd*yd*zd;
+      
+         vec_t[YY] = (Kern->quantity_on_grid_y[bin_indx0][bin_indy0][bin_indz0]-Emean[YY])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
+                  (Kern->quantity_on_grid_y[bin_indx1][bin_indy0][bin_indz0]-Emean[YY])*xd*(1 - yd)*(1 - zd) +
+                  (Kern->quantity_on_grid_y[bin_indx0][bin_indy1][bin_indz0]-Emean[YY])*(1.0 - xd)*yd*(1 - zd) +
+                  (Kern->quantity_on_grid_y[bin_indx0][bin_indy0][bin_indz1]-Emean[YY])*(1.0 - xd)*(1 - yd)*zd +
+                  (Kern->quantity_on_grid_y[bin_indx1][bin_indy0][bin_indz1]-Emean[YY])*xd*(1 - yd)*zd +
+                  (Kern->quantity_on_grid_y[bin_indx0][bin_indy1][bin_indz1]-Emean[YY])*(1 - xd)*yd*zd +
+                  (Kern->quantity_on_grid_y[bin_indx1][bin_indy1][bin_indz0]-Emean[YY])*xd*yd*(1 - zd) +
+                  (Kern->quantity_on_grid_y[bin_indx1][bin_indy1][bin_indz1]-Emean[YY])*xd*yd*zd;
+      
+         vec_t[ZZ] = (Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ])*(1.0 - xd)*(1.0 - zd)*(1 - yd) +
+                  (Kern->quantity_on_grid_z[bin_indx1][bin_indy0][bin_indz0]-Emean[ZZ])*xd*(1 - yd)*(1 - zd) +
+                  (Kern->quantity_on_grid_z[bin_indx0][bin_indy1][bin_indz0]-Emean[ZZ])*(1.0 - xd)*yd*(1 - zd) +
+                  (Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz1]-Emean[ZZ])*(1.0 - xd)*(1 - yd)*zd +
+                  (Kern->quantity_on_grid_z[bin_indx1][bin_indy0][bin_indz1]-Emean[ZZ])*xd*(1 - yd)*zd +
+                  (Kern->quantity_on_grid_z[bin_indx0][bin_indy1][bin_indz1]-Emean[ZZ])*(1 - xd)*yd*zd +
+                  (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz0]-Emean[ZZ])*xd*yd*(1 - zd) +
+                  (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1]-Emean[ZZ])*xd*yd*zd;
+      
+//                           mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+         copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 //            Kern->vec_interp_quant_grid[i][d] *= Kern->weights[i];
 //            Kern->vec_interp_quant_grid[i][d] -= Kern->selfterm[i];
 
          printf("xi %f %f %f\n",xi[XX],xi[YY],xi[ZZ]);
          printf("grid %f %f %f\n",Kern->translgrid[i][XX],Kern->translgrid[i][YY],Kern->translgrid[i][ZZ]);
          printf("grid index %d %d %d\n",bin_indx0,bin_indy0,bin_indz0);
-         printf("nearest grid 0 0 0 %f %f %f %f\n",Kern->rspace_grid[XX],Kern->rspace_grid[YY],Kern->rspace_grid[ZZ],Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ]);
-         printf("nearest grid 1 1 1 %f %f %f %f\n",grid_spacing[XX]*bin_indx1,grid_spacing[XX]*bin_indy1,grid_spacing[XX]*bin_indz1,Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1] -Emean[ZZ]);
+         printf("nearest grid 0 0 0 %f %f %f %f\n",Kern->gl_grid_point[XX],Kern->gl_grid_point[YY],Kern->gl_grid_point[ZZ],Kern->quantity_on_grid_z[bin_indx0][bin_indy0][bin_indz0]-Emean[ZZ]);
+         printf("nearest grid 1 1 1 %f %f %f %f\n",Kern->gl_grid_spacing*bin_indx1,Kern->gl_grid_spacing*bin_indy1,Kern->gl_grid_spacing*bin_indz1,Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1] -Emean[ZZ]);
          printf("molecular_efield_z %f %f\n",Kern->translgrid[i][ZZ],Kern->vec_interp_quant_grid[i][ZZ]);
          printf("distance grid to x %f \n",norm(delx));
          printf("d= %f electric_field_bare= %f %f %f\n",norm(delx),vec_t[XX], vec_t[YY], vec_t[ZZ]);
          printf("d= %f electric field rotated= %f %f %f\n",norm(delx),Kern->vec_interp_quant_grid[i][XX], Kern->vec_interp_quant_grid[i][YY], Kern->vec_interp_quant_grid[i][ZZ]);
-         pbc_dx(pbc,Kern->rspace_grid,xi,delxdeb);
+         pbc_dx(pbc,Kern->gl_grid_point,xi,delxdeb);
          printf("xd %f yd %f zd %f\n",xd,yd,zd);
 
      }
-     for ( i = 0; i < ir->nkz-1; i++)
+     for ( i = 0; i < Kern->gl_nz-1; i++)
      {
-         printf("grid_efield_z %f %f\n",grid_spacing[ZZ]*i,Kern->quantity_on_grid_z[0][0][i]);
+         printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
      }
      gmx_fatal(FARGS,"exit from elfield\n");
 }
@@ -3699,7 +3651,7 @@ void setup_ewald_pair_potential(int *grid, int interp_order, int kmax,t_complex 
 
 void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
                          matrix box, real invvol, t_block *mols, int  *molindex[],
-                         int *chged_atom_indexes, int n_chged_atoms, int *grid, rvec grid_spacing,
+                         int *chged_atom_indexes, int n_chged_atoms, int *grid,
                          int interp_order, rvec *x, int isize0,
                          t_complex ***FT_pair_pot, rvec *Emean, real eps)
 {
@@ -3719,10 +3671,10 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
 	rvec dielectric;
 
         invbox[XX] =1.0/ box[XX][XX]; invbox[YY] = 1.0/box[YY][YY]; invbox[ZZ] = 1.0/box[ZZ][ZZ];
-        mult_fac = pow(invvol/(grid_spacing[XX]*grid_spacing[YY]*grid_spacing[ZZ]),1.0/3.0);
-        for (ix = 0; ix < ir->nkx; ix++)
+        mult_fac = pow(invvol/(grid_spacing*grid_spacing*grid_spacing),1.0/3.0);
+        for (ix = 0; ix < ; ix++)
         {
-            for (iy = 0; iy < ir->nky ; iy ++)
+            for (iy = 0; iy < Kern->gl_ny ; iy ++)
             {
               sfree(Kern->quantity_on_grid_x[ix][iy]);
               sfree(Kern->quantity_on_grid_y[ix][iy]);
@@ -3736,19 +3688,19 @@ void calculate_spme_efield(t_Kern *Kern, t_inputrec *ir, t_topology *top,
         sfree(Kern->quantity_on_grid_y);
         sfree(Kern->quantity_on_grid_z);
 
-        snew(Kern->quantity_on_grid_x,ir->nkx);
-        snew(Kern->quantity_on_grid_y,ir->nkx);
-        snew(Kern->quantity_on_grid_z,ir->nkx);
-        for (ix = 0; ix < ir->nkx; ix++)
+        snew(Kern->quantity_on_grid_x,);
+        snew(Kern->quantity_on_grid_y,);
+        snew(Kern->quantity_on_grid_z,);
+        for (ix = 0; ix < ; ix++)
         {
-            snew(Kern->quantity_on_grid_x[ix], ir->nky);
-            snew(Kern->quantity_on_grid_y[ix], ir->nky);
-            snew(Kern->quantity_on_grid_z[ix], ir->nky);
-            for (iy = 0; iy < ir->nky ; iy ++)
+            snew(Kern->quantity_on_grid_x[ix], Kern->gl_ny);
+            snew(Kern->quantity_on_grid_y[ix], Kern->gl_ny);
+            snew(Kern->quantity_on_grid_z[ix], Kern->gl_ny);
+            for (iy = 0; iy < Kern->gl_ny ; iy ++)
             {
-              snew(Kern->quantity_on_grid_x[ix][iy], ir->nkz);
-              snew(Kern->quantity_on_grid_y[ix][iy], ir->nkz);
-              snew(Kern->quantity_on_grid_z[ix][iy], ir->nkz);
+              snew(Kern->quantity_on_grid_x[ix][iy], Kern->gl_nz);
+              snew(Kern->quantity_on_grid_y[ix][iy], Kern->gl_nz);
+              snew(Kern->quantity_on_grid_z[ix][iy], Kern->gl_nz);
             }
         }
 
@@ -4218,11 +4170,11 @@ int gmx_eshs(int argc, char *argv[])
     };
     static gmx_bool          bPBC = TRUE, bIONS = FALSE;
     static real              electrostatic_cutoff = 1.2, maxelcut = 2.0, kappa = 5.0,  kernstd = 10.0 ;
-    static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05;
+    static real              pme_spacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05, realspacing = 0.02;
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0, legendre_npoints = 1;
-		static real							 kappa2 = -1.0, ecorrcut = -1.0;
+    static real              kappa2 = -1.0, ecorrcut = -1.0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
@@ -4241,7 +4193,8 @@ int gmx_eshs(int argc, char *argv[])
         { "-nbinq",         FALSE, etINT, {&nbinq},
         "how many bins in the reciprocal space" },
         { "-stddens",       FALSE, etREAL, {&std_dev_dens}, "standard deviation to compute density on a grid. Use only with scalar kernel [nm]."},
-        { "-fourierspacing",          FALSE, etREAL, {&fspacing}, "fourier spacing [nm] gives lower bound for number of wave vectors to use in each direction with Ewald, overridden by nkx,nky,nkz " },
+        { "-fourierspacing",          FALSE, etREAL, {&pme_spacing}, "grid spacing for pme [nm] gives lower bound for number of wave vectors to use in each direction with Ewald, overridden by nkx,nky,nkz " },
+        { "-realspacing",          FALSE, etREAL, {&realspacing}, "grid spacing for density and short range electric field [nm]" },
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
         { "-pout",          FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
@@ -4397,8 +4350,9 @@ int gmx_eshs(int argc, char *argv[])
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
-           kern_order, std_dev_dens, fspacing, binwidth,
+           kern_order, std_dev_dens, pme_spacing, realspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut, legendre_npoints);
+           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, 
+           kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut, legendre_npoints);
     return 0;
 }
