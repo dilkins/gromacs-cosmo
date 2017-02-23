@@ -677,6 +677,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                 }
                 for (i = 0; i < isize0; i++)
                 {
+
                     ind0  = mols->index[molindex[g][i]];
                     copy_rvec(x[ind0], xi);
                     for (aa = 0; aa < molsize; aa++)
@@ -735,6 +736,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
                         vec_trilinear_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
                                                          grid_invspacing, grid_spacing, Emean);
+//												vec_lagrange_interpolation_kern(SKern_E, ir, &pbc, invcosdirmat, xi,
+//																												 grid_invspacing, grid_spacing, Emean, legendre_npoints);
                         }
                         //fprintf(stderr,"finished interpolation E kern\n");
 
