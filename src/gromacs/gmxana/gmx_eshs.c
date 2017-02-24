@@ -326,6 +326,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
            initialize_free_quantities_on_grid(SKern_rho_O,  realspacing,box,FALSE, TRUE); 
            initialize_free_quantities_on_grid(SKern_rho_H,  realspacing, box, FALSE, TRUE);
            initialize_free_quantities_on_grid(SKern_E, pme_spacing, box, TRUE, TRUE);
+           fprintf(stderr,"n points pme %d pme spacing %f\n",SKern_E->gl_nx, SKern_E->gl_grid_spacing);
            initialize_free_quantities_on_grid(SKern_Esr, realspacing, box, TRUE, TRUE);
            inv_std_dev_dens = 0.5/(std_dev_dens*std_dev_dens);
            fprintf(stderr,"grid made and quantities on global grid allocated\n");
@@ -671,7 +672,6 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                     }
                     else if (kern[0] == 's' )
                     {
-
                         rotate_local_grid_points(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, ePBC, box, cosdirmat, xi );
                         //fprintf(stderr,"finished rotating and translating grid\n");
                         trilinear_interpolation_kern(SKern_rho_O,  &pbc, xi);
@@ -711,12 +711,9 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 //                        else
 //                        {
 
-                        vec_trilinear_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi,
-                                                          Emean);
-                        vec_trilinear_interpolation_kern(SKern_Esr, &pbc, invcosdirmat, xi,
-                                                          Emean);
-               
-
+                        vec_trilinear_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean);
+                        vec_trilinear_interpolation_kern(SKern_Esr, &pbc, invcosdirmat, xi, Emean);
+                        gmx_fatal(FARGS,"exit from elfield\n");
 
 //                        vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
 //                        }
@@ -2534,6 +2531,9 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, real grid_spacing, matrix 
 
         snew(Kern->gl_grid_size,DIM);
         Kern->gl_grid_size[XX]= Kern->gl_nx; Kern->gl_grid_size[YY]= Kern->gl_ny; Kern->gl_grid_size[ZZ]= Kern->gl_nz;
+
+        fprintf(stderr,"n points %d spacing %f\n",Kern->gl_nx, Kern->gl_grid_spacing);
+
          
         if (!bEFIELD)
         {
@@ -2598,8 +2598,8 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, real grid_spacing, matrix 
            sfree(Kern->quantity_on_grid_y);
            sfree(Kern->quantity_on_grid_z);
         }
+        sfree(Kern->gl_grid_size);
      }
-     sfree(Kern->gl_grid_size);
 }
 
 void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc, 
@@ -2746,6 +2746,7 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
   snew(bin_ind_std,DIM);
   snew(bin_indmax,DIM);
   snew(bin_indmin,DIM);
+
 
   snew(relevant_grid_points,size_nearest_grid_points);
   for (i = 0; i < size_nearest_grid_points; i++)
@@ -3269,7 +3270,6 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
      {
          printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
      }
-     gmx_fatal(FARGS,"exit from elfield\n");
 }
 
 //
@@ -3677,6 +3677,7 @@ void calculate_spme_efield(t_Kern *Kern, t_topology *top,
 	rvec dielectric;
 
         snew(grid,DIM);
+        grid[XX] = Kern->gl_nx; grid[YY] = Kern->gl_ny; grid[ZZ] = Kern->gl_nz;
         invbox[XX] =1.0/ box[XX][XX]; invbox[YY] = 1.0/box[YY][YY]; invbox[ZZ] = 1.0/box[ZZ][ZZ];
         mult_fac = pow(invvol/(Kern->gl_grid_spacing*Kern->gl_grid_spacing*Kern->gl_grid_spacing),1.0/3.0);
         for (ix = 0; ix < Kern->gl_nx; ix++)
