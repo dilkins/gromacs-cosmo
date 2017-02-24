@@ -2,7 +2,7 @@
 #include <math.h>
 #include "gromacs/utility/smalloc.h"
 
-#include "nrutil.c"
+//#include "nrutil.c"
 #include "nrutil.h"
 #include "hyperpol.h"
 void polint(float xa[], float ya[], int n, float x, float *y, float *dy)
@@ -77,8 +77,4 @@ void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float 
 	// Now, given a square that contains some values, we can just do 2d interpolation on it.
 	polin2(x1a,x2a,xysqr,npts,npts,x1,x2,&y,dy);
 
-}
-
-void testfunc()
-{
 }

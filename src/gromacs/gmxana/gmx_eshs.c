@@ -72,8 +72,8 @@
 #include "mtop_util.h"
 #include "typedefs.h"
 #include "force.h"
-#include "nrutil.h"
-#include "lagrange_interp.c"
+//#include "nrutil.h"
+//#include "lagrange_interp.c"
 
 #include "gromacs/legacyheaders/gmx_fatal.h"
 
@@ -3128,8 +3128,6 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirm
 //					polin3(x1a,x2a,x3a,efield_y,2*npoints,x1,x2,x3,vec_t[YY],&dy);
 //					polin3(x1a,x2a,x3a,efield_z,2*npoints,x1,x2,x3,vec_t[ZZ],&dy);
 					copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
-
-					testfunc();
 
 /*
 	 float *x1a,*x2a,*x3a;
