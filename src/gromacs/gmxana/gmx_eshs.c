@@ -323,11 +323,18 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
         if (kern[0] == 's')
         {
 
-           initialize_free_quantities_on_grid(SKern_rho_O,  realspacing,box,FALSE, TRUE); 
-           initialize_free_quantities_on_grid(SKern_rho_H,  realspacing, box, FALSE, TRUE);
-           initialize_free_quantities_on_grid(SKern_E, pme_spacing, box, TRUE, TRUE);
+           initialize_global_kernel_grids(SKern_rho_O,  realspacing,box); 
+           initialize_global_kernel_grids(SKern_rho_H,  realspacing, box);
+           initialize_global_kernel_grids(SKern_E, pme_spacing, box);
+
+           initialize_free_quantities_on_grid(SKern_rho_O, FALSE, TRUE);
+           initialize_free_quantities_on_grid(SKern_rho_H, FALSE, TRUE);
+           initialize_free_quantities_on_grid(SKern_E, TRUE, TRUE);
+
            fprintf(stderr,"n points pme %d pme spacing %f\n",SKern_E->gl_nx, SKern_E->gl_grid_spacing);
-           initialize_free_quantities_on_grid(SKern_Esr, realspacing, box, TRUE, TRUE);
+           initialize_global_kernel_grids(SKern_Esr, realspacing,box);
+           initialize_free_quantities_on_grid(SKern_Esr, TRUE, TRUE);
+
            inv_std_dev_dens = 0.5/(std_dev_dens*std_dev_dens);
            fprintf(stderr,"grid made and quantities on global grid allocated\n");
            fprintf(stderr,"initialize ewald pair potential\n");
@@ -713,7 +720,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
                         vec_trilinear_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean);
                         vec_trilinear_interpolation_kern(SKern_Esr, &pbc, invcosdirmat, xi, Emean);
-                        gmx_fatal(FARGS,"exit from elfield\n");
+//                        gmx_fatal(FARGS,"exit from elfield\n");
 
 //                        vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
 //                        }
@@ -1305,10 +1312,10 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     sfree(mu_ind_mols);
     if (kern[0] == 's')
     {
-        initialize_free_quantities_on_grid(SKern_rho_O, realspacing, box, FALSE, FALSE);
-        initialize_free_quantities_on_grid(SKern_rho_H, realspacing, box, FALSE, FALSE);
-        initialize_free_quantities_on_grid(SKern_E, pme_spacing ,box,TRUE, FALSE);
-        initialize_free_quantities_on_grid(SKern_Esr, realspacing, box, TRUE, FALSE);
+        initialize_free_quantities_on_grid(SKern_rho_O, FALSE, FALSE);
+        initialize_free_quantities_on_grid(SKern_rho_H,FALSE, FALSE);
+        initialize_free_quantities_on_grid(SKern_E,TRUE, FALSE);
+        initialize_free_quantities_on_grid(SKern_Esr,  TRUE, FALSE);
 
         fprintf(stderr,"quantities computed on global grid freed\n");
         for ( i = 0; i< SKern_E->ndataset; i++)
@@ -2516,16 +2523,11 @@ void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *
   }
 }
 
-  
-void initialize_free_quantities_on_grid(t_Kern *Kern, real grid_spacing, matrix box, gmx_bool bEFIELD,  gmx_bool bALLOC)
+void initialize_global_kernel_grids(t_Kern *Kern, real grid_spacing, matrix box)
 {
-     int ix, iy, iz;
-
-     if (bALLOC)
-     {
         Kern->gl_grid_spacing = grid_spacing;
         Kern->gl_invspacing = 1.0/grid_spacing;
-        Kern->gl_nx = roundf(box[XX][XX]/grid_spacing); 
+        Kern->gl_nx = roundf(box[XX][XX]/grid_spacing);
         Kern->gl_ny = roundf(box[YY][YY]/grid_spacing);
         Kern->gl_nz =  roundf(box[ZZ][ZZ]/grid_spacing);
 
@@ -2534,7 +2536,14 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, real grid_spacing, matrix 
 
         fprintf(stderr,"n points %d spacing %f\n",Kern->gl_nx, Kern->gl_grid_spacing);
 
-         
+}
+  
+void initialize_free_quantities_on_grid(t_Kern *Kern, gmx_bool bEFIELD,  gmx_bool bALLOC)
+{
+     int ix, iy, iz;
+
+     if (bALLOC)
+     {
         if (!bEFIELD)
         {
            snew(Kern->quantity_on_grid,Kern->gl_nx);
@@ -2598,7 +2607,6 @@ void initialize_free_quantities_on_grid(t_Kern *Kern, real grid_spacing, matrix 
            sfree(Kern->quantity_on_grid_y);
            sfree(Kern->quantity_on_grid_z);
         }
-        sfree(Kern->gl_grid_size);
      }
 }
 
@@ -2630,6 +2638,11 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
 	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
 	// program.
+    
+        //deallocate and reallocate quantities
+        initialize_free_quantities_on_grid(Kern, TRUE, FALSE);
+        initialize_free_quantities_on_grid(Kern, TRUE, TRUE);
+
 	if (sigma_vals[0] > 0.0)
 	{
 	
@@ -2721,6 +2734,7 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 
 	}
 
+
 }
 
 void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
@@ -2755,25 +2769,9 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
   }
 
 
-  for (ix = 0; ix < Kern->gl_nx; ix++)
-  {
-      for (iy = 0; iy < Kern->gl_ny ; iy ++)
-      {
-        sfree(Kern->quantity_on_grid[ix][iy]);
-      }
-      sfree(Kern->quantity_on_grid[ix]);
-  }
-  sfree(Kern->quantity_on_grid);
+  initialize_free_quantities_on_grid(Kern, FALSE, FALSE);
+  initialize_free_quantities_on_grid(Kern, FALSE, TRUE);
 
-  snew(Kern->quantity_on_grid,Kern->gl_nx);
-  for (ix = 0; ix < Kern->gl_nx; ix++)
-  {
-      snew(Kern->quantity_on_grid[ix], Kern->gl_ny);
-      for (iy = 0; iy < Kern->gl_ny ; iy ++)
-      {
-        snew(Kern->quantity_on_grid[ix][iy], Kern->gl_nz);
-      }
-  }
 
   //fprintf(stderr,"start looping over atoms\n");
   for (i = 0; i < isize0; i++)
@@ -3266,7 +3264,7 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
          printf("xd %f yd %f zd %f\n",xd,yd,zd);
 
      }
-     for ( i = 0; i < Kern->gl_nz-1; i++)
+     for ( i = 0; i < Kern->gl_nz; i++)
      {
          printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
      }
@@ -3680,37 +3678,10 @@ void calculate_spme_efield(t_Kern *Kern, t_topology *top,
         grid[XX] = Kern->gl_nx; grid[YY] = Kern->gl_ny; grid[ZZ] = Kern->gl_nz;
         invbox[XX] =1.0/ box[XX][XX]; invbox[YY] = 1.0/box[YY][YY]; invbox[ZZ] = 1.0/box[ZZ][ZZ];
         mult_fac = pow(invvol/(Kern->gl_grid_spacing*Kern->gl_grid_spacing*Kern->gl_grid_spacing),1.0/3.0);
-        for (ix = 0; ix < Kern->gl_nx; ix++)
-        {
-            for (iy = 0; iy < Kern->gl_ny ; iy ++)
-            {
-              sfree(Kern->quantity_on_grid_x[ix][iy]);
-              sfree(Kern->quantity_on_grid_y[ix][iy]);
-              sfree(Kern->quantity_on_grid_z[ix][iy]);
-            }
-            sfree(Kern->quantity_on_grid_x[ix]);
-            sfree(Kern->quantity_on_grid_y[ix]);
-            sfree(Kern->quantity_on_grid_z[ix]);
-        }
-        sfree(Kern->quantity_on_grid_x);
-        sfree(Kern->quantity_on_grid_y);
-        sfree(Kern->quantity_on_grid_z);
 
-        snew(Kern->quantity_on_grid_x,Kern->gl_nx);
-        snew(Kern->quantity_on_grid_y,Kern->gl_nx);
-        snew(Kern->quantity_on_grid_z,Kern->gl_nx);
-        for (ix = 0; ix < Kern->gl_nx ; ix++)
-        {
-            snew(Kern->quantity_on_grid_x[ix], Kern->gl_ny);
-            snew(Kern->quantity_on_grid_y[ix], Kern->gl_ny);
-            snew(Kern->quantity_on_grid_z[ix], Kern->gl_ny);
-            for (iy = 0; iy < Kern->gl_ny ; iy ++)
-            {
-              snew(Kern->quantity_on_grid_x[ix][iy], Kern->gl_nz);
-              snew(Kern->quantity_on_grid_y[ix][iy], Kern->gl_nz);
-              snew(Kern->quantity_on_grid_z[ix][iy], Kern->gl_nz);
-            }
-        }
+        //deallocate and then reallocate electric field with pme
+        initialize_free_quantities_on_grid(Kern, TRUE, FALSE);
+        initialize_free_quantities_on_grid(Kern, TRUE, TRUE);
 
         //fprintf(stderr,"allocated potential on grid\n ");
 

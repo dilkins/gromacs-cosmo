@@ -195,7 +195,9 @@ void rotate_local_grid_points(t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *
 
 //build global grid in real space used for the calculation of the density and electrostatic potential
 //for the specific case of the scalar kernel
-void initialize_free_quantities_on_grid(t_Kern *Kern,real grid_spacing, matrix box, gmx_bool bEFIELD,  gmx_bool bALLOC);
+void initialize_free_quantities_on_grid(t_Kern *Kern, gmx_bool bEFIELD,  gmx_bool bALLOC);
+void initialize_global_kernel_grids(t_Kern *Kern, real grid_spacing, matrix box);
+
 //compute the density using the scalar kernel
 void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc, 
                        t_block *mols, int  *molindex[], int atom_id0, int nspecies ,int isize0, rvec *x,
