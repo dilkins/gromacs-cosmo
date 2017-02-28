@@ -2722,9 +2722,9 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 								dxb = sqrt(dx2b);
 								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
 								ef0 *= charge*invdx2;
-								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] = ef0 * dx[XX];
-								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] = ef0 * dx[YY];
-								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] = ef0 * dx[ZZ];
+								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
+								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
+								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ];
 							}
 						}
 					}
