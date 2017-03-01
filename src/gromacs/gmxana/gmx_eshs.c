@@ -652,12 +652,16 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                        chged_atom_indexes,n_chged_atoms,
                                        interp_order, x, isize0, FT_pair_pot, &Emean,eps);
                    fprintf(stderr,"computed electric field with spme\n");
-                   calc_efield_correction(SKern_Esr, top, &pbc, box, invvol, mols, molindex,
-                                       chged_atom_indexes, n_chged_atoms,
-                                       x, isize0, sigma_vals, ecorrcut,
-                                       ecorrcut2);
-                   fprintf(stderr,"computed real-space correction to electric field\n");
-
+                   if (sigma_vals[0] > 0.0)
+                   {
+                       calc_efield_correction(SKern_Esr, top, &pbc, box, invvol, mols, molindex,
+                                              chged_atom_indexes, n_chged_atoms,
+                                              x, isize0, sigma_vals, ecorrcut,
+                                              ecorrcut2);
+           
+                       fprintf(stderr,"computed real-space correction to electric field\n");
+                   }
+                   gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
                 }
                 for (i = 0; i < isize0; i++)
@@ -2623,7 +2627,7 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	rvec dx,xi;
 	real charge,dx2,ef0,invdx2,dx2s,dx2b,dxs,dxb,invdx,scfc;
 	int *bin_ind0;
-  int **relevant_grid_points,*half_size_grid_points,*size_nearest_grid_points;
+        int **relevant_grid_points,*half_size_grid_points,*size_nearest_grid_points;
 
 	scfc = 2.0 / sqrt(M_PI);
 
@@ -2640,101 +2644,113 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	// program.
     
         //deallocate and reallocate quantities
-        initialize_free_quantities_on_grid(Kern, TRUE, FALSE);
-        initialize_free_quantities_on_grid(Kern, TRUE, TRUE);
 
-	if (sigma_vals[0] > 0.0)
-	{
+         initialize_free_quantities_on_grid(Kern, TRUE, FALSE);
+         initialize_free_quantities_on_grid(Kern, TRUE, TRUE);
 	
-		// We don't free and re-initialize Kern->quantity_on_grid_XYZ,
-		// because we're going to append to our previous values.
+	 snew(bin_ind0,DIM);
+	 snew(half_size_grid_points,DIM);
+	 snew(size_nearest_grid_points,DIM);
+
+	 mx = 0;
+	 for (ix=0;ix<DIM;ix++)
+	 {
+	 	half_size_grid_points[ix] = floor(dxcut*Kern->gl_invspacing) + 1;
+	 	size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
+	 	if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
+                 fprintf(stderr," size_nearest_grid_points %d\n kernel grid points %d\n",size_nearest_grid_points[ix],Kern->gl_nx);
+                 if (size_nearest_grid_points[ix] >= Kern->gl_nx)
+                 {
+                      fprintf(stderr," the size of the grid used to compute the electric field correction\n");
+                      fprintf(stderr," is larger than the global grid for the electric field correction\n");
+                      gmx_fatal(FARGS," change cutoff for electric field correction or kappa2 or realspacing\n");
+                 }
+
+	 }
 	
-		snew(bin_ind0,DIM);
-		snew(half_size_grid_points,DIM);
-		snew(size_nearest_grid_points,DIM);
+	 snew(relevant_grid_points,mx);
+	 for (i=0;i<mx;i++)
+	 {
+	 	snew(relevant_grid_points[i],DIM);
+	 }
 
-		mx = 0;
-		for (ix=0;ix<DIM;ix++)
-		{
-			half_size_grid_points[ix] = floor(dxcut*Kern->gl_invspacing) + 1;
-			size_nearest_grid_points[ix] = 2 * half_size_grid_points[ix];
-			if (size_nearest_grid_points[ix]>mx){mx = size_nearest_grid_points[ix];}
-		}
+	 // Loop over molecules.
+	 for (n=0;n<isize0;n++)
+	 {
+	 	for (m = 0;m<n_chged_atoms;m++)
+	 	{
+	 		ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
+	 		copy_rvec(x[ind0],xi);
+	 		charge = top->atoms.atom[ind0].q;
+
+	 		// Work out what the closest grid point is to this molecule.
+	 		for (ix=0;ix<DIM;ix++)
+	 		{
+	 			bin_ind0[ix] = roundf(xi[ix]*Kern->gl_invspacing);
+	 			if (bin_ind0[ix] == Kern->gl_grid_size[ix]){bin_ind0[ix]=0;}
+	 			if (bin_ind0[ix] == -1){bin_ind0[ix]=Kern->gl_grid_size[ix]-1;}
+	 		}
 	
-		snew(relevant_grid_points,mx);
-		for (i=0;i<mx;i++)
-		{
-			snew(relevant_grid_points[i],DIM);
-		}
-
-		// Loop over molecules.
-		for (n=0;n<isize0;n++)
-		{
-			for (m = 0;m<n_chged_atoms;m++)
-			{
-				ind0 = mols->index[molindex[0][n]] + chged_atom_indexes[m] ;
-				copy_rvec(x[ind0],xi);
-				charge = top->atoms.atom[ind0].q;
-
-				// Work out what the closest grid point is to this molecule.
-				for (ix=0;ix<DIM;ix++)
-				{
-					bin_ind0[ix] = roundf(xi[ix]*Kern->gl_invspacing);
-					if (bin_ind0[ix] == Kern->gl_grid_size[ix]){bin_ind0[ix]=0;}
-					if (bin_ind0[ix] == -1){bin_ind0[ix]=Kern->gl_grid_size[ix]-1;}
-				}
+	 		// Now find out which grid points should be checked.
+	 		for (ix=0;ix<DIM;ix++)
+	 		{
+	 			for (j=0;j<size_nearest_grid_points[ix];j++)
+	 			{
+	 				relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
+	 				if (relevant_grid_points[j][ix] >= Kern->gl_grid_size[ix]){relevant_grid_points[j][ix] -= Kern->gl_grid_size[ix];}
+	 				if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += Kern->gl_grid_size[ix];}
+	 			}
+	 		}
 	
-				// Now find out which grid points should be checked.
-				for (ix=0;ix<DIM;ix++)
-				{
-					for (j=0;j<size_nearest_grid_points[ix];j++)
-					{
-						relevant_grid_points[j][ix] = j - half_size_grid_points[ix] + bin_ind0[ix];
-						if (relevant_grid_points[j][ix] >= Kern->gl_grid_size[ix]){relevant_grid_points[j][ix] -= Kern->gl_grid_size[ix];}
-						if (relevant_grid_points[j][ix] <  0){relevant_grid_points[j][ix] += Kern->gl_grid_size[ix];}
-					}
-				}
-	
-				for (ix=0;ix < size_nearest_grid_points[XX];ix++)
-				{
-					ind_x = relevant_grid_points[ix][XX];
-					Kern->gl_grid_point[XX] = ind_x * Kern->gl_grid_spacing;
-					for (iy=0;iy < size_nearest_grid_points[YY];iy++)
-					{
-						ind_y = relevant_grid_points[iy][YY];
-						Kern->gl_grid_point[YY] = ind_y * Kern->gl_grid_spacing;
-						for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
-						{
-							ind_z = relevant_grid_points[iz][ZZ];
-							Kern->gl_grid_point[ZZ] = ind_z * Kern->gl_grid_spacing;
-							pbc_dx(pbc,xi,Kern->gl_grid_point,dx);
-							dx2 = norm2(dx);
-							if (dx2<=dxcut2)
-							{
-								// Calculate electric field correction terms.
-								invdx2 = 1.0/dx2;
-								dx2s = dx2 * sigma_vals[2];
-								dx2b = dx2 * sigma_vals[3];
-								ef0 = sigma_vals[1]*exp(-1.0*dx2b) - sigma_vals[0]*exp(-1.0*dx2s);
-								ef0 *= scfc;
-								invdx = sqrt(invdx2);
-								dxs = sqrt(dx2s);
-								dxb = sqrt(dx2b);
-								ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
-								ef0 *= charge*invdx2;
-								Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
-								Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
-								Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ];
-							}
-						}
-					}
-				}
-			}
-		}
-
-	}
-
-
+	 		for (ix=0;ix < size_nearest_grid_points[XX];ix++)
+	 		{
+	 			ind_x = relevant_grid_points[ix][XX];
+	 			Kern->gl_grid_point[XX] = ind_x * Kern->gl_grid_spacing;
+	 			for (iy=0;iy < size_nearest_grid_points[YY];iy++)
+	 			{
+	 				ind_y = relevant_grid_points[iy][YY];
+	 				Kern->gl_grid_point[YY] = ind_y * Kern->gl_grid_spacing;
+                                         Kern->gl_grid_point[ZZ] = 0.0;
+                                         pbc_dx(pbc,xi,Kern->gl_grid_point,dx);
+                                         dx2 = dx[XX]*dx[XX] + dx[YY]*dx[YY];
+                                         if (dx2 <= dxcut2)
+                                         {
+	   					for (iz=0;iz < size_nearest_grid_points[ZZ];iz++)
+	   					{
+	   						ind_z = relevant_grid_points[iz][ZZ];
+	   						Kern->gl_grid_point[ZZ] = ind_z * Kern->gl_grid_spacing;
+	   						pbc_dx(pbc,xi,Kern->gl_grid_point,dx);
+	   						dx2 = norm2(dx);
+	   						if (dx2<=dxcut2)
+	   						{
+	   							// Calculate electric field correction terms.
+	   							invdx2 = 1.0/dx2;
+	   							dx2s = dx2 * sigma_vals[2];
+	   							dx2b = dx2 * sigma_vals[3];
+	   							ef0 = sigma_vals[1]*exp(-dx2b) - sigma_vals[0]*exp(-dx2s);
+	   							ef0 *= scfc;
+	   							invdx = sqrt(invdx2);
+	   							dxs = sqrt(dx2s);
+	   							dxb = sqrt(dx2b);
+	   							ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
+	   							ef0 *= charge*invdx2;
+	   							Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
+	   							Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
+	   							Kern->quantity_on_grid_z[ind_x][ind_y][ind_z] += ef0 * dx[ZZ];
+	   						}
+	   					}
+                                         }
+	 			}
+	 		}
+	 	}
+	 }
+         sfree(bin_ind0);
+         sfree(half_size_grid_points);
+         sfree(size_nearest_grid_points);
+         for (i=0;i<mx;i++)
+         {
+                sfree(relevant_grid_points[i]);
+         }        
 }
 
 void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
@@ -2755,6 +2771,13 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
   int **relevant_grid_points;
 
   size_nearest_grid_points = roundf(std_dev_dens*12.0*Kern->gl_invspacing);
+  fprintf(stderr,"size_nearest_grid_points %d density grid size %d\n",size_nearest_grid_points,Kern->gl_nx);
+
+  if (size_nearest_grid_points >= Kern->gl_nx)
+  {
+     gmx_fatal(FARGS," the size of the grid used to interpolate the density\n is larger than the global grid for the density\n");
+  }
+
   half_size_grid_points = roundf(size_nearest_grid_points*0.5);
   snew(bin_ind0,DIM);
   snew(bin_ind_std,DIM);
@@ -3046,7 +3069,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirm
          bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
          bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing );
 
-         if (bin_indx1 > -1)
+         if (bin_indx1 > Kern->gl_nx -1)
          {
             bin_indx1 = 0;
          }
@@ -3246,7 +3269,8 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
                   (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz0]-Emean[ZZ])*xd*yd*(1 - zd) +
                   (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1]-Emean[ZZ])*xd*yd*zd;
       
-//                           mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+
+         mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
          copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 //            Kern->vec_interp_quant_grid[i][d] *= Kern->weights[i];
 //            Kern->vec_interp_quant_grid[i][d] -= Kern->selfterm[i];
