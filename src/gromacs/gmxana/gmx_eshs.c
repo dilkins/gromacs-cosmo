@@ -3190,7 +3190,7 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
          bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
          bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing);
 
-         if (bin_indx1 > -1)
+         if (bin_indx1 > Kern->gl_nx-1)
          {
             bin_indx1 = 0;
          }
@@ -3246,8 +3246,8 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
                   (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz0]-Emean[ZZ])*xd*yd*(1 - zd) +
                   (Kern->quantity_on_grid_z[bin_indx1][bin_indy1][bin_indz1]-Emean[ZZ])*xd*yd*zd;
       
-//                           mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
-         copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
+         mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
+//         copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 //            Kern->vec_interp_quant_grid[i][d] *= Kern->weights[i];
 //            Kern->vec_interp_quant_grid[i][d] -= Kern->selfterm[i];
 
