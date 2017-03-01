@@ -2775,7 +2775,7 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
 
   if (size_nearest_grid_points >= Kern->gl_nx)
   {
-     gmx_fatal(FARGS," the size of the grid used to interpolate the density\n is larger than the global grid for the density\n");
+     gmx_fatal(FARGS," the size of the grid used to compute the density\n is larger than the global grid for the density\n");
   }
 
   half_size_grid_points = roundf(size_nearest_grid_points*0.5);
@@ -3271,7 +3271,6 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
       
 
          mvmul(invcosdirmat,vec_t,Kern->vec_interp_quant_grid[i]);
-         copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 //            Kern->vec_interp_quant_grid[i][d] *= Kern->weights[i];
 //            Kern->vec_interp_quant_grid[i][d] -= Kern->selfterm[i];
 
