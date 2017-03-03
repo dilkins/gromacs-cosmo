@@ -43,6 +43,8 @@
 
 #include <fftw3.h>
 
+#include <time.h>
+
 #include "sysstuff.h"
 #include "macros.h"
 #include "vec.h"
@@ -136,6 +138,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     real	   rr2, rnorm,fac,beta;
     rvec	   xj, deltar;
     real ecorrcut2;
+    clock_t            start_t;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -639,27 +642,30 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    fprintf(stderr,"put atoms in box\n");
                    put_atoms_in_box(ePBC, box, natoms, x);
                    fprintf(stderr,"about to compute density on a grid\n");
+                   start_t = clock();
                    calc_dens_on_grid(SKern_rho_O,  &pbc,  mols, molindex, 
                                      atom_id_0, nspecies_0, isize0, x, std_dev_dens,
                                      inv_std_dev_dens);
-                   fprintf(stderr,"computed O dens\n");
+                   fprintf(stderr,"computed O dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC;);
+                   start_t = clock();
                    calc_dens_on_grid(SKern_rho_H,  &pbc,
                                      mols, molindex, atom_id_1, nspecies_1, isize0, x, std_dev_dens,
                                      inv_std_dev_dens);
-                   fprintf(stderr,"computed H dens\n");
-                   
+                   fprintf(stderr,"computed H dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC;);
+                   start_t = clock();
                    calculate_spme_efield(SKern_E,  top, box, invvol, mols, molindex,
                                        chged_atom_indexes,n_chged_atoms,
                                        interp_order, x, isize0, FT_pair_pot, &Emean,eps);
-                   fprintf(stderr,"computed electric field with spme\n");
+                   fprintf(stderr,"computed electric field with spme, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC;);
                    if (sigma_vals[0] > 0.0)
                    {
+                       start_t = clock();
                        calc_efield_correction(SKern_Esr, top, &pbc, box, invvol, mols, molindex,
                                               chged_atom_indexes, n_chged_atoms,
                                               x, isize0, sigma_vals, ecorrcut,
                                               ecorrcut2);
            
-                       fprintf(stderr,"computed real-space correction to electric field\n");
+                       fprintf(stderr,"computed real-space correction to electric field, time spent %f\n", (float)(clock() - start_t));
                    }
                    gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
@@ -2638,6 +2644,7 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	// 3: kappa^2
 	// kappa is the value that we use for PME calculations, and kappa2 is the value that we would like
 	// to use for the output electric field.
+        // kappa2 is now the value we need to set for the ML calculations
 
 	// Firstly, check whether or not a user-defined value has been given to the "small" (i.e., target)
 	// sigma. If not (i.e., it's still at its default value of -1.0), then we don't do this part of the
@@ -4203,7 +4210,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
         { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
         { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
-        { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
+        { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the pme term, i.e. erf(r*kappa)/r, in nm^-1" },
         { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
         { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
         { "-kmax_spme",        FALSE, etREAL, {&kmax_spme}, "maximum wave-vector to use when performing th SPME in fourier space. This gives the number of images used to compute spme " },
@@ -4219,7 +4226,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
-        { "-kappa2", FALSE, etREAL, {&kappa2}, "large kappa for real-space correction."},
+        { "-kappa2", FALSE, etREAL, {&kappa2}, "kappa for real-space correction. if used then set equal to the ML one and then set kappa < kappa2 "},
 				{ "-ecorrcut", FALSE, etREAL, {&ecorrcut}, "cutoff length for electric field correction."},
 			  { "-legen_order", FALSE, etINT, {&legendre_npoints}, "Order to use for Legendre interpolation of electric field onto molecular grid."},
     };
@@ -4347,6 +4354,10 @@ int gmx_eshs(int argc, char *argv[])
 		sigma_vals[1] = kappa;
 		sigma_vals[2] = kappa2*kappa2;
 		sigma_vals[3] = kappa*kappa;
+                if (kappa2 != -1 && kappa > kappa2)
+                {
+                   gmx_fatal(FARGS," if kappa2 is set then \n set kappa2 = to the value used from machine learning \n and set kappa <= kappa2 \n");
+                }
 
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
