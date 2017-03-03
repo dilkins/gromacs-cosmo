@@ -646,17 +646,17 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    calc_dens_on_grid(SKern_rho_O,  &pbc,  mols, molindex, 
                                      atom_id_0, nspecies_0, isize0, x, std_dev_dens,
                                      inv_std_dev_dens);
-                   fprintf(stderr,"computed O dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC;);
+                   fprintf(stderr,"computed O dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC);
                    start_t = clock();
                    calc_dens_on_grid(SKern_rho_H,  &pbc,
                                      mols, molindex, atom_id_1, nspecies_1, isize0, x, std_dev_dens,
                                      inv_std_dev_dens);
-                   fprintf(stderr,"computed H dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC;);
+                   fprintf(stderr,"computed H dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC);
                    start_t = clock();
                    calculate_spme_efield(SKern_E,  top, box, invvol, mols, molindex,
                                        chged_atom_indexes,n_chged_atoms,
                                        interp_order, x, isize0, FT_pair_pot, &Emean,eps);
-                   fprintf(stderr,"computed electric field with spme, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC;);
+                   fprintf(stderr,"computed electric field with spme, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC);
                    if (sigma_vals[0] > 0.0)
                    {
                        start_t = clock();
