@@ -647,16 +647,20 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                      atom_id_0, nspecies_0, isize0, x, std_dev_dens,
                                      inv_std_dev_dens);
                    fprintf(stderr,"computed O dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC);
+                   printf("time_spent_O_dens %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
                    start_t = clock();
                    calc_dens_on_grid(SKern_rho_H,  &pbc,
                                      mols, molindex, atom_id_1, nspecies_1, isize0, x, std_dev_dens,
                                      inv_std_dev_dens);
                    fprintf(stderr,"computed H dens, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC);
+                   printf("time_spent_H_dens %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
                    start_t = clock();
                    calculate_spme_efield(SKern_E,  top, box, invvol, mols, molindex,
                                        chged_atom_indexes,n_chged_atoms,
                                        interp_order, x, isize0, FT_pair_pot, &Emean,eps);
                    fprintf(stderr,"computed electric field with spme, time spent %f\n", (float)(clock() - start_t)/ CLOCKS_PER_SEC);
+                   printf("time_spent_spme %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
+
                    if (sigma_vals[0] > 0.0)
                    {
                        start_t = clock();
@@ -666,8 +670,9 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                               ecorrcut2);
            
                        fprintf(stderr,"computed real-space correction to electric field, time spent %f\n", (float)(clock() - start_t));
+                       printf("time_spent_efieldcorr %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
+
                    }
-                   gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
                    //fprintf(stderr,"average field %f %f %f\n", Emean[XX], Emean[YY], Emean[ZZ]);
                 }
                 for (i = 0; i < isize0; i++)
@@ -737,6 +742,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         //fprintf(stderr,"finished interpolation E kern\n");
 
                         calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, betamean, &beta_mol);
+                        gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
                         
 /*                        if (debug)
                         {
@@ -2767,7 +2773,7 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
   int   m, i, j, ix, iy, iz, ind0;
   int   ind_x, ind_y, ind_z;
   rvec  dx;
-  real  inv_std;
+  real  inv_std, dens_cut, dens_cut2, dx2;
   int  *bin_ind0;
   int  *bin_ind_std;
   int  *bin_indmax;
@@ -2777,7 +2783,9 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
 //  real  ***dens_deb;
   int **relevant_grid_points;
 
-  size_nearest_grid_points = roundf(std_dev_dens*12.0*Kern->gl_invspacing);
+  dens_cut = std_dev_dens*6.0;
+  dens_cut2 = dens_cut*dens_cut;
+  size_nearest_grid_points = roundf(dens_cut*Kern->gl_invspacing);
   fprintf(stderr,"size_nearest_grid_points %d density grid size %d\n",size_nearest_grid_points,Kern->gl_nx);
 
   if (size_nearest_grid_points >= Kern->gl_nx)
@@ -2797,7 +2805,6 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
   {
       snew(relevant_grid_points[i],DIM);
   }
-
 
   initialize_free_quantities_on_grid(Kern, FALSE, FALSE);
   initialize_free_quantities_on_grid(Kern, FALSE, TRUE);
@@ -2850,7 +2857,11 @@ void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
                    ind_z = relevant_grid_points[iz][ZZ];
                    Kern->gl_grid_point[ZZ]=ind_z*Kern->gl_grid_spacing;  
                    pbc_dx(pbc,x[ind0+m],Kern->gl_grid_point,dx);
-                   Kern->quantity_on_grid[ind_x][ind_y][ind_z] += exp(-inv_std_dev_dens*norm2(dx)) ;
+                   dx2 = norm2(dx);
+                   if (dx2 < dens_cut2)
+                   {
+                       Kern->quantity_on_grid[ind_x][ind_y][ind_z] += exp(-inv_std_dev_dens*dx2) ;
+                   }
                 }   
              }
          }
