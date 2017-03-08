@@ -669,7 +669,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                                               x, isize0, sigma_vals, ecorrcut,
                                               ecorrcut2);
            
-                       fprintf(stderr,"computed real-space correction to electric field, time spent %f\n", (float)(clock() - start_t));
+                       fprintf(stderr,"computed real-space correction to electric field, time spent %f\n", (float)(clock() - start_t)/CLOCKS_PER_SEC);
                        printf("time_spent_efieldcorr %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
 
                    }
@@ -737,7 +737,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         vec_trilinear_interpolation_kern(SKern_Esr, &pbc, invcosdirmat, xi, Emean);
 //                        gmx_fatal(FARGS,"exit from elfield\n");
 
-//                        vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
+                        vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
 //                        }
                         //fprintf(stderr,"finished interpolation E kern\n");
 
@@ -3164,9 +3164,9 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirm
 
 					// Now do the three interpolations.
 					float dy;
-//					polin3(x1a,x2a,x3a,efield_x,2*npoints,x1,x2,x3,vec_t[XX],&dy);
-//					polin3(x1a,x2a,x3a,efield_y,2*npoints,x1,x2,x3,vec_t[YY],&dy);
-//					polin3(x1a,x2a,x3a,efield_z,2*npoints,x1,x2,x3,vec_t[ZZ],&dy);
+					polin3(x1a,x2a,x3a,efield_x,2*npoints,x1,x2,x3,vec_t[XX],&dy);
+					polin3(x1a,x2a,x3a,efield_y,2*npoints,x1,x2,x3,vec_t[YY],&dy);
+					polin3(x1a,x2a,x3a,efield_z,2*npoints,x1,x2,x3,vec_t[ZZ],&dy);
 					copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 
 /*
@@ -3199,10 +3199,13 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirm
          yd = fabs(delx[YY])*Kern->gl_invspacing;
          zd = fabs(delx[ZZ])*Kern->gl_invspacing;
 
-
-
-         copy_rvec(vec_t,Kern->vec_interp_quant_grid[i]);
 	}
+
+     for ( i = 0; i < Kern->gl_nz; i++)
+     {
+         printf("lagr_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
+     }
+
 }
 
 void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean)
@@ -3231,7 +3234,7 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
          bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
          bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing);
 
-         if (bin_indx1 > -1)
+         if (bin_indx1 > Kern->gl_nx -1)
          {
             bin_indx1 = 0;
          }
@@ -3308,6 +3311,8 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
      for ( i = 0; i < Kern->gl_nz; i++)
      {
          printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
+         printf("grid_efield_x %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_x[0][0][i]);
+         printf("grid_efield_y %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_y[0][0][i]);
      }
 }
 
