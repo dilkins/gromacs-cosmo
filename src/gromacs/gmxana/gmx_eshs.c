@@ -2543,9 +2543,12 @@ void initialize_global_kernel_grids(t_Kern *Kern, real grid_spacing, matrix box)
 {
         Kern->gl_grid_spacing = grid_spacing;
         Kern->gl_invspacing = 1.0/grid_spacing;
-        Kern->gl_nx = roundf(box[XX][XX]/grid_spacing);
-        Kern->gl_ny = roundf(box[YY][YY]/grid_spacing);
-        Kern->gl_nz =  roundf(box[ZZ][ZZ]/grid_spacing);
+        Kern->gl_nx = floor(box[XX][XX]/grid_spacing) +1;
+        Kern->gl_ny = floor(box[YY][YY]/grid_spacing) +1;
+        Kern->gl_nz = floor(box[ZZ][ZZ]/grid_spacing) +1;
+
+        Kern->gl_grid_spacing = (box[XX][XX]/Kern->gl_nx + box[YY][YY]/Kern->gl_ny + box[ZZ][ZZ]/Kern->gl_nz)/3.0;
+        Kern->gl_invspacing = 1.0/Kern->gl_grid_spacing;
 
         snew(Kern->gl_grid_size,DIM);
         Kern->gl_grid_size[XX]= Kern->gl_nx; Kern->gl_grid_size[YY]= Kern->gl_ny; Kern->gl_grid_size[ZZ]= Kern->gl_nz;
