@@ -95,7 +95,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, real eps, real *sigma_vals, real ecorrcut, int legendre_npoints)
+                   const output_env_t oenv, real eps, real *sigma_vals, real ecorrcut, int lagrange_npoints)
 {
     FILE          *fp, *fpn;
     t_trxstatus   *status;
@@ -695,17 +695,21 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                     {
                         rotate_local_grid_points(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, ePBC, box, cosdirmat, xi );
                         //fprintf(stderr,"finished rotating and translating grid\n");
-                        trilinear_interpolation_kern(SKern_rho_O,  &pbc, xi);
-                        //fprintf(stderr,"finished interpolation O kern\n");
-                        trilinear_interpolation_kern(SKern_rho_H,  &pbc, xi);
-                        //fprintf(stderr,"finished interpolation H kern\n");
-                        if (legendre_npoints == 1)
+                        if (lagrange_npoints == 1)
                         {
                            vec_trilinear_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean);
+                           trilinear_interpolation_kern(SKern_rho_O,  &pbc, xi);
+                           //fprintf(stderr,"finished interpolation O kern\n");
+                           trilinear_interpolation_kern(SKern_rho_H,  &pbc, xi);
+                           //fprintf(stderr,"finished interpolation H kern\n");
                         }
                         else
                         {
-                           vec_lagrange_interpolation_kern(SKern_E, &pbc, invcosdirmat, xi, Emean, legendre_npoints);
+                           lagrange_interpolation_kern(SKern_rho_O, lagrange_npoints);
+                           //fprintf(stderr,"finished interpolation O kern\n");
+                           lagrange_interpolation_kern(SKern_rho_H, lagrange_npoints);
+                           //fprintf(stderr,"finished interpolation H kern\n");
+                           vec_lagrange_interpolation_kern(SKern_E, invcosdirmat,  lagrange_npoints);
                         }
                         //fprintf(stderr,"finished interpolation E kern\n");
 
@@ -716,7 +720,10 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 			}
 
                         calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, betamean, &beta_mol);
-//                        gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
+                        if (debug)
+                        {
+                           gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
+                        }
                         
 /*                        if (debug)
                         {
@@ -2916,7 +2923,112 @@ void trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, rvec xi)
 }
 
 
-void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean, int npoints)
+void lagrange_interpolation_kern(t_Kern *Kern,  int npoints)
+{
+     int i, j, k, l, ix, iy, iz, d, ind0;
+     int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
+     real x1, x2, x3, dy;
+     rvec delx, delxdeb;
+     int *xlist,*ylist,*zlist;
+     float *x1a,*x2a,*x3a;
+     float ***quantity;
+
+     snew(quantity,2*npoints+1);
+     for (j=0;j<2*npoints+1;j++)
+     {
+         snew(quantity[j],2*npoints+1);
+
+         for (k=0;k<2*npoints+1;k++)
+         {
+             snew(quantity[j][k],2*npoints+1);
+         }
+     }
+     // Get arrays of the x1, x2, x3 values, as floats. We will take the spatial grid to start from 1.0, and go to the decimal version of
+     // 2*npoints. This will avoid any potential unpleasantness with periodic boundary conditions (wherein the actual coordinates of the
+     // grid points might have a discontinuity).
+     snew(x1a,2*npoints+1);
+     snew(x2a,2*npoints+1);
+     snew(x3a,2*npoints+1);
+     for (j=1;j<=2*npoints;j++)
+     {
+             x1a[j] = (float)j;
+             x2a[j] = (float)j;
+             x3a[j] = (float)j;
+     }
+
+     sfree(Kern->interp_quant_grid);
+     snew(Kern->interp_quant_grid,Kern->gridpoints);
+
+     // Get a list of the points that we will be using for interpolation.
+
+     snew (xlist,2*npoints+1);
+     snew (ylist,2*npoints+1);
+     snew (zlist,2*npoints+1);
+
+     for (i = 0; i < Kern->gridpoints; i++)
+     {
+
+         bin_indx1 = ceil((Kern->translgrid[i][XX] )*Kern->gl_invspacing);
+         bin_indy1 = ceil((Kern->translgrid[i][YY] )*Kern->gl_invspacing );
+         bin_indz1 = ceil((Kern->translgrid[i][ZZ] )*Kern->gl_invspacing );
+
+         if (bin_indx1 > Kern->gl_nx -1)
+         {
+            bin_indx1 = 0;
+         }
+         if (bin_indz1 > Kern->gl_nz-1)
+         {
+            bin_indz1 = 0;
+         }
+         if (bin_indy1 > Kern->gl_ny-1)
+         {
+            bin_indy1 = 0;
+         }
+
+
+         for (j=1;j<=2*npoints;j++)
+         {
+                xlist[j] = index_wrap(bin_indx1 - npoints + j - 1,Kern->gl_nx);
+                ylist[j] = index_wrap(bin_indy1 - npoints + j - 1,Kern->gl_ny);
+                zlist[j] = index_wrap(bin_indz1 - npoints + j - 1,Kern->gl_nz);
+         }
+         for (j=1;j<=2*npoints;j++)
+         {
+                for (k=1;k<=2*npoints;k++)
+                {
+                        for (l=1;l<=2*npoints;l++)
+                        {
+                                quantity[j][k][l] = Kern->quantity_on_grid[xlist[j]][ylist[k]][zlist[l]];
+                        }
+                }
+         }
+
+         // Finally, in terms of the coordinates chosen, what is the point on which we wish to interpolate the density?
+         x1 = (Kern->translgrid[i][XX] * Kern->gl_invspacing) - (float)floor(Kern->translgrid[i][XX] * Kern->gl_invspacing) + (float)npoints;
+         x2 = (Kern->translgrid[i][YY] * Kern->gl_invspacing) - (float)floor(Kern->translgrid[i][YY] * Kern->gl_invspacing) + (float)npoints;
+         x3 = (Kern->translgrid[i][ZZ] * Kern->gl_invspacing) - (float)floor(Kern->translgrid[i][ZZ] * Kern->gl_invspacing) + (float)npoints;
+
+         // Now do the three interpolations.
+         polin3(x1a,x2a,x3a,quantity,2*npoints,x1,x2,x3,&Kern->interp_quant_grid[i],&dy);
+         Kern->interp_quant_grid[i] *= Kern->weights[i];
+
+//         fprintf(stderr,"efield_x %f vec_t %f x1a %f x2a %f x3a %f x1 %f x2 %f x3 %f\n",efield_x[0][0][0], vec_t[XX],x1a[0],x2a[0],x3a[0],x1,x2,x3);
+     }
+
+     for (j=0;j<2*npoints+1;j++)
+     {
+         for (k=0;k<2*npoints+1;k++)
+         {
+             sfree(quantity[j][k]);
+         }
+         sfree(quantity[j]);
+     }
+     sfree(quantity);
+     sfree(x1a);sfree(x2a);sfree(x3a);
+
+}
+
+void vec_lagrange_interpolation_kern(t_Kern *Kern, matrix invcosdirmat, int npoints)
 {
      int i, j, k, l, ix, iy, iz, d, ind0;
      int bin_indx0, bin_indy0, bin_indz0, bin_indx1, bin_indy1, bin_indz1;
@@ -2984,11 +3096,6 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirm
          {
             bin_indy1 = 0;
          }
-
-         bin_indx0 = (bin_indx1 > 0 ) ? bin_indx1  -1 : Kern->gl_nx-1 ;
-         bin_indy0 = (bin_indy1 > 0 ) ? bin_indy1  -1 : Kern->gl_ny-1 ;
-         bin_indz0 = (bin_indz1 > 0 ) ? bin_indz1  -1 : Kern->gl_nz-1 ;
-
 
          for (j=1;j<=2*npoints;j++)
          {
@@ -4011,7 +4118,7 @@ int gmx_eshs(int argc, char *argv[])
     static real              pme_spacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05, realspacing = 0.02;
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
-    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0, legendre_npoints = 1;
+    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0, lagrange_npoints = 1;
     static real              kappa2 = -1.0, ecorrcut = -1.0;
 
     static const char *methodt[] = {NULL, "single", "double" ,NULL };
@@ -4056,7 +4163,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
         { "-kappa2", FALSE, etREAL, {&kappa2}, "kappa for real-space correction. if used then set equal to the ML one and then set kappa < kappa2 "},
 				{ "-ecorrcut", FALSE, etREAL, {&ecorrcut}, "cutoff length for electric field correction."},
-			  { "-legen_order", FALSE, etINT, {&legendre_npoints}, "Order to use for Legendre interpolation of electric field onto molecular grid."},
+			  { "-legen_order", FALSE, etINT, {&lagrange_npoints}, "Order to use for Legendre interpolation of electric field onto molecular grid."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
@@ -4195,6 +4302,6 @@ int gmx_eshs(int argc, char *argv[])
            kern_order, std_dev_dens, pme_spacing, realspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
            electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, 
-           kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut, legendre_npoints);
+           kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut, lagrange_npoints);
     return 0;
 }

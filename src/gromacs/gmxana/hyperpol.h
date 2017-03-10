@@ -250,7 +250,10 @@ void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,float x
 
 void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float x1, float x2, float x3, float *y, float *dy);
 
-void vec_lagrange_interpolation_kern(t_Kern *Kern,  t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean, int npoints);
+void vec_lagrange_interpolation_kern(t_Kern *Kern,  matrix invcosdirmat,  int npoints);
+
+void lagrange_interpolation_kern(t_Kern *Kern,  int npoints);
+
 
 #ifdef __cplusplus
 }
