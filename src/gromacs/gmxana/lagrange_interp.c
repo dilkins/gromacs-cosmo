@@ -29,7 +29,8 @@ void polint(float xa[], float ya[], int n, float x, float *y, float *dy)
 			ho=xa[i]-x;
 			hp=xa[i+m]-x;
 			w=c[i+1]-d[i];
-			if ( (den=ho-hp) == 0.0) nrerror("Error in routine polint");
+                        den = ho-hp;
+			//if ( den == 0.0) nrerror("Error in routine polint");
 			den=w/den;
 			d[i]=hp*den;
 			c[i]=ho*den;
@@ -53,7 +54,7 @@ void polin2(float x1a[], float x2a[], float **ya, int m, int n, float x1,float x
 	free_vector(ymtmp,1,m);
 }
 
-void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float x1, float x2, float x3, float y, float *dy)
+void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float x1, float x2, float x3, float *y, float *dy)
 {
 
 	float **xysqr,ytmp;
@@ -71,10 +72,12 @@ void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float 
 		{
 			// We have chosen a given set of (x,y) values; now we interpolate along the z direction.
 			polint(x3a,yb[i][j],npts,x3,&xysqr[i][j],dy);
+//                        fprintf(stderr,"polint 1 %f\n",xysqr[i][j]);
 		}
 	}
 
 	// Now, given a square that contains some values, we can just do 2d interpolation on it.
-	polin2(x1a,x2a,xysqr,npts,npts,x1,x2,&y,dy);
+	polin2(x1a,x2a,xysqr,npts,npts,x1,x2,y,dy);
+//        fprintf(stderr,"polint 2 %f\n",*y);
 
 }
