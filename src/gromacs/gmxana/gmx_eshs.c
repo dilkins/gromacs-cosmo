@@ -3226,11 +3226,13 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
 
      }
 
-     for ( i = 0; i < Kern->gl_nz; i++)
-     {
-         printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
-         printf("grid_efield_x %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_x[0][0][i]);
-         printf("grid_efield_y %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_y[0][0][i]);
+     if (debug == 1)
+     {  for ( i = 0; i < Kern->gl_nz; i++)
+        {
+           printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
+           printf("grid_efield_x %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_x[0][0][i]);
+           printf("grid_efield_y %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_y[0][0][i]);
+        }
      }
 }
 
@@ -3547,9 +3549,10 @@ void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_compl
 
 
 	// Now Fourier transform the pair potential and the M matrix.
-
+        fprintf(stderr,"Do FFT of pair potential when setting ewald\n");
 	do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
 	do_fft(Mmatr,mK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
+        fprintf(stderr,"Finished to do FFT of pair potential when setting ewald\n");
 
 //	// Multiply the FTed pair potential and element matrix element-wise to get the theta matrix.
 	for (i = 0;i < grid[0];i++)
