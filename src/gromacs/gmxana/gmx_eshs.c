@@ -805,6 +805,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                      }
                 }
                 printf("time_spent_molecules_loop %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
+                fprintf(stderr,"Time spent in loop over molecules %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
+
                 for (rr = 0; rr < nfaces; rr++)
                 {
                    for (tt = 0; tt < nbintheta; tt++)
@@ -1834,7 +1836,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
 //            printf("kern_ind %d gr_ind %d feature_vec_y %f\n",kern_ind, gr_ind, feature_vec_y);
 //            printf("kern_ind %d gr_ind %d feature_vec_z %f\n",kern_ind, gr_ind, feature_vec_z);
 
-
+/*
             if (debug)
             {
             printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
@@ -1850,6 +1852,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
             printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
             }
+*/
 
 /*
             printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]);
@@ -1880,7 +1883,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             feature_vec = pow(SKern_rho_O->interp_quant_grid[gr_ind] - SKern_rho_O->meanquant[ind_rho] , kern_ind+1);
 
 //            printf("kern_ind %d gr_ind %d feature_vec_rho_O %f\n",kern_ind, gr_ind, feature_vec);
-
+/*
             if (debug)
             {
             printf("feature_vec %f\n",feature_vec);
@@ -1889,7 +1892,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
             printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
             }
-
+*/
             for (a = 0; a < DIM ; a++)
             {
                 for (b = 0; b < DIM ; b++)
@@ -1910,7 +1913,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             feature_vec = pow(SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho] , kern_ind+1);
 
 //            printf("kern_ind %d gr_ind %d feature_vec_rho_H %f\n",kern_ind, gr_ind, feature_vec);
-
+/*
 
             if (debug)
             {
@@ -1920,6 +1923,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             printf("coeff_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]);
             }
 
+*/
             for (a = 0; a < DIM ; a++)
             {
                 for (b = 0; b < DIM ; b++)
@@ -3228,6 +3232,7 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
 
      }
 
+/*
      if (debug)
      {  for ( i = 0; i < Kern->gl_nz; i++)
         {
@@ -3236,6 +3241,7 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
            printf("grid_efield_y %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_y[0][0][i]);
         }
      }
+*/
 }
 
 //
