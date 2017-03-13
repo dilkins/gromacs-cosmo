@@ -4163,7 +4163,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
         { "-kappa2", FALSE, etREAL, {&kappa2}, "kappa for real-space correction. if used then set equal to the ML one and then set kappa < kappa2 "},
 				{ "-ecorrcut", FALSE, etREAL, {&ecorrcut}, "cutoff length for electric field correction."},
-			  { "-legen_order", FALSE, etINT, {&lagrange_npoints}, "Order to use for Legendre interpolation of electric field onto molecular grid."},
+			  { "-lagr_order", FALSE, etINT, {&lagrange_npoints}, "Order to use for Lagrange interpolation of electric field onto molecular grid."},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
