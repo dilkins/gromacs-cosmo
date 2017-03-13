@@ -2764,10 +2764,11 @@ real new_erf(real x)
 	result = result*result;
 	result = result*result;
 	result = 1.0 - 1.0/result;
+//	fprintf(stderr,"ERROR %f %f %f\n",result,gmx_erf(x),(result-gmx_erf(x))/gmx_erf(x));
 	return result;*/
 /********************************************************************/
 //	real p = 0.47047, a1 = 0.3480242, a2 = −0.0958798, a3 = 0.7478556;
-	real p,a1,a2,a3;
+/*	real p,a1,a2,a3;
 	p = 0.47047;
 	a1 = 0.3480242;
 	a2 = -0.0958798;
@@ -2776,6 +2777,16 @@ real new_erf(real x)
 	result = exp(-x*x);
 	x = 1.0 / (1.0 + p*x);
 	result *=(a1*x + a2*x*x + a3*x*x*x);
+	result = 1.0 - result;
+	return result;*/
+/********************************************************************/
+	real a1 = 0.0705230784,a2 = 0.0422820123,a3 = 0.0092705272,a4 = 0.0001520143,a5 = 0.0002765672,a6 = 0.0000430638, result;
+	result = 1.0 + a1*x + a2*x*x + a3*x*x*x + a4*x*x*x*x + a5*x*x*x*x*x + a6*x*x*x*x*x*x;
+	result = 1.0/result;
+	result = result*result;
+	result = result*result;
+	result = result*result;
+	result = result*result;
 	result = 1.0 - result;
 	return result;
 /********************************************************************/
