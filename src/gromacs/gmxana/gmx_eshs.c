@@ -674,6 +674,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
                    }
                 }
+                start_t = clock();
                 for (i = 0; i < isize0; i++)
                 {
 
@@ -803,6 +804,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         }
                      }
                 }
+                printf("time_spent_molecules_loop %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
                 for (rr = 0; rr < nfaces; rr++)
                 {
                    for (tt = 0; tt < nbintheta; tt++)
@@ -3226,7 +3228,7 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
 
      }
 
-     if (debug == 1)
+     if (debug)
      {  for ( i = 0; i < Kern->gl_nz; i++)
         {
            printf("grid_efield_z %f %f\n",Kern->gl_grid_spacing*i,Kern->quantity_on_grid_z[0][0][i]);
