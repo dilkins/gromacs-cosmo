@@ -254,6 +254,8 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern,  matrix invcosdirmat,  int np
 
 void lagrange_interpolation_kern(t_Kern *Kern,  int npoints);
 
+real new_erf(real x);
+
 
 #ifdef __cplusplus
 }
