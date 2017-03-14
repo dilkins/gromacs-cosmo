@@ -88,7 +88,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    const char *fnVCOEFF, const char *fnVGRD, const char *fnVINP,
                    const char *fnRGRDO, const char *fnCOEFFO,
                    const char *fnRGRDH, const char *fnCOEFFH, const char *fnMAP,
-                   const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
+                   const char *fnBETACORR, const char *fnFTBETACORR,
+                   const char *fnREFMOL, const char *fnPAIRPOT, gmx_bool bReadPot, gmx_bool bWritePot,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
                    int qbin, int nbinq, int kern_order, real std_dev_dens, real pme_spacing, real realspacing,
@@ -345,7 +346,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
            fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
            fprintf(stderr,"number of fourier components for spme is 4pi/3 * the cube of %d\n",kmax);
-           setup_ewald_pair_potential(SKern_E,interp_order,kmax,&FT_pair_pot,invkappa2);
+           setup_ewald_pair_potential(SKern_E,interp_order,kmax,fnPAIRPOT,bReadPot,bWritePot,&FT_pair_pot,invkappa2);
            fprintf(stderr,"ewald pair potential has been set-up\n");
         
         }
@@ -3290,18 +3291,22 @@ void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdir
 */
 }
 
+
 //
 // functions to compute the long range electrostatic potential from David Wilkins
 //
 
-void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2)
+void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax, 
+                               const char *fnPAIRPOT, gmx_bool bReadPot, gmx_bool bWritePot, 
+                               t_complex ****FT_pair_pot,real invkappa2)
 {
+        FILE *fp;
 	real ***pair_potential,***Bmatr,***Mmatr;
 	real **bx,**by,**bz, pi, expfac, scalfac, tpi;
 	t_complex ***pK, ***mK;
 	real fx, fy, fz, ***cx, ***cy, ***cz, *cx_temp, *cy_temp, *cz_temp,c, s, f, arg, arg_mult;
 	int i,j,k,m, kx, ky, kz, k2;
-        int *grid;
+        int *grid, n_outputs;
         
 
         snew(grid,DIM);
@@ -3311,6 +3316,27 @@ void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_compl
         grid[0] = Kern->gl_nx; 
         grid[1] = Kern->gl_ny;
         grid[2] = Kern->gl_nz;
+
+        if (fnPAIRPOT && bWritePot)
+        {
+           fp = gmx_ffopen(fnPAIRPOT, "w");
+           fprintf(fp, "kmax %d invkappa2 %f gridpoints %d %d %d\n",kmax,invkappa2,grid[0],grid[1],grid[2]);      
+        }
+        else if (fnPAIRPOT && bReadPot)
+        {
+          fp = gmx_ffopen(fnPAIRPOT, "r");
+          char str1[10], str2[10], str3[10];
+          int  kmax_temp, temp0, temp1, temp2;
+          real tempf, tol ;
+          tol = 0.000001;
+          n_outputs = fscanf(fp, "%s %d %s %f %s %d %d %d",str1, &kmax_temp, str2, &tempf, str3, &temp0, &temp1, &temp2);
+          if ( (strcmp(str1,"kmax") != 0) || (strcmp(str2,"invkappa2") != 0) || (strcmp(str3,"gridpoints") != 0) ||
+               (kmax_temp != kmax) || (temp0 != grid[0]) || (temp1 != grid[1]) || (temp2 != grid[2]) || (fabs(tempf - invkappa2) > tol) )
+          {
+               fprintf(stderr,"%s %d %s %f %s %d %d %d invkappa_difference %f\n",str1, kmax_temp, str2, tempf, str3, temp0, temp1, temp2, tempf-invkappa2);
+               gmx_fatal(FARGS,"Error in setup_ewald_pair_potential fnc, check that you are reading the right pair_potential file\n");
+          }                      
+        }
 
 	// Initialize pair potential matrix, M and B matrices.
 	snew(pair_potential,grid[0]);
@@ -3492,93 +3518,52 @@ void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_compl
 	}
 
 	f = 1.0;
-	for (kx = 0;kx <= kmax; kx++)
-	{
-		if (kx==1){f = 2.0;}
-		ky = 0;
-		kz = 0;
-		k2 = kx*kx;
-
-                for (i = 0; i < grid[0]; i ++)
-                {
-                    cx_temp[i]=cx[0][i][kx];
-                }
-
-		// Contributions to the pair potential from ky = 0 and kz = 0
-		if (k2>0)
+        if (!bReadPot)
+        {
+		for (kx = 0;kx <= kmax; kx++)
 		{
-			arg = exp(k2 * expfac)*f*Bmatr[kx][ky][kz]/k2;
-			for (i = 0;i<grid[0];i++)
-			{
-                                arg_mult=arg*cx_temp[i];
-				for (j = 0;j<grid[1];j++)
-				{
-					for (k = 0;k<grid[2];k++)
-					{
-						pair_potential[i][j][k] += arg_mult;
-					}
-				}
-			}
-		}
-
-		// Contributions from ky = 0 and |kz| > 0
-		for (kz = 1;kz <= kmax;kz++)
-		{
+			if (kx==1){f = 2.0;}
 			ky = 0;
-			k2 = kx*kx + kz*kz;
-			arg = exp(k2 * expfac)*2.0*f*Bmatr[kx][ky][kz]/k2;
-                        for (k = 0; k < grid[2]; k++)
-                        {
-                            cz_temp[k]=cz[0][k][kz];
-                        }
-			for (i = 0;i<grid[0];i++)
-			{
-                                arg_mult=arg*cx_temp[i];
-				for (j = 0;j<grid[1];j++)
-				{
-					for (k = 0;k<grid[2];k++)
-					{
-						pair_potential[i][j][k] += arg_mult*cz_temp[k];
-					}
-				}
-			}
-		}
-
-		for (ky = 1;ky <= kmax;ky++)
-		{
-			// Contributions from |ky| > 0 and kz = 0
 			kz = 0;
-			k2 = kx*kx + ky*ky;
-			arg = exp(k2*expfac) *2.0*f*Bmatr[kx][ky][kz]/ k2;
-                        for (j = 0; j < grid[1]; j++)
-                        {
-                            cy_temp[j]=cy[0][j][ky];
-                        }
-			for (i = 0;i<grid[0];i++)
+			k2 = kx*kx;
+	
+	                for (i = 0; i < grid[0]; i ++)
+	                {
+	                    cx_temp[i]=cx[0][i][kx];
+	                }
+	
+			// Contributions to the pair potential from ky = 0 and kz = 0
+			if (k2>0)
 			{
-				for (j = 0;j<grid[1];j++)
-				{
-                                        arg_mult=arg*cx_temp[i]*cy_temp[j];
-					for (k = 0;k<grid[2];k++)
-					{
-						pair_potential[i][j][k] += arg_mult;
-					}
-				}
-			}
-
-			// Contributions from |ky| > 0 and |kz| > 0
-			for (kz = 1;kz <= kmax;kz++)
-			{
-				k2 = kx*kx + ky*ky + kz*kz;
-				arg = exp(k2*expfac)*4.0*f*Bmatr[kx][ky][kz] / k2;
-                                for (k = 0; k <grid[2]; k++)
-                                {
-                                    cz_temp[k]=cz[0][k][kz];
-                                }
+				arg = exp(k2 * expfac)*f*Bmatr[kx][ky][kz]/k2;
 				for (i = 0;i<grid[0];i++)
 				{
+	                                arg_mult=arg*cx_temp[i];
 					for (j = 0;j<grid[1];j++)
-					{       arg_mult=arg*cx_temp[i]*cy_temp[j];
+					{
+						for (k = 0;k<grid[2];k++)
+						{
+							pair_potential[i][j][k] += arg_mult;
+						}
+					}
+				}
+			}
+	
+			// Contributions from ky = 0 and |kz| > 0
+			for (kz = 1;kz <= kmax;kz++)
+			{
+				ky = 0;
+				k2 = kx*kx + kz*kz;
+				arg = exp(k2 * expfac)*2.0*f*Bmatr[kx][ky][kz]/k2;
+	                        for (k = 0; k < grid[2]; k++)
+	                        {
+	                            cz_temp[k]=cz[0][k][kz];
+	                        }
+				for (i = 0;i<grid[0];i++)
+				{
+	                                arg_mult=arg*cx_temp[i];
+					for (j = 0;j<grid[1];j++)
+					{
 						for (k = 0;k<grid[2];k++)
 						{
 							pair_potential[i][j][k] += arg_mult*cz_temp[k];
@@ -3586,22 +3571,100 @@ void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_compl
 					}
 				}
 			}
+	
+			for (ky = 1;ky <= kmax;ky++)
+			{
+				// Contributions from |ky| > 0 and kz = 0
+				kz = 0;
+				k2 = kx*kx + ky*ky;
+				arg = exp(k2*expfac) *2.0*f*Bmatr[kx][ky][kz]/ k2;
+	                        for (j = 0; j < grid[1]; j++)
+	                        {
+	                            cy_temp[j]=cy[0][j][ky];
+	                        }
+				for (i = 0;i<grid[0];i++)
+				{
+					for (j = 0;j<grid[1];j++)
+					{
+	                                        arg_mult=arg*cx_temp[i]*cy_temp[j];
+						for (k = 0;k<grid[2];k++)
+						{
+							pair_potential[i][j][k] += arg_mult;
+						}
+					}
+				}
+	
+				// Contributions from |ky| > 0 and |kz| > 0
+				for (kz = 1;kz <= kmax;kz++)
+				{
+					k2 = kx*kx + ky*ky + kz*kz;
+					arg = exp(k2*expfac)*4.0*f*Bmatr[kx][ky][kz] / k2;
+	                                for (k = 0; k <grid[2]; k++)
+	                                {
+	                                    cz_temp[k]=cz[0][k][kz];
+	                                }
+					for (i = 0;i<grid[0];i++)
+					{
+						for (j = 0;j<grid[1];j++)
+						{       arg_mult=arg*cx_temp[i]*cy_temp[j];
+							for (k = 0;k<grid[2];k++)
+							{
+								pair_potential[i][j][k] += arg_mult*cz_temp[k];
+							}
+						}
+					}
+				}
+			}
 		}
-	}
-
+        }
 	// Scale the pair potential here to avoid having to do so later on.
-	for (i=0;i<grid[0];i++)
-	{
-		for (j=0;j<grid[1];j++)
+        if (bWritePot && fnPAIRPOT)
+        {
+	   for (i=0;i<grid[0];i++)
+	   {
+	    	for (j=0;j<grid[1];j++)
 		{
 			for (k=0;k<grid[2];k++)
 			{
 				pair_potential[i][j][k] *= scalfac;
+                                fprintf(fp, "%20.16f\n",pair_potential[i][j][k]);
 			}
 		}
-	}
+	   }  
+        }
+        else if (bReadPot && fnPAIRPOT)
+        {
+           for (i=0;i<grid[0];i++)
+           {
+                for (j=0;j<grid[1];j++)
+                {
+                        for (k=0;k<grid[2];k++)
+                        {
+                                n_outputs = fscanf(fp, "%f", &pair_potential[i][j][k]);
+                        }
+                }
+           }
+           fprintf(stderr,"%d %d %d\n",i,j,k);
+           fprintf(stderr,"%f\n",pair_potential[i-1][j-1][k-1]);  
+        }
+        else 
+        {
+           for (i=0;i<grid[0];i++)
+           {
+                for (j=0;j<grid[1];j++)
+                {
+                        for (k=0;k<grid[2];k++)
+                        {
+                                pair_potential[i][j][k] *= scalfac;
+                        }
+                }
+           }
+        }
 
-
+        if (bReadPot || bWritePot)
+        {
+           gmx_ffclose(fp);
+        }
 	// Now Fourier transform the pair potential and the M matrix.
         fprintf(stderr,"Do FFT of pair potential when setting ewald\n");
 	do_fft(pair_potential,pK,grid,1.0,GMX_FFT_REAL_TO_COMPLEX);
@@ -4170,7 +4233,7 @@ int gmx_eshs(int argc, char *argv[])
         "pout, pin, are the angles formed between the polarization vectors and the scattering plane.",
         "Common polarization combinations are PSS, PPP, SPP, SSS . [PAR]",
     };
-    static gmx_bool          bPBC = TRUE, bIONS = FALSE;
+    static gmx_bool          bPBC = TRUE, bIONS = FALSE, bReadPot = FALSE, bWritePot = FALSE;
     static real              electrostatic_cutoff = 1.2, maxelcut = 2.0, kappa = 5.0,  kernstd = 10.0 ;
     static real              pme_spacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05, realspacing = 0.02;
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
@@ -4215,6 +4278,10 @@ int gmx_eshs(int argc, char *argv[])
         { "-an",     FALSE, etSTR, {&anname}, "name of anion"},
         { "-pbc",      FALSE, etBOOL, {&bPBC},
           "Use periodic boundary conditions for computing distances. Always use, results without PBC not tested." },
+        { "-rpot",      FALSE, etBOOL, {&bReadPot},
+          "Read pair potential file." },
+        { "-wpot",      FALSE, etBOOL, {&bWritePot},
+          "Write pair potential file." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
         { "-eps",	FALSE, etREAL, {&eps}, "dielectric constant"},
@@ -4223,7 +4290,7 @@ int gmx_eshs(int argc, char *argv[])
 			  { "-lagr_order", FALSE, etINT, {&lagrange_npoints}, "Order to use for Lagrange interpolation of electric field onto molecular grid."},
     };
 #define NPA asize(pa)
-    const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
+    const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL, *fnPAIRPOT =NULL;
     const char        *fnVCOEFF=NULL, *fnVGRD=NULL, *fnVINP=NULL;
     const char        *fnRGRDO=NULL, *fnRGRDH=NULL, *fnCOEFFO=NULL, *fnCOEFFH=NULL;
     const char        *fnMAP=NULL;
@@ -4245,6 +4312,7 @@ int gmx_eshs(int argc, char *argv[])
         { efDAT, "-rhocoeffH",   "rhocoeffH.dat", ffOPTRD},
         { efDAT, "-rhocoeffO",   "rhocoeffO.dat", ffOPTRD},
         { efDAT, "-refmol",  "refmol.dat", ffOPTRD},
+        { efDAT, "-pairpot",  "pairpotential.dat", ffOPTRD},
         { efDAT, "-ewlog",   "ewaldlog.dat",ffOPTWR},
         { efTPS, NULL,  NULL,     ffREAD },
         { efNDX, NULL,  NULL,     ffOPTRD },
@@ -4273,6 +4341,7 @@ int gmx_eshs(int argc, char *argv[])
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
     fnMAP = opt2fn_null("-emap", NFILE,fnm);
     fnVCOEFF = opt2fn_null("-vcoeff", NFILE,fnm);
+    fnPAIRPOT = opt2fn_null("-pairpot", NFILE,fnm);
     fnVGRD = opt2fn_null("-vgrid", NFILE,fnm);
     fnVINP = opt2fn_null("-vinp", NFILE,fnm);
     fnRGRDO = opt2fn_null("-rhogridO", NFILE,fnm);
@@ -4295,6 +4364,20 @@ int gmx_eshs(int argc, char *argv[])
        if (!fnVCOEFF || !fnVGRD || !fnRGRDO || !fnRGRDH || !fnCOEFFO || !fnCOEFFH)
        {
           gmx_fatal(FARGS, "specify all files for scalar kernel using -vcoeff, -vgrid, -vinp, -rhogridO, -rhogridH, -rhocoeffO, rhocoeffH\n");
+       }
+       if (fnPAIRPOT)
+       {
+          fprintf(stderr,"Option to provide pair potential file has ben set\n");
+          fprintf(stderr,"Be careful that with this option a pair_potential file has to be precomputed\n");
+          fprintf(stderr,"The pair potential file depends on kmax_spme, kappa and on the number of grid points of pme\n");
+          if (bReadPot && bWritePot)
+          {
+             gmx_fatal(FARGS,"Cannot specify to both read and write the pair potential file\n");
+          }
+       }
+       else if (bReadPot || bWritePot)
+       {
+             gmx_fatal(FARGS,"Give as input the pair potential file\n");
        }
     }
     else if ((*kernt)[0] == 'm')
@@ -4356,7 +4439,8 @@ int gmx_eshs(int argc, char *argv[])
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
-           fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
+           fnREFMOL, fnPAIRPOT, bReadPot, bWritePot,
+           methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, pme_spacing, realspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
            electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, 

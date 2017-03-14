@@ -230,7 +230,9 @@ real Bspline(real x,int n);
 long long combi(int n,int k);
 
 void do_fft(real ***rmatr,t_complex ***kmatr,int *dims, real multiplication_factor, int fwbck);
-void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,t_complex ****FT_pair_pot,real invkappa2);
+void setup_ewald_pair_potential(t_Kern *Kern, int interp_order, int kmax,
+                                const char *fnPAIRPOT, gmx_bool bReadPot, gmx_bool bWritePot,
+                                t_complex ****FT_pair_pot,real invkappa2);
 void calculate_spme_efield(t_Kern *Kern, t_topology *top,  
                           matrix box, real invvol, t_block *mols, int  *molindex[],
                          int *chged_atom_indexes, int n_chged_atoms,
