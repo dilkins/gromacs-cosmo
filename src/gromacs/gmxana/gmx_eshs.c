@@ -723,7 +723,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, betamean, &beta_mol);
                         if (debug)
                         {
-                           gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
+//                           gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
                         }
                         
 /*                        if (debug)
@@ -2632,6 +2632,8 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	int *bin_ind0;
         int **relevant_grid_points,*half_size_grid_points,*size_nearest_grid_points;
 
+	int start_t;
+
 	scfc = 2.0 / sqrt(M_PI);
 
 	// Note: sigma_vals should be a 4-d array:
@@ -2639,6 +2641,7 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	// 1: kappa
 	// 2: kappa2^2
 	// 3: kappa^2
+	// 4: kappa/kappa2
 	// kappa is the value that we use for PME calculations, and kappa2 is the value that we would like
 	// to use for the output electric field.
         // kappa2 is now the value we need to set for the ML calculations
@@ -2734,9 +2737,9 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
 	   							ef0 = sigma_vals[1]*exp(-dx2b) - sigma_vals[0]*exp(-dx2s);
 	   							ef0 *= scfc;
 	   							invdx = sqrt(invdx2);
-	   							dxs = sqrt(dx2s);
-	   							dxb = sqrt(dx2b);
-	   							ef0 += invdx*( gmx_erf(dxs) - gmx_erf(dxb));
+									dxs = sigma_vals[0] / invdx;
+									dxb = dxs * sigma_vals[4];
+									ef0 += invdx * ( new_erf(dxs) - new_erf(dxb));
 	   							ef0 *= charge*invdx2;
 	   							Kern->quantity_on_grid_x[ind_x][ind_y][ind_z] += ef0 * dx[XX];
 	   							Kern->quantity_on_grid_y[ind_x][ind_y][ind_z] += ef0 * dx[YY];
@@ -2755,6 +2758,48 @@ void calc_efield_correction(t_Kern *Kern, t_topology *top, t_pbc *pbc,
          {
                 sfree(relevant_grid_points[i]);
          }        
+}
+
+real new_erf(real x)
+{
+
+	// Several approximations exist for the error function. The code for three of these, in increasing order of accuracy,
+	// is given here.
+/********************************************************************/
+/*	real a1 = 0.278393, a2 = 0.230389, a3 = 0.000972, a4 = 0.078108;
+	real result;
+	result = 1.0 + a1*x + a2*x*x + a3*x*x*x + a4*x*x*x*x;
+	result = result*result;
+	result = result*result;
+	result = 1.0 - 1.0/result;
+//	fprintf(stderr,"ERROR %f %f %f\n",result,gmx_erf(x),(result-gmx_erf(x))/gmx_erf(x));
+	return result;*/
+/********************************************************************/
+//	real p = 0.47047, a1 = 0.3480242, a2 = −0.0958798, a3 = 0.7478556;
+/*	real p,a1,a2,a3;
+	p = 0.47047;
+	a1 = 0.3480242;
+	a2 = -0.0958798;
+	a3 = 0.7478556;
+	real result;
+	result = exp(-x*x);
+	x = 1.0 / (1.0 + p*x);
+	result *=(a1*x + a2*x*x + a3*x*x*x);
+	result = 1.0 - result;
+	return result;*/
+/********************************************************************/
+	real a1 = 0.0705230784,a2 = 0.0422820123,a3 = 0.0092705272,a4 = 0.0001520143,a5 = 0.0002765672,a6 = 0.0000430638, result;
+//	result = 1.0 + a1*x + a2*x*x + a3*x*x*x + a4*x*x*x*x + a5*x*x*x*x*x + a6*x*x*x*x*x*x;
+	result = 1.0 + x * (a1 + x*( a2+x*(a3 + x*(a4 + x*(a5 + x*a6))) ));
+	result = 1.0/result;
+	result = result*result;
+	result = result*result;
+	result = result*result;
+	result = result*result;
+	result = 1.0 - result;
+	return result;
+/********************************************************************/
+
 }
 
 void calc_dens_on_grid(t_Kern *Kern, t_pbc *pbc,
@@ -4301,6 +4346,7 @@ int gmx_eshs(int argc, char *argv[])
 		sigma_vals[1] = kappa;
 		sigma_vals[2] = kappa2*kappa2;
 		sigma_vals[3] = kappa*kappa;
+		sigma_vals[4] = sigma_vals[1] / sigma_vals[0];
                 if (kappa2 != -1 && kappa > kappa2)
                 {
                    gmx_fatal(FARGS," if kappa2 is set then \n set kappa2 = to the value used from machine learning \n and set kappa <= kappa2 \n");
