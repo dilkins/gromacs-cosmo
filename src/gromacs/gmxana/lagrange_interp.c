@@ -79,5 +79,9 @@ void polin3(float x1a[], float x2a[], float x3a[], float ***yb, int npts, float 
 	// Now, given a square that contains some values, we can just do 2d interpolation on it.
 	polin2(x1a,x2a,xysqr,npts,npts,x1,x2,y,dy);
 //        fprintf(stderr,"polint 2 %f\n",*y);
-
+        for (i=0; i < npts+1;i++)
+        {
+            sfree(xysqr[i]);
+        }
+        sfree(xysqr);
 }

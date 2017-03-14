@@ -2967,9 +2967,9 @@ void lagrange_interpolation_kern(t_Kern *Kern,  int npoints)
 
      // Get a list of the points that we will be using for interpolation.
 
-     snew (xlist,2*npoints+1);
-     snew (ylist,2*npoints+1);
-     snew (zlist,2*npoints+1);
+     snew(xlist,2*npoints+1);
+     snew(ylist,2*npoints+1);
+     snew(zlist,2*npoints+1);
 
      for (i = 0; i < Kern->gridpoints; i++)
      {
@@ -3031,6 +3031,7 @@ void lagrange_interpolation_kern(t_Kern *Kern,  int npoints)
      }
      sfree(quantity);
      sfree(x1a);sfree(x2a);sfree(x3a);
+     sfree(xlist); sfree(ylist); sfree(zlist);
 
 }
 
@@ -3150,7 +3151,7 @@ void vec_lagrange_interpolation_kern(t_Kern *Kern, matrix invcosdirmat, int npoi
      }
      sfree(efield_x);sfree(efield_y);sfree(efield_z);
      sfree(x1a);sfree(x2a);sfree(x3a);
-
+     sfree(xlist); sfree(ylist); sfree(zlist);
 }
 
 void vec_trilinear_interpolation_kern(t_Kern *Kern, t_pbc *pbc, matrix invcosdirmat, rvec xi, rvec Emean)
