@@ -721,11 +721,13 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 			   //gmx_fatal(FARGS,"exit from elfield\n");
 			}
 
+                        start_t = clock();                        
                         calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, betamean, &beta_mol);
-                        if (debug)
-                        {
+//                        if (debug)
+//                        {
 //                           gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
-                        }
+//                           fprintf(stderr,"time_spent_calc_beta_skern %f\n",(float)(clock() - start_t)/ CLOCKS_PER_SEC);
+//                        }
                         
 /*                        if (debug)
                         {
@@ -741,11 +743,6 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                            }
                         }
 */
-
-//                        if (debug )
-//                        {
-//                           gmx_fatal(FARGS,"end\n");
-//                        }
 
                     }
                     else if (kern[0] == 'k')
@@ -780,19 +777,20 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         {
                             for (c  = 0; c < nbingamma; c++)
                             {
+/*
                                 if (kern[0] == 'n')
                                 {
                                    induced_second_order_fluct_dipole(cosdirmat, 
                                                                      vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c], 
                                                                      beta_mol, &mu_ind);
                                 }
-                                else
-                                {
-                                   induced_second_order_fluct_dipole_fluct_beta(cosdirmat,
-                                                                     vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
-                                                                     beta_mol, &mu_ind);
-
-                                }
+*/
+                                
+                                induced_second_order_fluct_dipole_fluct_beta(
+                                                           cosdirmat,vec_pout_theta_gamma[rr][tt][c], 
+                                                           vec_pin_theta_gamma[rr][tt][c],
+                                                           beta_mol, &mu_ind);
+                                
                                 mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
                                 mu_ind_mols[i] = mu_ind;
                                 for (qq = 0; qq < nbinq; qq++)
@@ -951,20 +949,18 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                         {
                             for (c = 0 ; c < nbingamma; c++)
                             {
-
+/*
                                 if (kern[0] == 'n')
                                 {
                                    induced_second_order_fluct_dipole(cosdirmat,
                                                                      vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
                                                                      beta_mol, &mu_ind);
                                 }
-                                else
-                                {
-                                   induced_second_order_fluct_dipole_fluct_beta(cosdirmat,
-                                                                     vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
-                                                                     beta_mol, &mu_ind);
+*/
+                                induced_second_order_fluct_dipole_fluct_beta(cosdirmat,
+                                                                   vec_pout_theta_gamma[rr][tt][c], vec_pin_theta_gamma[rr][tt][c],
+                                                                   beta_mol, &mu_ind);
 
-                                }
                                 mu_ind_t[i][rr][tt][c] = mu_ind;
                                 mu_sq_t[rr][tt][c] += mu_ind*mu_ind;
                                //printf("mu_ind_t %f \n", mu_ind_t[i][rr][tt][c]);
@@ -1649,7 +1645,7 @@ void induced_second_order_fluct_dipole_fluct_beta(matrix cosdirmat,
     int i, j, k;
     int l, m, n;
     //betal is the hyperpolarizability in lab frame
-    real ***betal,  mu_temp = 0.0;
+    real ***betal,  mu_temp = 0.0, cosdir_il, cosdir_product;
     //initialize beta
     snew(betal, DIM);
     *mu_ind = 0.0;
@@ -1670,11 +1666,14 @@ void induced_second_order_fluct_dipole_fluct_beta(matrix cosdirmat,
            {
                for (l = 0; l < DIM; l++)
                {
+                    cosdir_il = cosdirmat[i][l];
                     for (m = 0; m < DIM; m++)
                     {
+                         cosdir_product = cosdir_il*  cosdirmat[j][m];
                          for ( n = 0; n < DIM; n++)
                          {
-                              betal[i][j][k] +=cosdirmat[i][l]*cosdirmat[j][m]*cosdirmat[k][n]*betamol[l][m][n];
+//                              betal[i][j][k] += cosdirmat[i][l]*cosdirmat[j][m]*cosdirmat[k][n]*betamol[l][m][n];
+                              betal[i][j][k] += cosdir_product*cosdirmat[k][n]*betamol[l][m][n];
                          }
                     }
                }
@@ -1704,7 +1703,6 @@ void induced_second_order_fluct_dipole_fluct_beta(matrix cosdirmat,
         sfree(betal[i]);
     }
     sfree(betal);
-
 
 }
 
@@ -1802,9 +1800,12 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
 
 void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, t_Kern *SKern_Esr, int kern_order, real *betamean, real ****betamol)
 {
-     int gr_ind, a, b, c, kern_ind;
-     real feature_vec, feature_vec_x, feature_vec_y, feature_vec_z;
-     int ind_ex, ind_ey, ind_ez, ind_rho;
+     int gr_ind, a, b, c, kern_ind, i;
+     real feature_vec, *feature_vec_E;
+     int ind_ex, ind_ey, ind_ez, ind_rho, *ind_vec;
+
+     snew(ind_vec,DIM);
+     snew(feature_vec_E,DIM);
 
      for (a = 0; a < DIM ; a++)
      {
@@ -1817,127 +1818,211 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
          }
      }
 
-     for (kern_ind = 0; kern_ind < kern_order; kern_ind ++)
+     for (gr_ind = 0; gr_ind < SKern_E->gridpoints; gr_ind++)
      {
-         for (gr_ind = 0; gr_ind < SKern_E->gridpoints; gr_ind++)
-         {
-            ind_ex = DIM*(gr_ind + SKern_E->gridpoints*kern_ind) + XX;
-            ind_ey = ind_ex + YY;
-            ind_ez = ind_ex + ZZ;
-            feature_vec_x = pow(SKern_E->vec_interp_quant_grid[gr_ind][XX] +  SKern_Esr->vec_interp_quant_grid[gr_ind][XX] - SKern_E->meanquant[ind_ex], kern_ind+1);
-            feature_vec_y = pow(SKern_E->vec_interp_quant_grid[gr_ind][YY] +  SKern_Esr->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_ey], kern_ind+1);
-            feature_vec_z = pow(SKern_E->vec_interp_quant_grid[gr_ind][ZZ] +  SKern_Esr->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_ez], kern_ind+1);
-            
-/*
-            printf("index of coeff %d\n", ind_ex);
-            printf("index of coeff %d\n", ind_ey);
-            printf("index of coeff %d\n", ind_ez);
-*/
-//            printf("kern_ind %d gr_ind %d feature_vec_x %f\n",kern_ind, gr_ind, feature_vec_x);
-//            printf("kern_ind %d gr_ind %d feature_vec_y %f\n",kern_ind, gr_ind, feature_vec_y);
-//            printf("kern_ind %d gr_ind %d feature_vec_z %f\n",kern_ind, gr_ind, feature_vec_z);
+        ind_vec[XX] = DIM*gr_ind ;
+        ind_vec[YY] = ind_vec[XX] + YY;
+        ind_vec[ZZ] = ind_vec[XX] + ZZ;
+        feature_vec_E[XX] = SKern_E->vec_interp_quant_grid[gr_ind][XX] +  SKern_Esr->vec_interp_quant_grid[gr_ind][XX] - SKern_E->meanquant[ind_vec[XX]];
+        feature_vec_E[YY] = SKern_E->vec_interp_quant_grid[gr_ind][YY] +  SKern_Esr->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_vec[YY]];
+        feature_vec_E[ZZ] = SKern_E->vec_interp_quant_grid[gr_ind][ZZ] +  SKern_Esr->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_vec[ZZ]];
 
 /*
-            if (debug)
-            {
-            printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
+        if (debug)
+        {
+        printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
 
-            printf("feature_vec_x %f \n",feature_vec_x);
-            printf("feature_vec_y %f \n",feature_vec_y);
-            printf("feature_vec_z %f \n",feature_vec_z);
+        printf("feature_vec_x %f \n",feature_vec_x);
+        printf("feature_vec_y %f \n",feature_vec_y);
+        printf("feature_vec_z %f \n",feature_vec_z);
 
-            printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
-            printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
-            printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
-            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]*feature_vec_x);
-            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
-            printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
-            }
+        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
+        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
+        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
+        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]*feature_vec_x);
+        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
+        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
+        }
 */
 
-/*
-            printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]);
-            printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]);
-            printf("coeff_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]);
-*/
-
-            for (a = 0; a < DIM ; a++)
-            {
-                for (b = 0; b < DIM ; b++)
-                {
-                   for (c = 0; c < DIM ; c++)
-                   {
-                      (*betamol)[a][b][c] += SKern_E->coeff[ind_ex][a][b][c]*feature_vec_x;
-//                      printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_ex][a][b][c] );
-                      (*betamol)[a][b][c] += SKern_E->coeff[ind_ey][a][b][c]*feature_vec_y;
-//                      printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_ey][a][b][c] );
-                      (*betamol)[a][b][c] += SKern_E->coeff[ind_ez][a][b][c]*feature_vec_z;
-//                      printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_ez][a][b][c] );
-
-                   }
-                }
-            }
-         }
-         for (gr_ind = 0; gr_ind < SKern_rho_O->gridpoints; gr_ind++)
-         {
-            ind_rho = gr_ind + SKern_rho_O->gridpoints*kern_ind;
-            feature_vec = pow(SKern_rho_O->interp_quant_grid[gr_ind] - SKern_rho_O->meanquant[ind_rho] , kern_ind+1);
-
-//            printf("kern_ind %d gr_ind %d feature_vec_rho_O %f\n",kern_ind, gr_ind, feature_vec);
-/*
-            if (debug)
-            {
-            printf("feature_vec %f\n",feature_vec);
-            printf("dens_vec %f\n",feature_vec);
-            printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
-            printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
-            printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
-            }
-*/
-            for (a = 0; a < DIM ; a++)
-            {
-                for (b = 0; b < DIM ; b++)
-                {
-                   for (c = 0; c < DIM ; c++)
-                   {
-                      (*betamol)[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
-//                      printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
-
-
-                   }
-                }
-            }
-         }
-         for (gr_ind = 0; gr_ind < SKern_rho_H->gridpoints; gr_ind++)
-         {
-            ind_rho = gr_ind + SKern_rho_H->gridpoints*kern_ind;
-            feature_vec = pow(SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho] , kern_ind+1);
-
-//            printf("kern_ind %d gr_ind %d feature_vec_rho_H %f\n",kern_ind, gr_ind, feature_vec);
-/*
-
-            if (debug)
-            {
-            printf("feature_vec %f\n",feature_vec);
-            printf("predicted_vec_1 %f\n",SKern_rho_H->coeff[ind_rho][0][0][0]*feature_vec);
-            printf("predicted_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]*feature_vec);
-            printf("coeff_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]);
-            }
-
-*/
-            for (a = 0; a < DIM ; a++)
-            {
-                for (b = 0; b < DIM ; b++)
-                {
-                   for (c = 0; c < DIM ; c++)
-                   {
-                      (*betamol)[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
-//                       printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_H->coeff[ind_rho][a][b][c] );
-                   }
-                }
-            }
-         }
+        for (i = 0; i < DIM; i ++)
+        {
+           for (a = 0; a < DIM ; a++)
+           {
+               for (b = 0; b < DIM ; b++)
+               {
+                  for (c = 0; c < DIM ; c++)
+                  {
+                     (*betamol)[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
+   //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_vec[i]][a][b][c] );
+   
+                  }
+               }
+           }
+        }
      }
+     for (gr_ind = 0; gr_ind < SKern_rho_O->gridpoints; gr_ind++)
+     {
+        ind_rho = gr_ind ;
+        feature_vec = SKern_rho_O->interp_quant_grid[gr_ind] - SKern_rho_O->meanquant[ind_rho];
+
+/*
+        if (debug)
+        {
+        printf("feature_vec %f\n",feature_vec);
+        printf("dens_vec %f\n",feature_vec);
+        printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
+        printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
+        printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+        }
+*/
+        for (a = 0; a < DIM ; a++)
+        {
+            for (b = 0; b < DIM ; b++)
+            {
+               for (c = 0; c < DIM ; c++)
+               {
+                  (*betamol)[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
+//                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
+
+
+               }
+            }
+        }
+     }
+     for (gr_ind = 0; gr_ind < SKern_rho_H->gridpoints; gr_ind++)
+     {
+        ind_rho = gr_ind ;
+        feature_vec = SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho] ;
+
+/*
+        if (debug)
+        {
+        printf("feature_vec %f\n",feature_vec);
+        printf("predicted_vec_1 %f\n",SKern_rho_H->coeff[ind_rho][0][0][0]*feature_vec);
+        printf("predicted_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]*feature_vec);
+        printf("coeff_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]);
+        }
+*/
+        for (a = 0; a < DIM ; a++)
+        {
+            for (b = 0; b < DIM ; b++)
+            {
+               for (c = 0; c < DIM ; c++)
+               {
+                  (*betamol)[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
+//                   printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_H->coeff[ind_rho][a][b][c] );
+               }
+            }
+        }
+     }
+
+     for (gr_ind = 0; gr_ind < SKern_E->gridpoints; gr_ind++)
+     {
+        ind_vec[XX] = DIM*(gr_ind + SKern_E->gridpoints) + XX;
+        ind_vec[YY] = ind_vec[XX] + YY;
+        ind_vec[ZZ] = ind_vec[XX] + ZZ;
+
+        feature_vec_E[XX] = SKern_E->vec_interp_quant_grid[gr_ind][XX] +  SKern_Esr->vec_interp_quant_grid[gr_ind][XX] - SKern_E->meanquant[ind_vec[XX]];
+        feature_vec_E[XX] *= feature_vec_E[XX];
+        feature_vec_E[YY] = SKern_E->vec_interp_quant_grid[gr_ind][YY] +  SKern_Esr->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_vec[YY]];
+        feature_vec_E[YY] *= feature_vec_E[YY];
+        feature_vec_E[ZZ] = SKern_E->vec_interp_quant_grid[gr_ind][ZZ] +  SKern_Esr->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_vec[ZZ]];
+        feature_vec_E[ZZ] *= feature_vec_E[ZZ];
+
+/*
+        if (debug)
+        {
+        printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
+
+        printf("feature_vec_x %f \n",feature_vec_x);
+        printf("feature_vec_y %f \n",feature_vec_y);
+        printf("feature_vec_z %f \n",feature_vec_z);
+
+        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
+        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
+        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
+        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]*feature_vec_x);
+        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
+        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
+        }
+*/
+        for (i = 0; i < DIM; i ++)
+        {
+           for (a = 0; a < DIM ; a++)
+           {
+               for (b = 0; b < DIM ; b++)
+               {
+                  for (c = 0; c < DIM ; c++)
+                  {
+                     (*betamol)[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
+   //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_vec[i]][a][b][c] );
+
+                  }
+               }
+           }
+        }
+     }
+
+
+     for (gr_ind = 0; gr_ind < SKern_rho_O->gridpoints; gr_ind++)
+     {
+        ind_rho = gr_ind + SKern_rho_O->gridpoints;
+        feature_vec = SKern_rho_O->interp_quant_grid[gr_ind] - SKern_rho_O->meanquant[ind_rho];
+        feature_vec *= feature_vec;
+
+/*
+        if (debug)
+        {
+        printf("feature_vec %f\n",feature_vec);
+        printf("dens_vec %f\n",feature_vec);
+        printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
+        printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
+        printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+        }
+*/
+        for (a = 0; a < DIM ; a++)
+        {
+            for (b = 0; b < DIM ; b++)
+            {
+               for (c = 0; c < DIM ; c++)
+               {
+                  (*betamol)[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
+//                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
+               }
+            }
+        }
+     }
+
+     for (gr_ind = 0; gr_ind < SKern_rho_O->gridpoints; gr_ind++)
+     {
+        ind_rho = gr_ind + SKern_rho_H->gridpoints;
+        feature_vec = SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho];
+        feature_vec *= feature_vec;
+
+/*
+        if (debug)
+        {
+        printf("feature_vec %f\n",feature_vec);
+        printf("dens_vec %f\n",feature_vec);
+        printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
+        printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
+        printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+        }
+*/
+        for (a = 0; a < DIM ; a++)
+        {
+            for (b = 0; b < DIM ; b++)
+            {
+               for (c = 0; c < DIM ; c++)
+               {
+                  (*betamol)[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
+//                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
+               }
+            }
+        }
+     }
+
      for (a = 0; a < DIM ; a++)
      {
          for (b = 0; b < DIM ; b++)
@@ -1945,11 +2030,15 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             for (c = 0; c < DIM ; c++)
             {
                (*betamol)[a][b][c] += betamean[c+DIM*b+DIM*DIM*a];
-        
 //                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
             }
          }
      }
+     sfree(ind_vec);
+     sfree(feature_vec_E);
+
+
+
 //     if (debug)
 //     {
 //        gmx_fatal(FARGS,"consider only one loop\n");
