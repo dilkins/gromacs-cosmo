@@ -166,7 +166,7 @@ extern void  induced_second_order_fluct_dipole_fluct_beta( matrix cosdirmat,
 
 
 // read input files for the calculation of beta using either a scalar kernel or krr
-void readKern(const char *fnCOEFF, const char *fnGRD, const char *fnINPKRR, int kern_order, real std_dev, real kappa, rvec *xref, gmx_bool bAtomCenter, real **betamean, t_Kern *Kern);
+void readKern(const char *fnCOEFF, const char *fnGRD, const char *fnINPKRR, int kern_order, real std_dev, real filt_dens, real kappa, rvec *xref, gmx_bool bAtomCenter, real **betamean, t_Kern *Kern);
 //compute molecular beta using kernel ridge regression
 void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, t_topology *top, t_block *mols, int  *molindex[], const int gind , const int isize0, rvec *x, rvec xcm_transl, const int imol, real rmax2, real electrostatic_cutoff, real ****betamol);
 

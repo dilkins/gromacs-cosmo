@@ -92,7 +92,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    const char *fnREFMOL, const char *fnPAIRPOT, gmx_bool bReadPot, gmx_bool bWritePot,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   int qbin, int nbinq, int kern_order, real std_dev_dens, real pme_spacing, real realspacing,
+                   int qbin, int nbinq, int kern_order, real std_dev_dens, real filt_dens, real pme_spacing, real realspacing,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
@@ -225,7 +225,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     else if (kern[0] == 'k')
     {
        Krr = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnVCOEFF, fnVGRD, fnVINP, 0, 0, 0, NULL, FALSE, NULL ,Krr);
+       readKern(fnVCOEFF, fnVGRD, fnVINP, 0, 0, 0, 0,NULL, FALSE, NULL ,Krr);
        Krr->kerndev = 0.5/((kernstd*kernstd));
        fprintf(stderr,"initialized kernel ridge regression to compute beta with standard dev = %f\n", kernstd);
     }
@@ -234,14 +234,14 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
        fprintf(stderr,"about to initialize scalar kernel \n");
        SKern_E = (t_Kern *)calloc(1,sizeof(t_Kern));
        SKern_Esr = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_E);
-       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_Esr);
+       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, 0,kappa, xref, FALSE, &betamean, SKern_E);
+       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, 0,kappa, xref, FALSE, &betamean, SKern_Esr);
        fprintf(stderr,"scalar kernel coefficients for the electric field read\n");
        SKern_rho_O = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnCOEFFO, fnRGRDO, NULL, kern_order, std_dev_dens, 0, xref, TRUE, NULL,SKern_rho_O);
+       readKern(fnCOEFFO, fnRGRDO, NULL, kern_order, std_dev_dens, filt_dens, 0, xref, TRUE, NULL,SKern_rho_O);
        fprintf(stderr,"scalar kernel coefficients for the oxygen density read\n");
        SKern_rho_H = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnCOEFFH, fnRGRDH, NULL, kern_order, std_dev_dens, 0, xref, FALSE, NULL,SKern_rho_H);
+       readKern(fnCOEFFH, fnRGRDH, NULL, kern_order, std_dev_dens, filt_dens, 0, xref, FALSE, NULL,SKern_rho_H);
        fprintf(stderr,"scalar kernel coefficients for the hydrogen density read\n");
        fprintf(stderr,"initialized scalar kernel \n");
        fprintf(stderr,"the density for the scalar kernel for each grid point i and for all atomic species j\n");
@@ -1407,7 +1407,7 @@ void readMap(const char *fnMAP, t_Map *Map)
     fclose(fm);
 }
 
-void readKern(const char *fnCOEFF, const char *fnGRD, const char *fnINPKRR, int kern_order, real std_dev, real kappa, rvec *xref, gmx_bool bAtomCenter, real **betamean, t_Kern *Kern)
+void readKern(const char *fnCOEFF, const char *fnGRD, const char *fnINPKRR, int kern_order, real std_dev, real filt_dens, real kappa, rvec *xref, gmx_bool bAtomCenter, real **betamean, t_Kern *Kern)
 {
     FILE *fk, *fg, *fp;
     int i, j, ch = 0, n_outputs ;
@@ -1565,7 +1565,7 @@ void readKern(const char *fnCOEFF, const char *fnGRD, const char *fnINPKRR, int 
         {
            if (std_dev != 0.0)
            {
-              Kern->weights[j] =  exp(-0.5*norm2(Kern->grid[j])/(4.0*std_dev*4.0*std_dev))  ;
+              Kern->weights[j] =  exp(-0.5*norm2(Kern->grid[j])/(filt_dens*filt_dens))  ;
               if (bAtomCenter)
               {
                  Kern->selfterm[j] = Kern->weights[j]*exp(-0.5*norm2(Kern->grid[j])/(std_dev*std_dev));
@@ -4324,7 +4324,7 @@ int gmx_eshs(int argc, char *argv[])
     };
     static gmx_bool          bPBC = TRUE, bIONS = FALSE, bReadPot = FALSE, bWritePot = FALSE;
     static real              electrostatic_cutoff = 1.2, maxelcut = 2.0, kappa = 5.0,  kernstd = 10.0 ;
-    static real              pme_spacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05, realspacing = 0.02;
+    static real              pme_spacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05, realspacing = 0.02, filt_dens = 0.25;
     static real              binwidth = 0.002, angle_corr = 90.0, eps = -1.0 , kmax_spme = 4.0;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax = 0, lagrange_npoints = 1;
@@ -4347,6 +4347,7 @@ int gmx_eshs(int argc, char *argv[])
         { "-nbinq",         FALSE, etINT, {&nbinq},
         "how many bins in the reciprocal space" },
         { "-stddens",       FALSE, etREAL, {&std_dev_dens}, "standard deviation to compute density on a grid. Use only with scalar kernel [nm]."},
+        { "-filtdens",       FALSE, etREAL, {&filt_dens}, "filtering parameter for density on a grid. Use only with scalar kernel [nm]."},
         { "-fourierspacing",          FALSE, etREAL, {&pme_spacing}, "grid spacing for pme [nm] gives lower bound for number of wave vectors to use in each direction with Ewald, overridden by nkx,nky,nkz " },
         { "-realspacing",          FALSE, etREAL, {&realspacing}, "grid spacing for density and short range electric field [nm]" },
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
@@ -4530,7 +4531,7 @@ int gmx_eshs(int argc, char *argv[])
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
            fnREFMOL, fnPAIRPOT, bReadPot, bWritePot,
            methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
-           kern_order, std_dev_dens, pme_spacing, realspacing, binwidth,
+           kern_order, std_dev_dens, filt_dens, pme_spacing, realspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
            electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, 
            kernstd, gnx, grpindex, grpname, ngroups, oenv, eps, sigma_vals, ecorrcut, lagrange_npoints);
