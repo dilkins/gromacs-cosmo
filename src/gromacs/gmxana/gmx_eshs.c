@@ -1153,7 +1153,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 
     sprintf(gtitle, "Average Beta ");
     fpn = xvgropen(fnBETAMEAN, "<beta_abc>", "component", "beta", oenv);
-    fp = xvgropen(fnBETACOV, "<beta_abcbeta_def>", "component", "beta", oenv);
+    fp = xvgropen(fnBETACOV, "<beta_abc*beta_def>", "component", "beta", oenv);
 
     sprintf(refgt, "%s", "");
 
@@ -1168,7 +1168,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
            for (k = 0; k < DIM ; k++)
            {
               ind0++;
-              fprintf(fpn, "%10g %10g\n",ind0,beta_mean_traj[i][j][k]/nframes*invsize0);
+              fprintf(fpn, "%d %10g\n",ind0,beta_mean_traj[i][j][k]/nframes*invsize0);
               for (aa= 0; aa < DIM ; aa++)
               {
                   for (bb = 0; bb < DIM ; bb++)
@@ -1176,7 +1176,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                      for (cc = 0; cc < DIM ; cc++)
                      {
                          rr++;
-                         fprintf(fp, "%10g %10g\n",rr,beta_cov_traj[i][j][k][aa][bb][cc] /nframes*invsize0);
+                         fprintf(fp, "%d %10g\n",rr,beta_cov_traj[i][j][k][aa][bb][cc] /nframes*invsize0);
                      }
                   }
               }
@@ -4538,8 +4538,8 @@ int gmx_eshs(int argc, char *argv[])
     fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
     fnFTBETACORR = opt2fn_null("-ftbetacorr", NFILE,fnm);
     fnREFMOL = opt2fn_null("-refmol", NFILE, fnm);
-    fnBETAMEAN = opt2fn_null("-betacov", NFILE, fnm);
-    fnBETACOV = opt2fn_null("-betamean", NFILE, fnm);
+    fnBETAMEAN = opt2fn_null("-betamean", NFILE, fnm);
+    fnBETACOV = opt2fn_null("-betacov", NFILE, fnm);
 
 
 
@@ -4629,8 +4629,8 @@ int gmx_eshs(int argc, char *argv[])
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
-           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR, fnBETAMEAN, fnBETACOV,
-           fnREFMOL, fnPAIRPOT, bReadPot, bWritePot, 
+           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR, 
+           fnBETAMEAN, fnBETACOV, fnREFMOL, fnPAIRPOT, bReadPot, bWritePot, 
            methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, filt_dens, pme_spacing, realspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
