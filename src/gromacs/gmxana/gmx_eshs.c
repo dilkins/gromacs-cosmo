@@ -89,6 +89,7 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
                    const char *fnRGRDO, const char *fnCOEFFO,
                    const char *fnRGRDH, const char *fnCOEFFH, const char *fnMAP,
                    const char *fnBETACORR, const char *fnFTBETACORR,
+                   const char *fnBETAMEAN, const char *fnBETACOV,
                    const char *fnREFMOL, const char *fnPAIRPOT, gmx_bool bReadPot, gmx_bool bWritePot,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
@@ -106,7 +107,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     real         **s_method, **s_method_coh, **s_method_incoh, *temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq,   mu_ind =0.0, mu_sq =0.0, mod_f ;
-    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean ,*mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
+    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2;
+    real         ***beta_mol, *betamean, ***beta_mean_traj, ******beta_cov_traj, *mu_ind_mols, ****mu_ind_t, *beta_corr, *ft_beta_corr;
     int            max_i, isize0, ind0, indj, ind1;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
     real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
@@ -370,6 +372,8 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     rmax     = sqrt(rmax2);
     //initialize beta tensor
     snew(beta_mol, DIM);
+    snew(beta_mean_traj,DIM);
+    snew(beta_cov_traj,DIM);
     snew(mu_ind_mols, isize0);
     
     snew(beta_corr, nbin+1);
@@ -377,12 +381,25 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
     for (i = 0; i < DIM; i++)
     {
         snew(beta_mol[i], DIM);
-    }
-    for (i = 0; i < DIM; i++)
-    {
+        snew(beta_mean_traj[i],DIM);
+        snew(beta_cov_traj[i],DIM);
         for (j = 0; j < DIM; j++)
         {
             snew(beta_mol[i][j], DIM);
+            snew(beta_mean_traj[i][j],DIM);
+            snew(beta_cov_traj[i][j],DIM);
+            for (aa = 0; aa < DIM; aa++)
+            {
+                snew(beta_cov_traj[i][j][aa],DIM);
+                for (bb = 0; bb < DIM; bb++)
+                {
+                   snew(beta_cov_traj[i][j][aa][bb],DIM);
+                   for (cc = 0; cc < DIM; cc++)
+                   {
+                      snew(beta_cov_traj[i][j][aa][bb][cc],DIM);
+                   }
+                }
+            }
         }
     }
 
@@ -722,7 +739,9 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
 			}
 
                         start_t = clock();                        
-                        calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, betamean, &beta_mol);
+                        calc_beta_skern(SKern_rho_O, SKern_rho_H, SKern_E, SKern_Esr, kern_order, 
+                                        betamean, &beta_mol,&beta_mean_traj,&beta_cov_traj);
+
 //                        if (debug)
 //                        {
 //                           gmx_fatal(FARGS,"EXIT from loop check only one molecule\n");
@@ -1130,6 +1149,43 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
        }
     }
     gmx_ffclose(fp);
+
+
+    sprintf(gtitle, "Average Beta ");
+    fpn = xvgropen(fnBETAMEAN, "<beta_abc>", "component", "beta", oenv);
+    fp = xvgropen(fnBETACOV, "<beta_abcbeta_def>", "component", "beta", oenv);
+
+    sprintf(refgt, "%s", "");
+
+    fprintf(fpn, "@type xy\n");
+    fprintf(fp, "@type xy\n");
+    ind0=0;
+    rr=0;
+    for (i = 0; i < DIM ; i++)
+    {
+        for (j = 0; j < DIM ; j++)
+        {
+           for (k = 0; k < DIM ; k++)
+           {
+              ind0++;
+              fprintf(fpn, "%10g %10g\n",ind0,beta_mean_traj[i][j][k]/nframes*invsize0);
+              for (aa= 0; aa < DIM ; aa++)
+              {
+                  for (bb = 0; bb < DIM ; bb++)
+                  {
+                     for (cc = 0; cc < DIM ; cc++)
+                     {
+                         rr++;
+                         fprintf(fp, "%10g %10g\n",rr,beta_cov_traj[i][j][k][aa][bb][cc] /nframes*invsize0);
+                     }
+                  }
+              }
+           }
+        }
+    }
+
+    gmx_ffclose(fp);
+    gmx_ffclose(fpn);
     
     if (!fnBETACORR )
     {
@@ -1302,10 +1358,28 @@ static void do_eshs(t_topology *top,  const char *fnTRX,
         for (j = 0; j < DIM; j++)
         {
             sfree(beta_mol[i][j]);
+            sfree(beta_mean_traj[i][j]);
+            for (aa = 0 ; aa <DIM; aa ++)
+            {
+                for (bb = 0; bb < DIM; bb++)
+                {
+                    for (cc = 0; cc < DIM; cc++)
+                    {
+                        sfree(beta_cov_traj[i][j][aa][bb][cc]);
+                    }
+                    sfree(beta_cov_traj[i][j][aa][bb]);
+                }
+                sfree(beta_cov_traj[i][j][aa]);
+            }
+            sfree(beta_cov_traj[i][j]);
         }
         sfree(beta_mol[i]);
+        sfree(beta_cov_traj[i]);
+        sfree(beta_mean_traj[i]);
     }
     sfree(beta_mol);
+    sfree(beta_mean_traj);
+    sfree(beta_cov_traj);
     sfree(beta_corr);
     sfree(mu_ind_mols);
     if (kern[0] == 's')
@@ -1798,23 +1872,23 @@ void induced_second_order_fluct_dipole(matrix cosdirmat,
 }
 
 
-void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, t_Kern *SKern_Esr, int kern_order, real *betamean, real ****betamol)
+void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E, t_Kern *SKern_Esr, int kern_order, 
+                     real *betamean, real ****betamol, real ****beta_mean_traj,real *******beta_cov_traj)
 {
-     int gr_ind, a, b, c, kern_ind, i;
+     int gr_ind, a, b, c, d,e,f,kern_ind, i;
      real feature_vec, *feature_vec_E;
      int ind_ex, ind_ey, ind_ez, ind_rho, *ind_vec;
+     real ***betam;
 
      snew(ind_vec,DIM);
      snew(feature_vec_E,DIM);
-
+     snew(betam,DIM);
      for (a = 0; a < DIM ; a++)
      {
+         snew(betam[a],DIM);
          for (b = 0; b < DIM ; b++)
          {
-            for (c = 0; c < DIM ; c++)
-            {
-               (*betamol)[a][b][c] = 0.0;
-            }
+            snew(betam[a][b],DIM);
          }
      }
 
@@ -1853,7 +1927,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                {
                   for (c = 0; c < DIM ; c++)
                   {
-                     (*betamol)[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
+                     betam[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
    //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_vec[i]][a][b][c] );
    
                   }
@@ -1882,7 +1956,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             {
                for (c = 0; c < DIM ; c++)
                {
-                  (*betamol)[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
+                  betam[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
 //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
 
 
@@ -1910,7 +1984,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             {
                for (c = 0; c < DIM ; c++)
                {
-                  (*betamol)[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
+                  betam[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
 //                   printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_H->coeff[ind_rho][a][b][c] );
                }
             }
@@ -1955,7 +2029,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                {
                   for (c = 0; c < DIM ; c++)
                   {
-                     (*betamol)[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
+                     betam[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
    //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_vec[i]][a][b][c] );
 
                   }
@@ -1987,7 +2061,7 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             {
                for (c = 0; c < DIM ; c++)
                {
-                  (*betamol)[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
+                  betam[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
 //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
                }
             }
@@ -2016,28 +2090,49 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
             {
                for (c = 0; c < DIM ; c++)
                {
-                  (*betamol)[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
+                  betam[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
 //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
                }
             }
         }
      }
 
+     sfree(ind_vec);
+     sfree(feature_vec_E);
+
+     for (a = 0; a < DIM ; a++)
+     {   
+         for (b = 0; b < DIM ; b++)
+         {  
+            for (c = 0; c < DIM ; c++)
+            { 
+               betam[a][b][c] += betamean[c+DIM*b+DIM*DIM*a]; 
+               (*betamol)[a][b][c] = betam[a][b][c];
+               (*beta_mean_traj)[a][b][c] += betam[a][b][c];
+//                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
+               for (d = 0; d < DIM ; d++)
+               {
+                   for (e = 0; e < DIM ; e++)
+                   {
+                      for (f = 0; f < DIM ; f++)
+                      {
+                          (*beta_cov_traj)[a][b][c][d][e][f] += betam[a][b][c]*betam[d][e][f]; 
+                      }
+                   }
+               }
+            }
+         }
+     }
+
      for (a = 0; a < DIM ; a++)
      {
          for (b = 0; b < DIM ; b++)
          {
-            for (c = 0; c < DIM ; c++)
-            {
-               (*betamol)[a][b][c] += betamean[c+DIM*b+DIM*DIM*a];
-//                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
-            }
+            sfree(betam[a][b]);
          }
+         sfree(betam[a]);
      }
-     sfree(ind_vec);
-     sfree(feature_vec_E);
-
-
+     sfree(betam);
 
 //     if (debug)
 //     {
@@ -4381,6 +4476,7 @@ int gmx_eshs(int argc, char *argv[])
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL, *fnPAIRPOT =NULL;
+    const char        *fnBETAMEAN=NULL, *fnBETACOV = NULL;
     const char        *fnVCOEFF=NULL, *fnVGRD=NULL, *fnVINP=NULL;
     const char        *fnRGRDO=NULL, *fnRGRDH=NULL, *fnCOEFFO=NULL, *fnCOEFFH=NULL;
     const char        *fnMAP=NULL;
@@ -4409,7 +4505,8 @@ int gmx_eshs(int argc, char *argv[])
         { efXVG, "-o",  "non_linear_sfact",    ffWRITE },
         { efXVG, "-otheta", "non_linear_sfact_vs_theta", ffOPTWR },
         { efXVG, "-betacorr", "beta_correlation", ffOPTWR },
-        { efXVG, "-ftbetacorr", "FT_beta_correlation", ffOPTWR },
+        { efXVG, "-betamean", "beta_mean_trj", ffOPTWR },
+        { efXVG, "-betacov", "beta_cov_trj", ffOPTWR },
 
     };
 #define NFILE asize(fnm)
@@ -4441,6 +4538,10 @@ int gmx_eshs(int argc, char *argv[])
     fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
     fnFTBETACORR = opt2fn_null("-ftbetacorr", NFILE,fnm);
     fnREFMOL = opt2fn_null("-refmol", NFILE, fnm);
+    fnBETAMEAN = opt2fn_null("-betacov", NFILE, fnm);
+    fnBETACOV = opt2fn_null("-betamean", NFILE, fnm);
+
+
 
 
     if (!fnTPS && !fnNDX)
@@ -4528,8 +4629,8 @@ int gmx_eshs(int argc, char *argv[])
     do_eshs(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
-           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
-           fnREFMOL, fnPAIRPOT, bReadPot, bWritePot,
+           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR, fnBETAMEAN, fnBETACOV,
+           fnREFMOL, fnPAIRPOT, bReadPot, bWritePot, 
            methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
            kern_order, std_dev_dens, filt_dens, pme_spacing, realspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 

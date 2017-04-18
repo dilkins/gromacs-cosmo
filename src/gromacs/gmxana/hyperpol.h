@@ -173,8 +173,8 @@ void calc_beta_krr(t_Kern *Krr, t_pbc *pbc, t_topology *top, t_block *mols, int 
 
 
 //compute molecular beta using a scalar kernel
-void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,  t_Kern *SKern_Esr,
-                     int kern_order, real *betamean, real ****betamol);
+void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,  t_Kern *SKern_Esr, int kern_order, real *betamean, 
+                     real ****betamol, real ****beta_mean_traj, real *******beta_cov_traj);
 //switching function to bring a function smoothly from a given value to zero
 void switch_fn(real r_dist, real electrostatic_cutoff, real rmax, real inv_width, real *sw_coeff);
 
