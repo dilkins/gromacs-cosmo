@@ -1901,21 +1901,15 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
         feature_vec_E[YY] = SKern_E->vec_interp_quant_grid[gr_ind][YY] +  SKern_Esr->vec_interp_quant_grid[gr_ind][YY] - SKern_E->meanquant[ind_vec[YY]];
         feature_vec_E[ZZ] = SKern_E->vec_interp_quant_grid[gr_ind][ZZ] +  SKern_Esr->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_vec[ZZ]];
 
-/*
-        if (debug)
+
+/*        if (debug)
         {
-        printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
+        printf("electric_field= %f %f %f\n",feature_vec_E[XX],feature_vec_E[YY],feature_vec_E[ZZ]);
 
-        printf("feature_vec_x %f \n",feature_vec_x);
-        printf("feature_vec_y %f \n",feature_vec_y);
-        printf("feature_vec_z %f \n",feature_vec_z);
+        printf("feature_vec_x %f \n",feature_vec_E[XX]);
+        printf("feature_vec_y %f \n",feature_vec_E[YY]);
+        printf("feature_vec_z %f \n",feature_vec_E[ZZ]);
 
-        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
-        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
-        printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
-        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]*feature_vec_x);
-        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
-        printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
         }
 */
 
@@ -1928,8 +1922,10 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                   for (c = 0; c < DIM ; c++)
                   {
                      betam[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
-   //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_vec[i]][a][b][c] );
-   
+/*
+                   printf("predicted_vec_%d_%d_%d %f coeff %f\n",a,b,c, SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i],SKern_E->coeff[ind_vec[i]][a][b][c] );
+*/  
+ 
                   }
                }
            }
@@ -1945,9 +1941,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
         {
         printf("feature_vec %f\n",feature_vec);
         printf("dens_vec %f\n",feature_vec);
+*/
+/*
         printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
         printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
         printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+
         }
 */
         for (a = 0; a < DIM ; a++)
@@ -1957,9 +1956,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                for (c = 0; c < DIM ; c++)
                {
                   betam[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
-//                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
-
-
+/*
+                  printf("predicted_vec_%d_%d_%d %f coeff %f\n",a,b,c, SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec, SKern_rho_O->coeff[ind_rho][a][b][c] );
+*/
                }
             }
         }
@@ -1973,9 +1972,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
         if (debug)
         {
         printf("feature_vec %f\n",feature_vec);
+*/
+/*
         printf("predicted_vec_1 %f\n",SKern_rho_H->coeff[ind_rho][0][0][0]*feature_vec);
         printf("predicted_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]*feature_vec);
         printf("coeff_vec_2 %f\n",SKern_rho_H->coeff[ind_rho][2][2][2]);
+
         }
 */
         for (a = 0; a < DIM ; a++)
@@ -1985,7 +1987,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                for (c = 0; c < DIM ; c++)
                {
                   betam[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
-//                   printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_H->coeff[ind_rho][a][b][c] );
+/*
+                   printf("predicted_vec_%d_%d_%d %f coeff %f\n",a,b,c, SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec,SKern_rho_H->coeff[ind_rho][a][b][c] );
+*/
                }
             }
         }
@@ -2003,22 +2007,24 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
         feature_vec_E[YY] *= feature_vec_E[YY];
         feature_vec_E[ZZ] = SKern_E->vec_interp_quant_grid[gr_ind][ZZ] +  SKern_Esr->vec_interp_quant_grid[gr_ind][ZZ] - SKern_E->meanquant[ind_vec[ZZ]];
         feature_vec_E[ZZ] *= feature_vec_E[ZZ];
-
 /*
+
         if (debug)
         {
-        printf("electric_field= %f %f %f\n",feature_vec_x,feature_vec_y,feature_vec_z);
+        printf("electric_field= %f %f %f\n",feature_vec_E[XX],feature_vec_E[YY],feature_vec_E[ZZ]);
 
-        printf("feature_vec_x %f \n",feature_vec_x);
-        printf("feature_vec_y %f \n",feature_vec_y);
-        printf("feature_vec_z %f \n",feature_vec_z);
-
+        printf("feature_vec_x %f \n",feature_vec_E[XX]);
+        printf("feature_vec_y %f \n",feature_vec_E[YY]);
+        printf("feature_vec_z %f \n",feature_vec_E[ZZ]);
+*/
+/*
         printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ex][0][0][0]*feature_vec_x);
         printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ey][0][0][0]*feature_vec_y);
         printf("predicted_vec_1 %f\n",SKern_E->coeff[ind_ez][0][0][0]*feature_vec_z);
         printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ex][2][2][2]*feature_vec_x);
         printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ey][2][2][2]*feature_vec_y);
         printf("predicted_vec_2 %f\n",SKern_E->coeff[ind_ez][2][2][2]*feature_vec_z);
+
         }
 */
         for (i = 0; i < DIM; i ++)
@@ -2030,7 +2036,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                   for (c = 0; c < DIM ; c++)
                   {
                      betam[a][b][c] += SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i];
-   //                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_E->coeff[ind_vec[i]][a][b][c] );
+/*
+                     printf("predicted_vec_%d_%d_%d %f coeff %f\n",a,b,c, SKern_E->coeff[ind_vec[i]][a][b][c]*feature_vec_E[i],SKern_E->coeff[ind_vec[i]][a][b][c] );
+*/
 
                   }
                }
@@ -2050,9 +2058,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
         {
         printf("feature_vec %f\n",feature_vec);
         printf("dens_vec %f\n",feature_vec);
-        printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
+*/
+/*
+        printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*ature_vec);
         printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
         printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+
         }
 */
         for (a = 0; a < DIM ; a++)
@@ -2062,13 +2073,15 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                for (c = 0; c < DIM ; c++)
                {
                   betam[a][b][c] += SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec;
-//                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
+/*
+                  printf("predicted_vec_%d_%d_%d %f coeff %f\n",a,b,c, SKern_rho_O->coeff[ind_rho][a][b][c]*feature_vec,SKern_rho_O->coeff[ind_rho][a][b][c] );
+*/
                }
             }
         }
      }
 
-     for (gr_ind = 0; gr_ind < SKern_rho_O->gridpoints; gr_ind++)
+     for (gr_ind = 0; gr_ind < SKern_rho_H->gridpoints; gr_ind++)
      {
         ind_rho = gr_ind + SKern_rho_H->gridpoints;
         feature_vec = SKern_rho_H->interp_quant_grid[gr_ind] - SKern_rho_H->meanquant[ind_rho];
@@ -2079,9 +2092,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
         {
         printf("feature_vec %f\n",feature_vec);
         printf("dens_vec %f\n",feature_vec);
+*/
+/*
         printf("predicted_vec_1 %f\n",SKern_rho_O->coeff[ind_rho][0][0][0]*feature_vec);
         printf("predicted_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]*feature_vec);
         printf("coeff_vec_2 %f\n",SKern_rho_O->coeff[ind_rho][2][2][2]);
+
         }
 */
         for (a = 0; a < DIM ; a++)
@@ -2091,7 +2107,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                for (c = 0; c < DIM ; c++)
                {
                   betam[a][b][c] += SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec;
-//                  printf("beta_%d_%d_%d %f coeff %f\n",a,b,c, (*betamol)[a][b][c],SKern_rho_O->coeff[ind_rho][a][b][c] );
+/*
+                  printf("predicted_vec_%d_%d_%d %f coeff %f\n",a,b,c, SKern_rho_H->coeff[ind_rho][a][b][c]*feature_vec,SKern_rho_H->coeff[ind_rho][a][b][c] );
+*/
                }
             }
         }
@@ -2109,7 +2127,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                betam[a][b][c] += betamean[c+DIM*b+DIM*DIM*a]; 
                (*betamol)[a][b][c] = betam[a][b][c];
                (*beta_mean_traj)[a][b][c] += betam[a][b][c];
-//                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
+/*
+                printf("beta_final_%d_%d_%d %f betamean %f\n",a,b,c, (*betamol)[a][b][c], betamean[c+DIM*b+DIM*DIM*a] );
+*/
                for (d = 0; d < DIM ; d++)
                {
                    for (e = 0; e < DIM ; e++)
@@ -2117,6 +2137,9 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
                       for (f = 0; f < DIM ; f++)
                       {
                           (*beta_cov_traj)[a][b][c][d][e][f] += betam[a][b][c]*betam[d][e][f]; 
+/*
+                          printf("beta_square_%d_%d_%d_%d_%d_%d %f \n",a,b,c,d,e,f, betam[a][b][c]*betam[d][e][f] );
+*/
                       }
                    }
                }
@@ -2134,10 +2157,12 @@ void calc_beta_skern( t_Kern *SKern_rho_O, t_Kern *SKern_rho_H, t_Kern *SKern_E,
      }
      sfree(betam);
 
-//     if (debug)
-//     {
-//        gmx_fatal(FARGS,"consider only one loop\n");
-//     }   
+/*
+     if (debug)
+     {
+        gmx_fatal(FARGS,"consider only one loop\n");
+     }   
+*/
      
 }
 
