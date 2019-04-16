@@ -78,15 +78,14 @@
 
 static void do_shscorr(t_topology *top,  const char *fnTRX,
                    const char *fnSFACT,
-                   const char *fnVCOEFF, const char *fnVGRD,
+                   const char *fnVGRD,
                    const char *fnRGRDO, const char *fnCOEFFO,
-                   const char *fnRGRDH, const char *fnCOEFFH, const char *fnMAP,
-                   const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
-                   const char *method, const char *kern,
+                   const char *fnRGRDH, const char *fnCOEFFH,
+                   const char *fnBETACORR, const char *fnREFMOL,
+                   const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   int qbin, real fspacing,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
-                   real kappa, int kmax, real kernstd,
+                   int kmax,
                    int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv, int nmax, int n2max, real intheta, int skip, char *betafile)
 
@@ -99,7 +98,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     real         ***s_method, ***s_method_coh, ***s_method_incoh, **temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, mu_sq =0.0, mod_f ;
-    real         **field_ad, max_spacing, invkappa2,  ***beta_mol, *betamean, ****mu_ind_t;
+    real         **field_ad, max_spacing, ***beta_mol, *betamean, ****mu_ind_t;
     int            max_i, isize0, ind0, indj;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
     real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
@@ -829,16 +828,14 @@ int gmx_shscorr(int argc, char *argv[])
         "Common polarization combinations are PSS, PPP, SPP, SSS . [PAR]",
     };
     static gmx_bool          bPBC = TRUE, bIONS = FALSE;
-    static real              kappa = 5.0,  kernstd = 10.0 ;
-    static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0;
+    static real              pout_angle = 0.0 , pin_angle = 0.0;
     //, std_dev_dens = 0.05;
     static real              binwidth = 0.002;
-    static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1 ;
+    static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ;
     static int               nkx = 0, nky = 0, nkz = 0, kmax =20;
     static int		     	 nmax = 10,n2max = 20,skip = -1;
     static real				 intheta = 90;
 
-    static const char *methodt[] = {NULL, "single", "double" ,NULL };
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
     static char *catname = NULL;
     static char *anname =  NULL;
@@ -849,14 +846,6 @@ int gmx_shscorr(int argc, char *argv[])
         "number of bins over scattering angle theta chosen between -pi/2 and + pi/2 (available only with thetaswipe)" },
         { "-nplanes",       FALSE, etINT, {&nbingamma},
         "number of scattering planes that lie on the scattered wave-vector to average over, -PI/2< gamma< PI/2" },
-//        { "-angle_corr",       FALSE, etREAL, {&angle_corr},
-//        "angle at which to compute <beta(0)beta(r)>" },
-        { "-qbin",          FALSE, etINT, {&qbin},
-        "choose wave-vector to sample given by 2pi/box-length*qbin" },
-//        { "-nbinq",         FALSE, etINT, {&nbinq},
-//        "how many bins in the reciprocal space" },
-//        { "-stddens",       FALSE, etREAL, {&std_dev_dens}, "standard deviation to compute density on a grid. Use only with scalar kernel [nm]."},
-        { "-fourierspacing",          FALSE, etREAL, {&fspacing}, "fourier spacing [nm] gives lower bound for number of wave vectors to use in each direction with Ewald, overridden by nkx,nky,nkz " },
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
         { "-pout",          FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
@@ -864,15 +853,7 @@ int gmx_shscorr(int argc, char *argv[])
 	{ "-n2max",			FALSE, etINT, {&n2max}, "maximum modulus of n vector for cutoff"},
 	{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
 	{ "-skip",			FALSE, etINT, {&skip}, "q-vector skip"},
-//        { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
-//        { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
-        { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
-//        { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
-//        { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
         { "-kmax_spme",        FALSE, etINT, {&kmax}, "max wave vector defining the images to use in SPME" },
-        { "-kernstd",       FALSE, etREAL, {&kernstd}, "standard deviation of kernel function. only makes sense if kernel ridge regression is used"},
-
-        { "-method",     FALSE, etENUM, {methodt}, "I(q) using a single summation O(N) or a double summation, O(N*N)" },
         { "-kern",   FALSE, etENUM, {kernt}, "what method to use to compute beta"},
         { "-ions",   FALSE, etBOOL, {&bIONS}, "compute molecular hyperpolarizability when ions are present"},
         { "-cn",     FALSE, etSTR, {&catname}, "name of cation"},
@@ -884,10 +865,9 @@ int gmx_shscorr(int argc, char *argv[])
 	{ "-beta", FALSE, etSTR, {&betafile}, "file containing beta tensors"},
     };
 #define NPA asize(pa)
-    const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
-    const char        *fnVCOEFF=NULL, *fnVGRD=NULL;
+    const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnREFMOL = NULL;
+    const char        *fnVGRD=NULL;
     const char        *fnRGRDO=NULL, *fnRGRDH=NULL, *fnCOEFFO=NULL, *fnCOEFFH=NULL;
-    const char        *fnMAP=NULL;
     output_env_t       oenv;
     int           *gnx;
     int            nFF[2];
@@ -932,16 +912,12 @@ int gmx_shscorr(int argc, char *argv[])
 
     fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
-    fnMAP = opt2fn_null("-emap", NFILE,fnm);
-    fnVCOEFF = opt2fn_null("-vcoeff", NFILE,fnm);
     fnVGRD = opt2fn_null("-vgrid", NFILE,fnm);
-//    fnVINP = opt2fn_null("-vinp", NFILE,fnm);
     fnRGRDO = opt2fn_null("-rhogridO", NFILE,fnm);
     fnRGRDH = opt2fn_null("-rhogridH", NFILE,fnm);
     fnCOEFFO = opt2fn_null("-rhocoeffO", NFILE,fnm);
     fnCOEFFH = opt2fn_null("-rhocoeffH", NFILE,fnm);
     fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
-    fnFTBETACORR = opt2fn_null("-ftbetacorr", NFILE,fnm);
     fnREFMOL = opt2fn_null("-refmol", NFILE, fnm);
 
 
@@ -991,11 +967,11 @@ int gmx_shscorr(int argc, char *argv[])
 
     do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), 
-           fnVCOEFF, fnVGRD, fnRGRDO, fnCOEFFO,
-           fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
-           fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, 
-           fspacing, binwidth,
+           fnVGRD, fnRGRDO, fnCOEFFO,
+           fnRGRDH, fnCOEFFH, fnBETACORR,
+           fnREFMOL, kernt[0], bIONS, catname, anname, bPBC, 
+           binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           kappa, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip, betafile);
+           kmax, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip, betafile);
     return 0;
 }
