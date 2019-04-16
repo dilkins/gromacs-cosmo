@@ -78,15 +78,11 @@
 
 static void do_shscorr(t_topology *top,  const char *fnTRX,
                    const char *fnSFACT,
-                   const char *fnVGRD,
-                   const char *fnRGRDO, const char *fnCOEFFO,
-                   const char *fnRGRDH, const char *fnCOEFFH,
                    const char *fnBETACORR, const char *fnREFMOL,
                    const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
-                   int kmax,
-                   int *isize, int  *molindex[], char **grpname, int ng,
+                   int *isize, int  *molindex[], char **grpname,
                    const output_env_t oenv, int nmax, int n2max, real intheta, int skip, char *betafile)
 
 {
@@ -650,16 +646,13 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 
 			// For this molecule, read in the laboratory-frame hyperpolarizability tensor from an external file
-//			n_outputs = fscanf(all_betas,"%f",&beta_lab[0][i]);
-//			fprintf(stderr,"%f\n",beta_lab[0][i]);
-////			n_outputs = fscanf(all_betas,"%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f",&beta_lab[0][i],&beta_lab[1][i],&beta_lab[2][i],&beta_lab[3][i],&beta_lab[4][i],&beta_lab[5][i],&beta_lab[6][i],&beta_lab[7][i],&beta_lab[8][i],&beta_lab[9][i],&beta_lab[10][i],&beta_lab[11][i],&beta_lab[12][i],&beta_lab[13][i],&beta_lab[14][i],&beta_lab[15][i],&beta_lab[16][i],&beta_lab[17][i],&beta_lab[18][i],&beta_lab[19][i],&beta_lab[20][i],&beta_lab[21][i],&beta_lab[22][i],&beta_lab[23][i],&beta_lab[24][i],&beta_lab[25][i],&beta_lab[26][i]);
 			if (strcmp(betafile,"")) {
 				for (rr=0;rr<DIM*DIM*DIM;rr++)
 				{
 					n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
 				}
 				fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
-			} //else {
+			} else {
 
 				// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
 				// we will multiply by the elements of the polarization vectors).
@@ -692,7 +685,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 						}
 					}
 				}
-			//}
+			}
 		}
 
 		// For this frame we now take each different q-vector generated, and each value of gamma
@@ -832,7 +825,7 @@ int gmx_shscorr(int argc, char *argv[])
     //, std_dev_dens = 0.05;
     static real              binwidth = 0.002;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ;
-    static int               nkx = 0, nky = 0, nkz = 0, kmax =20;
+    static int               nkx = 0, nky = 0, nkz = 0;
     static int		     	 nmax = 10,n2max = 20,skip = -1;
     static real				 intheta = 90;
 
@@ -853,7 +846,6 @@ int gmx_shscorr(int argc, char *argv[])
 	{ "-n2max",			FALSE, etINT, {&n2max}, "maximum modulus of n vector for cutoff"},
 	{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
 	{ "-skip",			FALSE, etINT, {&skip}, "q-vector skip"},
-        { "-kmax_spme",        FALSE, etINT, {&kmax}, "max wave vector defining the images to use in SPME" },
         { "-kern",   FALSE, etENUM, {kernt}, "what method to use to compute beta"},
         { "-ions",   FALSE, etBOOL, {&bIONS}, "compute molecular hyperpolarizability when ions are present"},
         { "-cn",     FALSE, etSTR, {&catname}, "name of cation"},
@@ -866,8 +858,6 @@ int gmx_shscorr(int argc, char *argv[])
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnREFMOL = NULL;
-    const char        *fnVGRD=NULL;
-    const char        *fnRGRDO=NULL, *fnRGRDH=NULL, *fnCOEFFO=NULL, *fnCOEFFH=NULL;
     output_env_t       oenv;
     int           *gnx;
     int            nFF[2];
@@ -912,11 +902,6 @@ int gmx_shscorr(int argc, char *argv[])
 
     fnTPS = ftp2fn_null(efTPS, NFILE, fnm);
     fnNDX = ftp2fn_null(efNDX, NFILE, fnm);
-    fnVGRD = opt2fn_null("-vgrid", NFILE,fnm);
-    fnRGRDO = opt2fn_null("-rhogridO", NFILE,fnm);
-    fnRGRDH = opt2fn_null("-rhogridH", NFILE,fnm);
-    fnCOEFFO = opt2fn_null("-rhocoeffO", NFILE,fnm);
-    fnCOEFFH = opt2fn_null("-rhocoeffH", NFILE,fnm);
     fnBETACORR = opt2fn_null("-betacorr", NFILE,fnm);
     fnREFMOL = opt2fn_null("-refmol", NFILE, fnm);
 
@@ -967,11 +952,10 @@ int gmx_shscorr(int argc, char *argv[])
 
     do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
             opt2fn("-o", NFILE, fnm), 
-           fnVGRD, fnRGRDO, fnCOEFFO,
-           fnRGRDH, fnCOEFFH, fnBETACORR,
+           fnBETACORR,
            fnREFMOL, kernt[0], bIONS, catname, anname, bPBC, 
            binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           kmax, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip, betafile);
+           gnx, grpindex, grpname, oenv, nmax, n2max, intheta, skip, betafile);
     return 0;
 }
