@@ -84,7 +84,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   int qbin, int nbinq, int kern_order, real std_dev_dens, real fspacing,
+                   int qbin, int nbinq, int kern_order, real fspacing,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
                    real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
@@ -109,7 +109,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     real          *qref;
     matrix         cosdirmat,invcosdirmat; 
     real           invvol, invvol_sum;
-    t_Map         *Map=NULL;
+//    t_Map         *Map=NULL;
     t_Kern        *Krr = NULL;
     t_Kern        *SKern_rho_O = NULL;
     t_Kern        *SKern_rho_H = NULL;
@@ -119,7 +119,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     t_complex   ***FT_pair_pot;
     matrix         box, box_pbc;
     rvec           grid_spacing, grid_invspacing;
-    real           inv_std_dev_dens, dens_deb, inv_tot_npoints_local_grid;
+    real           dens_deb, inv_tot_npoints_local_grid;
     int            *gridsize;
     int            ePBC = -1, ePBCrdf = -1;
     int            nplots = 1;
@@ -201,49 +201,49 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     fprintf(stderr,"\nName of group %s\n",grpname[0]);
     fprintf(stderr,"\nNumber of charged species in molecule %d\n",n_chged_atoms);
 
-    // read electrostatic fit map input file
-    if (kern[0] == 'm' || kern[0] == 'n' )
-    {
-       Map=(t_Map *)calloc(1,sizeof(t_Map));
-       readMap(fnMAP, Map);
-       if (kern[0] == 'm')
-       {
-          fprintf(stderr,"initialized electric field map to compute beta\n");
-       }
-       else
-       {
-          fprintf(stderr,"read constant beta, beta will not fluctuate with the environment\n");
-       }
-    }
-    else if (kern[0] == 'k')
-    {
-       Krr = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnVCOEFF, fnVGRD, fnVINP, 0, 0, 0, NULL, FALSE, NULL ,Krr);
-       Krr->kerndev = 0.5/((kernstd*kernstd));
-       fprintf(stderr,"initialized kernel ridge regression to compute beta with standard dev = %f\n", kernstd);
-    }
-    else if (kern[0] == 's')
-    {
-       fprintf(stderr,"about to initialize scalar kernel \n");
-       SKern_E = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_E);
-       fprintf(stderr,"scalar kernel coefficients for the electric field read\n");
-       SKern_rho_O = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnCOEFFO, fnRGRDO, NULL, kern_order, std_dev_dens, 0, xref, TRUE, NULL,SKern_rho_O);
-       fprintf(stderr,"scalar kernel coefficients for the oxygen density read\n");
-       SKern_rho_H = (t_Kern *)calloc(1,sizeof(t_Kern));
-       readKern(fnCOEFFH, fnRGRDH, NULL, kern_order, std_dev_dens, 0, xref, FALSE, NULL,SKern_rho_H);
-       fprintf(stderr,"scalar kernel coefficients for the hydrogen density read\n");
-       fprintf(stderr,"initialized scalar kernel \n");
-       fprintf(stderr,"the density for the scalar kernel for each grid point i and for all atomic species j\n");
-       fprintf(stderr,"is computed using gaussians rho_i = sum_j exp(-(x_i-x_j)^2/(2*std_dev^2))*weight_i\n");
-       fprintf(stderr,"with a standard deviation of %f\n",std_dev_dens);
-       fprintf(stderr,"the density on the grid points is weighted with gaussians that are centred on the molecule\n");
-       fprintf(stderr,"with a standard deviation of %f\n",4.0*std_dev_dens);
-       fprintf(stderr,"if you want to change the standard deviation for these weights you have to modify the source\n");
-       fprintf(stderr,"the total number of training points is %d\n",SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
-       inv_tot_npoints_local_grid = 1.0/(SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
-    }
+//    // read electrostatic fit map input file
+//    if (kern[0] == 'm' || kern[0] == 'n' )
+//    {
+//       Map=(t_Map *)calloc(1,sizeof(t_Map));
+//       readMap(fnMAP, Map);
+//       if (kern[0] == 'm')
+//       {
+//          fprintf(stderr,"initialized electric field map to compute beta\n");
+//       }
+//       else
+//       {
+//          fprintf(stderr,"read constant beta, beta will not fluctuate with the environment\n");
+//       }
+//    }
+//    else if (kern[0] == 'k')
+//    {
+//       Krr = (t_Kern *)calloc(1,sizeof(t_Kern));
+//       readKern(fnVCOEFF, fnVGRD, fnVINP, 0, 0, 0, NULL, FALSE, NULL ,Krr);
+//       Krr->kerndev = 0.5/((kernstd*kernstd));
+//       fprintf(stderr,"initialized kernel ridge regression to compute beta with standard dev = %f\n", kernstd);
+//    }
+//    else if (kern[0] == 's')
+//    {
+//       fprintf(stderr,"about to initialize scalar kernel \n");
+//       SKern_E = (t_Kern *)calloc(1,sizeof(t_Kern));
+//       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_E);
+//       fprintf(stderr,"scalar kernel coefficients for the electric field read\n");
+//       SKern_rho_O = (t_Kern *)calloc(1,sizeof(t_Kern));
+//       readKern(fnCOEFFO, fnRGRDO, NULL, kern_order, std_dev_dens, 0, xref, TRUE, NULL,SKern_rho_O);
+//       fprintf(stderr,"scalar kernel coefficients for the oxygen density read\n");
+//       SKern_rho_H = (t_Kern *)calloc(1,sizeof(t_Kern));
+//       readKern(fnCOEFFH, fnRGRDH, NULL, kern_order, std_dev_dens, 0, xref, FALSE, NULL,SKern_rho_H);
+//       fprintf(stderr,"scalar kernel coefficients for the hydrogen density read\n");
+//       fprintf(stderr,"initialized scalar kernel \n");
+//       fprintf(stderr,"the density for the scalar kernel for each grid point i and for all atomic species j\n");
+//       fprintf(stderr,"is computed using gaussians rho_i = sum_j exp(-(x_i-x_j)^2/(2*std_dev^2))*weight_i\n");
+//       fprintf(stderr,"with a standard deviation of %f\n",std_dev_dens);
+//       fprintf(stderr,"the density on the grid points is weighted with gaussians that are centred on the molecule\n");
+//       fprintf(stderr,"with a standard deviation of %f\n",4.0*std_dev_dens);
+//       fprintf(stderr,"if you want to change the standard deviation for these weights you have to modify the source\n");
+//       fprintf(stderr,"the total number of training points is %d\n",SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
+//       inv_tot_npoints_local_grid = 1.0/(SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
+//    }
 
     if (bIONS )
     {
@@ -318,32 +318,32 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
            fprintf(stderr,"electrostatic_cutoff =%f maxcutoff=%f rmax=%f\n",electrostatic_cutoff,maxelcut,sqrt(rmax2));
            gmx_fatal(FARGS, "wrong choice of cutoffs to truncate the potential or to compute the double sum, choose cutoffs appropriately\n");
         }
-        if (kern[0] == 's')
-        {
-           ir=(t_inputrec *)calloc(1,sizeof(t_inputrec));
-           ir->nkx = roundf(box[XX][XX]/fspacing); ir->nky = roundf(box[YY][YY]/fspacing); ir->nkz = roundf(box[ZZ][ZZ]/fspacing); ir->fourier_spacing = fspacing;
-
-           fprintf(stderr,"f spacing %f\n",ir->fourier_spacing);
-           fprintf(stderr,"make the grid\n");
-           snew(gridsize, DIM);
-           initialize_free_quantities_on_grid(SKern_rho_O, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize); 
-           initialize_free_quantities_on_grid(SKern_rho_H, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize);
-           initialize_free_quantities_on_grid(SKern_E, ir, &grid_spacing, &grid_invspacing, TRUE, TRUE, &gridsize);
-           inv_std_dev_dens = 0.5/(std_dev_dens*std_dev_dens);
-           fprintf(stderr,"grid made and quantities on global grid allocated\n");
-           fprintf(stderr,"initialize ewald pair potential\n");
-           invkappa2 = 1.0/(sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*kappa*kappa);
-           //invkappa2=1.0/(kappa*kappa);
-           //kmax is the upper limit in the summation over wave-vectors in the reciprocal term of spme
-           //kmax is defined as kmax=int(walpha*max(box_lengths))
-           //walpha=pi/rcut and rcut =min(box_lengths)*min(0.5,1.2*natoms^(-1/6))
-           //kmax = (int)(max(max(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*M_PI/(min(min(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*min(0.5,1.2*pow(natoms,-1.0/6.0))));
-           fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
-           fprintf(stderr,"max wave-vector for ewald sum is %d\n",kmax);
-           setup_ewald_pair_potential(gridsize,interp_order,kmax,&FT_pair_pot,invkappa2);
-           fprintf(stderr,"ewald pair potential has been set-up\n");
-        
-        }
+//        if (kern[0] == 's')
+//        {
+//           ir=(t_inputrec *)calloc(1,sizeof(t_inputrec));
+//           ir->nkx = roundf(box[XX][XX]/fspacing); ir->nky = roundf(box[YY][YY]/fspacing); ir->nkz = roundf(box[ZZ][ZZ]/fspacing); ir->fourier_spacing = fspacing;
+//
+//           fprintf(stderr,"f spacing %f\n",ir->fourier_spacing);
+//           fprintf(stderr,"make the grid\n");
+//           snew(gridsize, DIM);
+//           initialize_free_quantities_on_grid(SKern_rho_O, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize); 
+//           initialize_free_quantities_on_grid(SKern_rho_H, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize);
+//           initialize_free_quantities_on_grid(SKern_E, ir, &grid_spacing, &grid_invspacing, TRUE, TRUE, &gridsize);
+//           inv_std_dev_dens = 0.5/(std_dev_dens*std_dev_dens);
+//           fprintf(stderr,"grid made and quantities on global grid allocated\n");
+//           fprintf(stderr,"initialize ewald pair potential\n");
+//           invkappa2 = 1.0/(sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*kappa*kappa);
+//           //invkappa2=1.0/(kappa*kappa);
+//           //kmax is the upper limit in the summation over wave-vectors in the reciprocal term of spme
+//           //kmax is defined as kmax=int(walpha*max(box_lengths))
+//           //walpha=pi/rcut and rcut =min(box_lengths)*min(0.5,1.2*natoms^(-1/6))
+//           //kmax = (int)(max(max(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*M_PI/(min(min(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*min(0.5,1.2*pow(natoms,-1.0/6.0))));
+//           fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
+//           fprintf(stderr,"max wave-vector for ewald sum is %d\n",kmax);
+//           setup_ewald_pair_potential(gridsize,interp_order,kmax,&FT_pair_pot,invkappa2);
+//           fprintf(stderr,"ewald pair potential has been set-up\n");
+//        
+//        }
         if (method[0] =='d')
         {
            fprintf(stderr, "cutoff for electric field calculation = %f\n", sqrt(electrostatic_cutoff2));
@@ -721,6 +721,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				}
 			}
 
+			// For this molecule, read in the laboratory-frame hyperpolarizability tensor from an external file
+			// TODO: DO THIS
+
 			// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
 			// we will multiply by the elements of the polarization vectors).
 			for (ii=0;ii<molsize;ii++)
@@ -895,7 +898,8 @@ int gmx_shscorr(int argc, char *argv[])
     };
     static gmx_bool          bPBC = TRUE, bIONS = FALSE;
     static real              electrostatic_cutoff = 1.2, maxelcut = 2.0, kappa = 5.0,  kernstd = 10.0 ;
-    static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0, std_dev_dens = 0.05;
+    static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0;
+    //, std_dev_dens = 0.05;
     static real              binwidth = 0.002, angle_corr = 90.0 ;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
@@ -918,15 +922,15 @@ int gmx_shscorr(int argc, char *argv[])
         "choose wave-vector to sample given by 2pi/box-length*qbin" },
         { "-nbinq",         FALSE, etINT, {&nbinq},
         "how many bins in the reciprocal space" },
-        { "-stddens",       FALSE, etREAL, {&std_dev_dens}, "standard deviation to compute density on a grid. Use only with scalar kernel [nm]."},
+//        { "-stddens",       FALSE, etREAL, {&std_dev_dens}, "standard deviation to compute density on a grid. Use only with scalar kernel [nm]."},
         { "-fourierspacing",          FALSE, etREAL, {&fspacing}, "fourier spacing [nm] gives lower bound for number of wave vectors to use in each direction with Ewald, overridden by nkx,nky,nkz " },
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
         { "-pout",          FALSE, etREAL, {&pout_angle}, "polarization angle of outcoming beam in degrees. For P choose 0, for S choose 90" },
         { "-pin",           FALSE, etREAL, {&pin_angle}, "polarization angle of incoming beam in degrees. For P choose 0, for S choose 90" },
-		{ "-nmax",	    	FALSE, etINT, {&nmax}, "maximum modulus of n vector for sphere"},
-		{ "-n2max",			FALSE, etINT, {&n2max}, "maximum modulus of n vector for cutoff"},
-		{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
-		{ "-skip",			FALSE, etINT, {&skip}, "q-vector skip"},
+	{ "-nmax",	    	FALSE, etINT, {&nmax}, "maximum modulus of n vector for sphere"},
+	{ "-n2max",			FALSE, etINT, {&n2max}, "maximum modulus of n vector for cutoff"},
+	{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
+	{ "-skip",			FALSE, etINT, {&skip}, "q-vector skip"},
         { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
         { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
@@ -1056,7 +1060,7 @@ int gmx_shscorr(int argc, char *argv[])
            fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
-           kern_order, std_dev_dens, fspacing, binwidth,
+           kern_order, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
            electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip);
     return 0;
