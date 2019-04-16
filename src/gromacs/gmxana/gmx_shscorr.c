@@ -84,9 +84,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   int qbin, int kern_order, real fspacing,
+                   int qbin, real fspacing,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
-                   real kappa, int interp_order, int kmax, real kernstd,
+                   real kappa, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
                    const output_env_t oenv, int nmax, int n2max, real intheta, int skip, char *betafile)
 
@@ -284,7 +284,13 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 /*******************************OPEN BETA FILE******************************************************************************************************************/
 
-	FILE *all_betas = gmx_ffopen(betafile, "r");
+	FILE *all_betas;
+	if (strcmp(betafile,""))
+	{
+		all_betas = gmx_ffopen(betafile, "r");
+	} else {
+		fprintf(stderr,"Using vector beta\n");
+	}
 
 /*******************************MOLECULAR-FRAME BETA************************************************************************************************************/
 
@@ -299,14 +305,12 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 		{
 			for (kk=0;kk<DIM;kk++)
 			{
-//				beta_mol[ii][jj][kk] = Map->beta_gas[ii*9 + jj*3 + kk];
 				beta_mol[ii][jj][kk] = 0.0;
 			}
 		}
 	}
 
 	beta_mol[2][2][2] = 1.0;
-	// DMW: This should be changed later on!
 
 /*******************************K-VECTORS***********************************************************************************************************************/
 
@@ -623,7 +627,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	{
 
 		// Read in the comment line of the beta file
-		n_outputs = fscanf(all_betas, "%s",commentline);
+		if (strcmp(betafile,"")) {
+			n_outputs = fscanf(all_betas, "%s",commentline);
+		}
 
 		// Fill sine and cosine arrays.
 		for (i=0;i<isize0;i++)
@@ -648,44 +654,46 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 //			n_outputs = fscanf(all_betas,"%f",&beta_lab[0][i]);
 //			fprintf(stderr,"%f\n",beta_lab[0][i]);
 ////			n_outputs = fscanf(all_betas,"%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f",&beta_lab[0][i],&beta_lab[1][i],&beta_lab[2][i],&beta_lab[3][i],&beta_lab[4][i],&beta_lab[5][i],&beta_lab[6][i],&beta_lab[7][i],&beta_lab[8][i],&beta_lab[9][i],&beta_lab[10][i],&beta_lab[11][i],&beta_lab[12][i],&beta_lab[13][i],&beta_lab[14][i],&beta_lab[15][i],&beta_lab[16][i],&beta_lab[17][i],&beta_lab[18][i],&beta_lab[19][i],&beta_lab[20][i],&beta_lab[21][i],&beta_lab[22][i],&beta_lab[23][i],&beta_lab[24][i],&beta_lab[25][i],&beta_lab[26][i]);
-			for (rr=0;rr<DIM*DIM*DIM;rr++)
-			{
-				n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
-			}
-			fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
-
-			// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
-			// we will multiply by the elements of the polarization vectors).
-			for (ii=0;ii<molsize;ii++)
-			{
-				pbc_dx(&pbc,x[ind0+ii],x[ind0],xmol[ii]);
-			}
-
-			calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
-
-			rr = 0;
-			for (aa=0;aa<DIM;aa++)
-			{
-				for (bb=0;bb<DIM;bb++)
+			if (strcmp(betafile,"")) {
+				for (rr=0;rr<DIM*DIM*DIM;rr++)
 				{
-					for (cc=bb;cc<DIM;cc++)
+					n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
+				}
+				fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
+			} //else {
+
+				// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
+				// we will multiply by the elements of the polarization vectors).
+				for (ii=0;ii<molsize;ii++)
+				{
+					pbc_dx(&pbc,x[ind0+ii],x[ind0],xmol[ii]);
+				}
+
+				calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
+
+				rr = 0;
+				for (aa=0;aa<DIM;aa++)
+				{
+					for (bb=0;bb<DIM;bb++)
 					{
-						beta_lab[rr][i] = 0.0;
-//						beta_lab[rr][i] = cosdirmat[aa][0]*cosdirmat[bb][0]*cosdirmat[cc][0];
-						for (ii=0;ii<DIM;ii++)
+						for (cc=bb;cc<DIM;cc++)
 						{
-							for (jj=0;jj<DIM;jj++)
+							beta_lab[rr][i] = 0.0;
+							for (ii=0;ii<DIM;ii++)
 							{
-								for (kk=0;kk<DIM;kk++)
+								for (jj=0;jj<DIM;jj++)
 								{
-									beta_lab[rr][i] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
+									for (kk=0;kk<DIM;kk++)
+									{
+										beta_lab[rr][i] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
+									}
 								}
 							}
+							rr++;
 						}
-						rr++;
 					}
 				}
-			}
+			//}
 		}
 
 		// For this frame we now take each different q-vector generated, and each value of gamma
@@ -826,7 +834,7 @@ int gmx_shscorr(int argc, char *argv[])
     //, std_dev_dens = 0.05;
     static real              binwidth = 0.002;
     static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1 ;
-    static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
+    static int               nkx = 0, nky = 0, nkz = 0, kmax =20;
     static int		     	 nmax = 10,n2max = 20,skip = -1;
     static real				 intheta = 90;
 
@@ -834,7 +842,7 @@ int gmx_shscorr(int argc, char *argv[])
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
     static char *catname = NULL;
     static char *anname =  NULL;
-    static char *betafile = "betas.in";
+    static char *betafile = "";
 
     t_pargs            pa[] = {
         { "-nbintheta",     FALSE, etINT, {&nbintheta},
@@ -859,8 +867,8 @@ int gmx_shscorr(int argc, char *argv[])
 //        { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
 //        { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
-        { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
-        { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
+//        { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
+//        { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
         { "-kmax_spme",        FALSE, etINT, {&kmax}, "max wave vector defining the images to use in SPME" },
         { "-kernstd",       FALSE, etREAL, {&kernstd}, "standard deviation of kernel function. only makes sense if kernel ridge regression is used"},
 
@@ -986,8 +994,8 @@ int gmx_shscorr(int argc, char *argv[])
            fnVCOEFF, fnVGRD, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
            fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, 
-           kern_order, fspacing, binwidth,
+           fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip, betafile);
+           kappa, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip, betafile);
     return 0;
 }
