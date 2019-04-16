@@ -77,18 +77,18 @@
 #define AU2VNM 5.14220652e2
 
 static void do_shscorr(t_topology *top,  const char *fnTRX,
-                   const char *fnSFACT, const char *fnTHETA, const real angle_corr,
-                   const char *fnVCOEFF, const char *fnVGRD, const char *fnVINP,
+                   const char *fnSFACT,
+                   const char *fnVCOEFF, const char *fnVGRD,
                    const char *fnRGRDO, const char *fnCOEFFO,
                    const char *fnRGRDH, const char *fnCOEFFH, const char *fnMAP,
                    const char *fnBETACORR, const char *fnFTBETACORR, const char *fnREFMOL,
                    const char *method, const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   int qbin, int nbinq, int kern_order, real fspacing,
+                   int qbin, int kern_order, real fspacing,
                    real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
-                   real cutoff_field, real maxelcut, real kappa, int interp_order, int kmax, real kernstd,
+                   real kappa, int interp_order, int kmax, real kernstd,
                    int *isize, int  *molindex[], char **grpname, int ng,
-                   const output_env_t oenv, int nmax, int n2max, real intheta, int skip)
+                   const output_env_t oenv, int nmax, int n2max, real intheta, int skip, char *betafile)
 
 {
     FILE          *fp, *fpn;
@@ -99,7 +99,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     real         ***s_method, ***s_method_coh, ***s_method_incoh, **temp_method, ****s_method_t, ****s_method_coh_t, ****s_method_incoh_t, ***mu_sq_t, ***coh_temp;
     real           qnorm, maxq, incoh_temp = 0.0, tot_temp = 0.0, gamma = 0.0 ,theta0 = 5.0, check_pol;
     real          *cos_t, *sin_t, ****cos_tq, ****sin_tq, mu_sq =0.0, mod_f ;
-    real         **field_ad, electrostatic_cutoff2, electrostatic_cutoff, max_spacing, maxelcut2,  invkappa2,  ***beta_mol, *betamean, ****mu_ind_t;
+    real         **field_ad, max_spacing, invkappa2,  ***beta_mol, *betamean, ****mu_ind_t;
     int            max_i, isize0, ind0, indj;
     real           t, rmax2, rmax,  r, r_dist, r2, q_xi, dq;
     real          *inv_segvol, normfac, segvol, spherevol, prev_spherevol, invsize0, invgamma, invhbinw, inv_width,  theta=0, *theta_vec;
@@ -135,6 +135,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     real	      ***u_vec,***v_vec,**basis,*coeff,saout,sain,caout,cain,**beta_lab,*st,*ct,*zt;
 	real			***uvv;
     real			*intens_total,*intens_cohrt,*intens_incoh,***s_array,***c_array,rval,dotp,mu_ind = 0.0,*induced_mu,xx,yy,zz;
+    char commentline[256];
+    int n_outputs;
 
     fprintf(stderr,"Initialize number of atoms, get charge indexes, the number of atoms in each molecule and get the reference molecule\n");
     atom = top->atoms.atom;
@@ -201,49 +203,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     fprintf(stderr,"\nName of group %s\n",grpname[0]);
     fprintf(stderr,"\nNumber of charged species in molecule %d\n",n_chged_atoms);
 
-//    // read electrostatic fit map input file
-//    if (kern[0] == 'm' || kern[0] == 'n' )
-//    {
-//       Map=(t_Map *)calloc(1,sizeof(t_Map));
-//       readMap(fnMAP, Map);
-//       if (kern[0] == 'm')
-//       {
-//          fprintf(stderr,"initialized electric field map to compute beta\n");
-//       }
-//       else
-//       {
-//          fprintf(stderr,"read constant beta, beta will not fluctuate with the environment\n");
-//       }
-//    }
-//    else if (kern[0] == 'k')
-//    {
-//       Krr = (t_Kern *)calloc(1,sizeof(t_Kern));
-//       readKern(fnVCOEFF, fnVGRD, fnVINP, 0, 0, 0, NULL, FALSE, NULL ,Krr);
-//       Krr->kerndev = 0.5/((kernstd*kernstd));
-//       fprintf(stderr,"initialized kernel ridge regression to compute beta with standard dev = %f\n", kernstd);
-//    }
-//    else if (kern[0] == 's')
-//    {
-//       fprintf(stderr,"about to initialize scalar kernel \n");
-//       SKern_E = (t_Kern *)calloc(1,sizeof(t_Kern));
-//       readKern(fnVCOEFF, fnVGRD, NULL, kern_order, 0, kappa, xref, FALSE, &betamean, SKern_E);
-//       fprintf(stderr,"scalar kernel coefficients for the electric field read\n");
-//       SKern_rho_O = (t_Kern *)calloc(1,sizeof(t_Kern));
-//       readKern(fnCOEFFO, fnRGRDO, NULL, kern_order, std_dev_dens, 0, xref, TRUE, NULL,SKern_rho_O);
-//       fprintf(stderr,"scalar kernel coefficients for the oxygen density read\n");
-//       SKern_rho_H = (t_Kern *)calloc(1,sizeof(t_Kern));
-//       readKern(fnCOEFFH, fnRGRDH, NULL, kern_order, std_dev_dens, 0, xref, FALSE, NULL,SKern_rho_H);
-//       fprintf(stderr,"scalar kernel coefficients for the hydrogen density read\n");
-//       fprintf(stderr,"initialized scalar kernel \n");
-//       fprintf(stderr,"the density for the scalar kernel for each grid point i and for all atomic species j\n");
-//       fprintf(stderr,"is computed using gaussians rho_i = sum_j exp(-(x_i-x_j)^2/(2*std_dev^2))*weight_i\n");
-//       fprintf(stderr,"with a standard deviation of %f\n",std_dev_dens);
-//       fprintf(stderr,"the density on the grid points is weighted with gaussians that are centred on the molecule\n");
-//       fprintf(stderr,"with a standard deviation of %f\n",4.0*std_dev_dens);
-//       fprintf(stderr,"if you want to change the standard deviation for these weights you have to modify the source\n");
-//       fprintf(stderr,"the total number of training points is %d\n",SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
-//       inv_tot_npoints_local_grid = 1.0/(SKern_rho_H->gridpoints + SKern_rho_O->gridpoints + SKern_E->gridpoints);
-//    }
 
     if (bIONS )
     {
@@ -295,9 +254,8 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
         nbin     = (int)(sqrt(rmax2)/binwidth);
         invhbinw = 1.0 / binwidth;
 
-        electrostatic_cutoff2 =  min(cutoff_field*cutoff_field, rmax2) ;
-        fprintf(stderr, "rmax2 = %f\n", rmax2);
-        maxelcut2 = maxelcut*maxelcut; 
+//        fprintf(stderr, "rmax2 = %f\n", rmax2);
+//        maxelcut2 = maxelcut*maxelcut; 
         if (fnBETACORR)
         {
             fprintf(stderr, "number of bins for <beta(0)*beta(r)> = %d\n", nbin);
@@ -307,48 +265,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                 gmx_fatal(FARGS, "when computing <beta(0)*beta(r)> choose nplanes = 1 and nbintheta = 1");
             }
         } 
-        inv_width = ( method[0] != 'd') ? 1.0 : M_PI*0.5/(sqrt(maxelcut2)-sqrt(electrostatic_cutoff2)) ;
-        electrostatic_cutoff = sqrt(electrostatic_cutoff2);
-        if ((method[0] == 'd') && (nbingamma >1 || fnBETACORR))
-        {
-            gmx_fatal(FARGS, "when using the double summation method choose nplanes = 1\n Also, choose the single method to compute <beta(0)*beta(r)>");
-        }
-        if ((method[0] == 'd') && (electrostatic_cutoff > maxelcut || maxelcut > sqrt(rmax2)  || electrostatic_cutoff > sqrt(rmax2))  )
-        {
-           fprintf(stderr,"electrostatic_cutoff =%f maxcutoff=%f rmax=%f\n",electrostatic_cutoff,maxelcut,sqrt(rmax2));
-           gmx_fatal(FARGS, "wrong choice of cutoffs to truncate the potential or to compute the double sum, choose cutoffs appropriately\n");
-        }
-//        if (kern[0] == 's')
-//        {
-//           ir=(t_inputrec *)calloc(1,sizeof(t_inputrec));
-//           ir->nkx = roundf(box[XX][XX]/fspacing); ir->nky = roundf(box[YY][YY]/fspacing); ir->nkz = roundf(box[ZZ][ZZ]/fspacing); ir->fourier_spacing = fspacing;
-//
-//           fprintf(stderr,"f spacing %f\n",ir->fourier_spacing);
-//           fprintf(stderr,"make the grid\n");
-//           snew(gridsize, DIM);
-//           initialize_free_quantities_on_grid(SKern_rho_O, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize); 
-//           initialize_free_quantities_on_grid(SKern_rho_H, ir, &grid_spacing,&grid_invspacing, FALSE, TRUE, &gridsize);
-//           initialize_free_quantities_on_grid(SKern_E, ir, &grid_spacing, &grid_invspacing, TRUE, TRUE, &gridsize);
-//           inv_std_dev_dens = 0.5/(std_dev_dens*std_dev_dens);
-//           fprintf(stderr,"grid made and quantities on global grid allocated\n");
-//           fprintf(stderr,"initialize ewald pair potential\n");
-//           invkappa2 = 1.0/(sqr((box[XX][XX]+box[YY][YY]+box[ZZ][ZZ])/3.0)*kappa*kappa);
-//           //invkappa2=1.0/(kappa*kappa);
-//           //kmax is the upper limit in the summation over wave-vectors in the reciprocal term of spme
-//           //kmax is defined as kmax=int(walpha*max(box_lengths))
-//           //walpha=pi/rcut and rcut =min(box_lengths)*min(0.5,1.2*natoms^(-1/6))
-//           //kmax = (int)(max(max(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*M_PI/(min(min(box[XX][XX],box[YY][YY]),box[ZZ][ZZ])*min(0.5,1.2*pow(natoms,-1.0/6.0))));
-//           fprintf(stderr,"kappa is %f kappa^-2 (in fractional coords) is %f\n",kappa,invkappa2);
-//           fprintf(stderr,"max wave-vector for ewald sum is %d\n",kmax);
-//           setup_ewald_pair_potential(gridsize,interp_order,kmax,&FT_pair_pot,invkappa2);
-//           fprintf(stderr,"ewald pair potential has been set-up\n");
-//        
-//        }
-        if (method[0] =='d')
-        {
-           fprintf(stderr, "cutoff for electric field calculation = %f\n", sqrt(electrostatic_cutoff2));
-           fprintf(stderr, "switching parameter (PI/2)*1/(max_cutoff - electrostatic_cutoff) = %f\n", inv_width);
-        }
         
     }
     else
@@ -365,6 +281,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
     qnorm = M_PI*2.0/(rmax*2.0);
 
 	if (kern[0] != 'n'){fprintf(stderr,"WARNING: This code has been written for kern[0] = n, so may not work well otherwise!\n");}
+
+/*******************************OPEN BETA FILE******************************************************************************************************************/
+
+	FILE *all_betas = gmx_ffopen(betafile, "r");
 
 /*******************************MOLECULAR-FRAME BETA************************************************************************************************************/
 
@@ -702,6 +622,9 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 	do
 	{
 
+		// Read in the comment line of the beta file
+		n_outputs = fscanf(all_betas, "%s",commentline);
+
 		// Fill sine and cosine arrays.
 		for (i=0;i<isize0;i++)
 		{
@@ -722,7 +645,14 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 			}
 
 			// For this molecule, read in the laboratory-frame hyperpolarizability tensor from an external file
-			// TODO: DO THIS
+//			n_outputs = fscanf(all_betas,"%f",&beta_lab[0][i]);
+//			fprintf(stderr,"%f\n",beta_lab[0][i]);
+////			n_outputs = fscanf(all_betas,"%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f",&beta_lab[0][i],&beta_lab[1][i],&beta_lab[2][i],&beta_lab[3][i],&beta_lab[4][i],&beta_lab[5][i],&beta_lab[6][i],&beta_lab[7][i],&beta_lab[8][i],&beta_lab[9][i],&beta_lab[10][i],&beta_lab[11][i],&beta_lab[12][i],&beta_lab[13][i],&beta_lab[14][i],&beta_lab[15][i],&beta_lab[16][i],&beta_lab[17][i],&beta_lab[18][i],&beta_lab[19][i],&beta_lab[20][i],&beta_lab[21][i],&beta_lab[22][i],&beta_lab[23][i],&beta_lab[24][i],&beta_lab[25][i],&beta_lab[26][i]);
+			for (rr=0;rr<DIM*DIM*DIM;rr++)
+			{
+				n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
+			}
+			fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
 
 			// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
 			// we will multiply by the elements of the polarization vectors).
@@ -795,12 +725,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				}
 				for (i=0;i<isize0;i++)
 				{
-//					mu_ind = 0.0;
-
-//					for (rr=0;rr<18;rr++)
-//					{
-//						mu_ind += beta_lab[rr][i]*uvv[rr][qq][c];
-//					}
 					mu_ind = beta_lab[0][i]*uvv[0][qq][c]   + beta_lab[1][i]*uvv[1][qq][c]   +
 						 beta_lab[2][i]*uvv[2][qq][c]   + beta_lab[3][i]*uvv[3][qq][c]   +
 						 beta_lab[4][i]*uvv[4][qq][c]   + beta_lab[5][i]*uvv[5][qq][c]   +
@@ -897,11 +821,11 @@ int gmx_shscorr(int argc, char *argv[])
         "Common polarization combinations are PSS, PPP, SPP, SSS . [PAR]",
     };
     static gmx_bool          bPBC = TRUE, bIONS = FALSE;
-    static real              electrostatic_cutoff = 1.2, maxelcut = 2.0, kappa = 5.0,  kernstd = 10.0 ;
+    static real              kappa = 5.0,  kernstd = 10.0 ;
     static real              fspacing = 0.01, pout_angle = 0.0 , pin_angle = 0.0;
     //, std_dev_dens = 0.05;
-    static real              binwidth = 0.002, angle_corr = 90.0 ;
-    static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1, nbinq = 10 ;
+    static real              binwidth = 0.002;
+    static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ,qbin = 1 ;
     static int               nkx = 0, nky = 0, nkz = 0, kern_order = 2, interp_order = 4, kmax =20;
     static int		     	 nmax = 10,n2max = 20,skip = -1;
     static real				 intheta = 90;
@@ -910,18 +834,19 @@ int gmx_shscorr(int argc, char *argv[])
     static const char *kernt[] = {NULL, "krr", "scalar", "none", "map", NULL};
     static char *catname = NULL;
     static char *anname =  NULL;
+    static char *betafile = "betas.in";
 
     t_pargs            pa[] = {
         { "-nbintheta",     FALSE, etINT, {&nbintheta},
         "number of bins over scattering angle theta chosen between -pi/2 and + pi/2 (available only with thetaswipe)" },
         { "-nplanes",       FALSE, etINT, {&nbingamma},
         "number of scattering planes that lie on the scattered wave-vector to average over, -PI/2< gamma< PI/2" },
-        { "-angle_corr",       FALSE, etREAL, {&angle_corr},
-        "angle at which to compute <beta(0)beta(r)>" },
+//        { "-angle_corr",       FALSE, etREAL, {&angle_corr},
+//        "angle at which to compute <beta(0)beta(r)>" },
         { "-qbin",          FALSE, etINT, {&qbin},
         "choose wave-vector to sample given by 2pi/box-length*qbin" },
-        { "-nbinq",         FALSE, etINT, {&nbinq},
-        "how many bins in the reciprocal space" },
+//        { "-nbinq",         FALSE, etINT, {&nbinq},
+//        "how many bins in the reciprocal space" },
 //        { "-stddens",       FALSE, etREAL, {&std_dev_dens}, "standard deviation to compute density on a grid. Use only with scalar kernel [nm]."},
         { "-fourierspacing",          FALSE, etREAL, {&fspacing}, "fourier spacing [nm] gives lower bound for number of wave vectors to use in each direction with Ewald, overridden by nkx,nky,nkz " },
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
@@ -931,8 +856,8 @@ int gmx_shscorr(int argc, char *argv[])
 	{ "-n2max",			FALSE, etINT, {&n2max}, "maximum modulus of n vector for cutoff"},
 	{ "-intheta",		FALSE, etREAL, {&intheta}, "theta value"},
 	{ "-skip",			FALSE, etINT, {&skip}, "q-vector skip"},
-        { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
-        { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
+//        { "-cutoff",        FALSE, etREAL, {&electrostatic_cutoff}, "cutoff for the calculation of electrostatics around a molecule and/or for method=double" },
+//        { "-maxcutoff",        FALSE, etREAL, {&maxelcut}, "cutoff to smoothly truncate the calculation of the double sum" },
         { "-kappa",        FALSE, etREAL, {&kappa}, "screening parameter for the ewald term, i.e. erf(r*kappa)/r, in nm^-1" },
         { "-kernorder",        FALSE, etINT, {&kern_order}, "kernel order, where beta = sum_i sum_(kern_ind) c[i*kern_ind] * (feature_vec[i]-mean(feature_vec))^kern_ind " },     
         { "-splorder",        FALSE, etINT, {&interp_order}, "interpolation order for b-splines" },
@@ -948,10 +873,11 @@ int gmx_shscorr(int argc, char *argv[])
           "Use periodic boundary conditions for computing distances. Always use, results without PBC not tested." },
         { "-ng",       FALSE, etINT, {&ngroups}, 
           "Number of secondary groups, not available for now. Only tip4p water implemented." },
+	{ "-beta", FALSE, etSTR, {&betafile}, "file containing beta tensors"},
     };
 #define NPA asize(pa)
     const char        *fnTPS, *fnNDX , *fnBETACORR = NULL, *fnFTBETACORR= NULL, *fnREFMOL = NULL;
-    const char        *fnVCOEFF=NULL, *fnVGRD=NULL, *fnVINP=NULL;
+    const char        *fnVCOEFF=NULL, *fnVGRD=NULL;
     const char        *fnRGRDO=NULL, *fnRGRDH=NULL, *fnCOEFFO=NULL, *fnCOEFFH=NULL;
     const char        *fnMAP=NULL;
     output_env_t       oenv;
@@ -1001,7 +927,7 @@ int gmx_shscorr(int argc, char *argv[])
     fnMAP = opt2fn_null("-emap", NFILE,fnm);
     fnVCOEFF = opt2fn_null("-vcoeff", NFILE,fnm);
     fnVGRD = opt2fn_null("-vgrid", NFILE,fnm);
-    fnVINP = opt2fn_null("-vinp", NFILE,fnm);
+//    fnVINP = opt2fn_null("-vinp", NFILE,fnm);
     fnRGRDO = opt2fn_null("-rhogridO", NFILE,fnm);
     fnRGRDH = opt2fn_null("-rhogridH", NFILE,fnm);
     fnCOEFFO = opt2fn_null("-rhocoeffO", NFILE,fnm);
@@ -1017,27 +943,27 @@ int gmx_shscorr(int argc, char *argv[])
                   "Nothing to do!");
     }
 
-    if ((*kernt)[0] == 's')
-    {
-       if (!fnVCOEFF || !fnVGRD || !fnRGRDO || !fnRGRDH || !fnCOEFFO || !fnCOEFFH)
-       {
-          gmx_fatal(FARGS, "specify all files for scalar kernel using -vcoeff, -vgrid, -vinp, -rhogridO, -rhogridH, -rhocoeffO, rhocoeffH\n");
-       }
-    }
-    else if ((*kernt)[0] == 'm')
-    {
-       if (!fnMAP )
-       {
-          gmx_fatal(FARGS, "specify map file with -emap\n");
-       }
-    }
-    else if ((*kernt)[0] == 'k' )
-    {
-       if (!fnVCOEFF || !fnVGRD || !fnVINP)
-       {
-          gmx_fatal(FARGS, "specify all files for krrr using -vcoeff, -vgrid, -vinp\n");
-       }
-    }
+//    if ((*kernt)[0] == 's')
+//    {
+//       if (!fnVCOEFF || !fnVGRD || !fnRGRDO || !fnRGRDH || !fnCOEFFO || !fnCOEFFH)
+//       {
+//          gmx_fatal(FARGS, "specify all files for scalar kernel using -vcoeff, -vgrid, -vinp, -rhogridO, -rhogridH, -rhocoeffO, rhocoeffH\n");
+//       }
+//    }
+//    else if ((*kernt)[0] == 'm')
+//    {
+//       if (!fnMAP )
+//       {
+//          gmx_fatal(FARGS, "specify map file with -emap\n");
+//       }
+//    }
+//    else if ((*kernt)[0] == 'k' )
+//    {
+//       if (!fnVCOEFF || !fnVGRD || !fnVINP)
+//       {
+//          gmx_fatal(FARGS, "specify all files for krrr using -vcoeff, -vgrid, -vinp\n");
+//       }
+//    }
  
     snew(top, ngroups+1);
     ePBC = read_tpx_top(ftp2fn(efTPS, NFILE, fnm), NULL, box,
@@ -1056,12 +982,12 @@ int gmx_shscorr(int argc, char *argv[])
 	if (skip < 0){skip = 2*nmax;}
 
     do_shscorr(top, ftp2fn(efTRX, NFILE, fnm),
-            opt2fn("-o", NFILE, fnm), opt2fn("-otheta", NFILE, fnm), angle_corr,
-           fnVCOEFF, fnVGRD, fnVINP, fnRGRDO, fnCOEFFO,
+            opt2fn("-o", NFILE, fnm), 
+           fnVCOEFF, fnVGRD, fnRGRDO, fnCOEFFO,
            fnRGRDH, fnCOEFFH, fnMAP, fnBETACORR, fnFTBETACORR,
-           fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, nbinq,
+           fnREFMOL, methodt[0], kernt[0], bIONS, catname, anname, bPBC,  qbin, 
            kern_order, fspacing, binwidth,
            nbintheta, nbingamma, pin_angle, pout_angle, 
-           electrostatic_cutoff, maxelcut, kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip);
+           kappa, interp_order, kmax, kernstd, gnx, grpindex, grpname, ngroups, oenv, nmax, n2max, intheta, skip, betafile);
     return 0;
 }
