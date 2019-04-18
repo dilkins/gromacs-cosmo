@@ -651,7 +651,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 				{
 					n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
 				}
-				fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
+//				fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
 			} else {
 
 				// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
