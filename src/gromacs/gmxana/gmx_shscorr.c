@@ -81,7 +81,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                    const char *fnBETACORR, const char *fnREFMOL,
                    const char *kern,
                    gmx_bool bIONS, char *catname, char *anname, gmx_bool bPBC, 
-                   real binwidth, int nbintheta, int nbingamma, real pin_angle, real pout_angle,
+                   real binwidth, int nbingamma, real pin_angle, real pout_angle,
                    int *isize, int  *molindex[], char **grpname,
                    const output_env_t oenv, int nmax, int n2max, real intheta, int skip, char *betafile)
 
@@ -255,7 +255,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
         {
             fprintf(stderr, "number of bins for <beta(0)*beta(r)> = %d\n", nbin);
             nfaces = 1;
-            if (nbingamma >1 || nbintheta >1  )
+            if (nbingamma >1 )
             {
                 gmx_fatal(FARGS, "when computing <beta(0)*beta(r)> choose nplanes = 1 and nbintheta = 1");
             }
@@ -824,7 +824,7 @@ int gmx_shscorr(int argc, char *argv[])
     static real              pout_angle = 0.0 , pin_angle = 0.0;
     //, std_dev_dens = 0.05;
     static real              binwidth = 0.002;
-    static int               ngroups = 1, nbintheta = 10, nbingamma = 2 ;
+    static int               ngroups = 1, nbingamma = 2 ;
     static int               nkx = 0, nky = 0, nkz = 0;
     static int		     	 nmax = 10,n2max = 20,skip = -1;
     static real				 intheta = 90;
@@ -835,8 +835,6 @@ int gmx_shscorr(int argc, char *argv[])
     static char *betafile = "";
 
     t_pargs            pa[] = {
-        { "-nbintheta",     FALSE, etINT, {&nbintheta},
-        "number of bins over scattering angle theta chosen between -pi/2 and + pi/2 (available only with thetaswipe)" },
         { "-nplanes",       FALSE, etINT, {&nbingamma},
         "number of scattering planes that lie on the scattered wave-vector to average over, -PI/2< gamma< PI/2" },
         { "-binw",          FALSE, etREAL, {&binwidth}, "width of bin to compute <beta_lab(0) beta_lab(r)> " },
@@ -955,7 +953,7 @@ int gmx_shscorr(int argc, char *argv[])
            fnBETACORR,
            fnREFMOL, kernt[0], bIONS, catname, anname, bPBC, 
            binwidth,
-           nbintheta, nbingamma, pin_angle, pout_angle, 
+           nbingamma, pin_angle, pout_angle, 
            gnx, grpindex, grpname, oenv, nmax, n2max, intheta, skip, betafile);
     return 0;
 }
