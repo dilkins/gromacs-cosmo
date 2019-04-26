@@ -647,11 +647,48 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 			// For this molecule, read in the laboratory-frame hyperpolarizability tensor from an external file
 			if (strcmp(betafile,"")) {
-				for (rr=0;rr<DIM*DIM*DIM;rr++)
-				{
-					n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
-				}
+//				for (rr=0;rr<DIM*DIM*DIM;rr++)
+//				{
+//					n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
+//				}
 //				fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
+//
+//
+//
+//				for (rr=0;rr<DIM*DIM*DIM;rr++)
+				for (ii=0;ii<DIM;ii++){for (jj=0;jj<DIM;jj++){for (kk=0;kk<DIM;kk++){
+//				{
+					n_outputs = fscanf(all_betas,"%f ",&beta_mol[ii][jj][kk]);
+				}}}
+				for (ii=0;ii<molsize;ii++)
+                                {
+                                        pbc_dx(&pbc,x[ind0+ii],x[ind0],xmol[ii]);
+                                }
+
+                                calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
+
+                                rr = 0;
+                                for (aa=0;aa<DIM;aa++)
+                                {
+                                        for (bb=0;bb<DIM;bb++)
+                                        {
+                                                for (cc=bb;cc<DIM;cc++)
+                                                {
+                                                        beta_lab[rr][i] = 0.0;
+                                                        for (ii=0;ii<DIM;ii++)
+                                                        {
+                                                                for (jj=0;jj<DIM;jj++)
+                                                                {
+                                                                        for (kk=0;kk<DIM;kk++)
+                                                                        {
+                                                                                beta_lab[rr][i] += beta_mol[ii][jj][kk]*invcosdirmat[aa][ii]*invcosdirmat[bb][jj]*invcosdirmat[cc][kk];
+                                                                        }
+                                                                }
+                                                        }
+                                                        rr++;
+                                                }
+                                        }
+ 				}                               
 			} else {
 
 				// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
