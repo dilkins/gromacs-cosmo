@@ -647,17 +647,7 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
 
 			// For this molecule, read in the laboratory-frame hyperpolarizability tensor from an external file
 			if (strcmp(betafile,"")) {
-//				for (rr=0;rr<DIM*DIM*DIM;rr++)
-//				{
-//					n_outputs = fscanf(all_betas,"%f ",&beta_lab[rr][i]);
-//				}
-//				fprintf(stderr,"BETA %f %f %f\n",beta_lab[0][i],beta_lab[14][i],beta_lab[26][i]);
-//
-//
-//
-//				for (rr=0;rr<DIM*DIM*DIM;rr++)
 				for (ii=0;ii<DIM;ii++){for (jj=0;jj<DIM;jj++){for (kk=0;kk<DIM;kk++){
-//				{
 					n_outputs = fscanf(all_betas,"%f ",&beta_mol[ii][jj][kk]);
 				}}}
 				for (ii=0;ii<molsize;ii++)
@@ -666,10 +656,6 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                                 }
 
                                 calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
-//                                fprintf(stderr,"%f %f %f\n",cosdirmat[0][0],cosdirmat[0][1],cosdirmat[0][2]);
-//                                fprintf(stderr,"%f %f %f\n",cosdirmat[1][0],cosdirmat[1][1],cosdirmat[1][2]);
-//                                fprintf(stderr,"%f %f %f\n",cosdirmat[2][0],cosdirmat[2][1],cosdirmat[2][2]);
-//				exit(0);
 
                                 rr = 0;
                                 for (aa=0;aa<DIM;aa++)
