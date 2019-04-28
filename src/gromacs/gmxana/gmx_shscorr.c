@@ -666,6 +666,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                                 }
 
                                 calc_cosdirmat( fnREFMOL, top, molsize, ind0,  xref, xmol, &cosdirmat, &invcosdirmat, &xvec, &yvec, &zvec );
+//                                fprintf(stderr,"%f %f %f\n",cosdirmat[0][0],cosdirmat[0][1],cosdirmat[0][2]);
+//                                fprintf(stderr,"%f %f %f\n",cosdirmat[1][0],cosdirmat[1][1],cosdirmat[1][2]);
+//                                fprintf(stderr,"%f %f %f\n",cosdirmat[2][0],cosdirmat[2][1],cosdirmat[2][2]);
+//				exit(0);
 
                                 rr = 0;
                                 for (aa=0;aa<DIM;aa++)
@@ -681,14 +685,16 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                                                                 {
                                                                         for (kk=0;kk<DIM;kk++)
                                                                         {
-                                                                                beta_lab[rr][i] += beta_mol[ii][jj][kk]*invcosdirmat[aa][ii]*invcosdirmat[bb][jj]*invcosdirmat[cc][kk];
+                                                                                beta_lab[rr][i] += beta_mol[ii][jj][kk]*cosdirmat[aa][ii]*cosdirmat[bb][jj]*cosdirmat[cc][kk];
                                                                         }
                                                                 }
                                                         }
+//                                                        fprintf(stderr,"%f\n",beta_lab[rr][i]);
                                                         rr++;
                                                 }
                                         }
  				}                               
+//                                exit(0);
 			} else {
 
 				// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
