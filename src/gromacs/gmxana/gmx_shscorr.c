@@ -675,12 +675,10 @@ static void do_shscorr(t_topology *top,  const char *fnTRX,
                                                                         }
                                                                 }
                                                         }
-//                                                        fprintf(stderr,"%f\n",beta_lab[rr][i]);
                                                         rr++;
                                                 }
                                         }
  				}                               
-//                                exit(0);
 			} else {
 
 				// For each molecule, rotate the molecular hyperpolarizability tensor into the lab frame (later on,
